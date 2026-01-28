@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  pii_feedback_loop_model_registry.xml - Model Version Registry
+  TA-gen_ai_cim - PII Feedback Loop
+-->
+<form version="1.1" theme="dark">
+  <label>PII Feedback Loop - Model Registry</label>
+  <description>Track PII detection model versions, performance metrics, and promotion history.</description>
+
+  <fieldset submitButton="false">
+    <input type="dropdown" token="status_filter">
+      <label>Status Filter</label>
+      <choice value="*">All Statuses</choice>
+      <choice value="champion">Champion</choice>
+      <choice value="challenger">Challenger</choice>
+      <choice value="candidate">Candidate</choice>
+      <choice value="retired">Retired</choice>
+      <default>*</default>
+    </input>
+  </fieldset>
+
+  <!-- Current Champion Stats -->
+  <row>
+    <panel>
+      <title>Current Champion Model</title>
+      <single>
+        <search>
+          <query>| inputlookup pii_model_registry_lookup 
+| search status="champion" 
+| sort -promoted_at 
+| head 1 
+| eval display=model_name." v".model_version
+| table display</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x53A051","0x53A051"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Champion F1 Score</title>
+      <single>
+        <search>
+          <query>| inputlookup pii_model_registry_lookup 
+| search status="champion" 
+| sort -promoted_at 
+| head 1 
+| table f1_score</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="numberPrecision">0.0000</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0xDC4E41","0xF8BE34","0x53A051"]</option>
+        <option name="rangeValues">[0.7,0.85]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Champion Recall</title>
+      <single>
+        <search>
+          <query>| inputlookup pii_model_registry_lookup 
+| search status="champion" 
+| sort -promoted_at 
+| head 1 
+| table recall</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="numberPrecision">0.0000</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0xDC4E41","0xF8BE34","0x53A051"]</option>
+        <option name="rangeValues">[0.7,0.85]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Total Model Versions</title>
+      <single>
+        <search>
+          <query>| inputlookup pii_model_registry_lookup | stats count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x5A9BD5","0x5A9BD5"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+  </row>
+
+  <!-- Model Version History -->
+  <row>
+    <panel>
+      <title>Model Version History</title>
+      <table>
+        <search>
+          <query>| inputlookup pii_model_registry_lookup 
+| search status="$status_filter$"
+| eval promoted_date=if(isnotnull(promoted_at), strftime(promoted_at, "%Y-%m-%d %H:%M"), "N/A")
+| eval created_date=strftime(created_at, "%Y-%m-%d %H:%M")
+| eval status_icon=case(
+    status="champion", "🏆 Champion",
+    status="challenger", "⚔️ Challenger",
+    status="candidate", "📋 Candidate",
+    status="retired", "📦 Retired",
+    1=1, status
+)
+| sort -created_at
+| table model_version, status_icon, algorithm, accuracy, precision, recall, f1_score, threshold, training_samples, promoted_date, promoted_by, notes
+| rename model_version AS "Version", status_icon AS "Status", algorithm AS "Algorithm", accuracy AS "Accuracy", precision AS "Precision", recall AS "Recall", f1_score AS "F1", threshold AS "Threshold", training_samples AS "Samples", promoted_date AS "Promoted", promoted_by AS "Promoted By", notes AS "Notes"</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">none</option>
+        <option name="wrap">true</option>
+        <format type="color" field="F1">
+          <colorPalette type="minMidMax" maxColor="#53A051" midColor="#F8BE34" minColor="#DC4E41"></colorPalette>
+          <scale type="minMidMax" midType="number" midValue="0.8"></scale>
+        </format>
+        <format type="color" field="Recall">
+          <colorPalette type="minMidMax" maxColor="#53A051" midColor="#F8BE34" minColor="#DC4E41"></colorPalette>
+          <scale type="minMidMax" midType="number" midValue="0.8"></scale>
+        </format>
+      </table>
+    </panel>
+  </row>
+
+  <!-- Performance Trends -->
+  <row>
+    <panel>
+      <title>F1 Score Trend Over Model Versions</title>
+      <chart>
+        <search>
+          <query>| inputlookup pii_model_registry_lookup 
+| sort created_at
+| streamstats count AS version_num
+| table version_num, f1_score, model_version
+| rename version_num AS "Version #", f1_score AS "F1 Score"</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Precision vs Recall Trade-off</title>
+      <chart>
+        <search>
+          <query>| inputlookup pii_model_registry_lookup 
+| sort created_at
+| streamstats count AS version_num
+| table version_num, precision, recall
+| rename version_num AS "Version #", precision AS "Precision", recall AS "Recall"</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- Training Data Stats -->
+  <row>
+    <panel>
+      <title>Feedback Data Statistics</title>
+      <table>
+        <search>
+          <query>| inputlookup pii_training_feedback_lookup 
+| stats count AS total_samples,
+    sum(eval(if(pii_label=1, 1, 0))) AS pii_samples,
+    sum(eval(if(pii_label=0, 1, 0))) AS clean_samples,
+    sum(eval(if(split_assignment="train", 1, 0))) AS train_samples,
+    sum(eval(if(split_assignment="valid", 1, 0))) AS valid_samples,
+    sum(eval(if(split_assignment="test", 1, 0))) AS test_samples,
+    dc(app_name) AS unique_apps,
+    dc(reviewer) AS unique_reviewers
+| eval pii_ratio=round(pii_samples/total_samples*100, 1)."%"
+| eval train_ratio=round(train_samples/total_samples*100, 1)."%"
+| eval valid_ratio=round(valid_samples/total_samples*100, 1)."%"
+| eval test_ratio=round(test_samples/total_samples*100, 1)."%"
+| table total_samples, pii_samples, clean_samples, pii_ratio, train_samples, train_ratio, valid_samples, valid_ratio, test_samples, test_ratio, unique_apps, unique_reviewers
+| rename total_samples AS "Total", pii_samples AS "PII", clean_samples AS "Clean", pii_ratio AS "PII %", train_samples AS "Train", train_ratio AS "Train %", valid_samples AS "Valid", valid_ratio AS "Valid %", test_samples AS "Test", test_ratio AS "Test %", unique_apps AS "Apps", unique_reviewers AS "Reviewers"</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- Feedback Quality -->
+  <row>
+    <panel>
+      <title>Model Error Analysis</title>
+      <chart>
+        <search>
+          <query>| inputlookup pii_training_feedback_lookup 
+| stats count by feedback_type
+| eval category=case(
+    feedback_type="confirmed_pii", "True Positive",
+    feedback_type="confirmed_clean", "True Negative",
+    feedback_type="false_positive", "False Positive",
+    feedback_type="false_negative", "False Negative"
+)
+| table category, count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">none</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Feedback by Application</title>
+      <chart>
+        <search>
+          <query>| inputlookup pii_training_feedback_lookup 
+| stats count by app_name
+| sort -count
+| head 10</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.drilldown">none</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- Navigation -->
+  <row>
+    <panel>
+      <html>
+        <div style="text-align: center; padding: 12px;">
+          <a href="/app/TA-gen_ai_cim/pii_feedback_loop_model_comparison" style="color: #5dade2; margin-right: 20px;">Model Comparison</a>
+          <a href="/app/TA-gen_ai_cim/review_queue" style="color: #5dade2; margin-right: 20px;">Review Queue</a>
+          <a href="/app/TA-gen_ai_cim/event_review" style="color: #5dade2;">Event Review</a>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+</form>

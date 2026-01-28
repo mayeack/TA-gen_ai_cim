@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  pii_feedback_loop_model_comparison.xml - Champion vs Challenger Model Comparison
+  TA-gen_ai_cim - PII Feedback Loop
+-->
+<form version="1.1" theme="dark" script="pii_feedback_loop_promote.js">
+  <label>PII Feedback Loop - Model Comparison</label>
+  <description>Compare champion and challenger model performance. Analyze threshold tuning results and promote when ready.</description>
+
+  <fieldset submitButton="false">
+    <input type="time" token="time_range">
+      <label>Feedback Time Range</label>
+      <default>
+        <earliest>-30d@d</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+  </fieldset>
+
+  <!-- Summary Stats Row -->
+  <row>
+    <panel>
+      <single>
+        <title>Total Feedback Samples</title>
+        <search>
+          <query>| inputlookup pii_training_feedback_lookup | stats count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x5A9BD5","0x5A9BD5"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>Training Set</title>
+        <search>
+          <query>| inputlookup pii_training_feedback_lookup | where split_assignment="train" | stats count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x53A051","0x53A051"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>Validation Set</title>
+        <search>
+          <query>| inputlookup pii_training_feedback_lookup | where split_assignment="valid" | stats count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0xF8BE34","0xF8BE34"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>Test Set</title>
+        <search>
+          <query>| inputlookup pii_training_feedback_lookup | where split_assignment="test" | stats count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0xED8440","0xED8440"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+  </row>
+
+  <!-- Champion vs Challenger Comparison -->
+  <row>
+    <panel>
+      <title>Champion vs Challenger - Test Set Performance</title>
+      <table>
+        <search>
+          <query>| inputlookup pii_training_feedback_lookup 
+| where split_assignment="test" 
+| apply pii_detection_model 
+| eval champion_score=round('predicted(pii_label)', 4) 
+| eval champion_pred=if(champion_score>0.5, 1, 0) 
+| apply pii_detection_model_challenger 
+| eval challenger_score=round('predicted(pii_label)', 4) 
+| eval challenger_pred=if(challenger_score>0.5, 1, 0) 
+| eval champion_tp=if(pii_label=1 AND champion_pred=1, 1, 0) 
+| eval champion_fp=if(pii_label=0 AND champion_pred=1, 1, 0) 
+| eval champion_fn=if(pii_label=1 AND champion_pred=0, 1, 0) 
+| eval champion_tn=if(pii_label=0 AND champion_pred=0, 1, 0) 
+| eval challenger_tp=if(pii_label=1 AND challenger_pred=1, 1, 0) 
+| eval challenger_fp=if(pii_label=0 AND challenger_pred=1, 1, 0) 
+| eval challenger_fn=if(pii_label=1 AND challenger_pred=0, 1, 0) 
+| eval challenger_tn=if(pii_label=0 AND challenger_pred=0, 1, 0) 
+| stats sum(champion_tp) AS champion_tp, sum(champion_fp) AS champion_fp, sum(champion_fn) AS champion_fn, sum(champion_tn) AS champion_tn, 
+    sum(challenger_tp) AS challenger_tp, sum(challenger_fp) AS challenger_fp, sum(challenger_fn) AS challenger_fn, sum(challenger_tn) AS challenger_tn, 
+    count AS test_samples 
+| eval champion_accuracy=round((champion_tp+champion_tn)/test_samples, 4) 
+| eval champion_precision=round(champion_tp/(champion_tp+champion_fp), 4) 
+| eval champion_recall=round(champion_tp/(champion_tp+champion_fn), 4) 
+| eval champion_f1=round(2*champion_precision*champion_recall/(champion_precision+champion_recall), 4) 
+| eval challenger_accuracy=round((challenger_tp+challenger_tn)/test_samples, 4) 
+| eval challenger_precision=round(challenger_tp/(challenger_tp+challenger_fp), 4) 
+| eval challenger_recall=round(challenger_tp/(challenger_tp+challenger_fn), 4) 
+| eval challenger_f1=round(2*challenger_precision*challenger_recall/(challenger_precision+challenger_recall), 4) 
+| eval accuracy_delta=round(challenger_accuracy-champion_accuracy, 4) 
+| eval precision_delta=round(challenger_precision-champion_precision, 4) 
+| eval recall_delta=round(challenger_recall-champion_recall, 4) 
+| eval f1_delta=round(challenger_f1-champion_f1, 4) 
+| eval recommendation=if(challenger_f1>champion_f1 AND challenger_recall>=champion_recall, "PROMOTE CHALLENGER", "KEEP CHAMPION")
+| eval Metric="Accuracy" | eval Champion=champion_accuracy | eval Challenger=challenger_accuracy | eval Delta=accuracy_delta
+| append [| makeresults | eval Metric="Precision" | eval Champion=0 | eval Challenger=0 | eval Delta=0]
+| append [| makeresults | eval Metric="Recall" | eval Champion=0 | eval Challenger=0 | eval Delta=0]
+| append [| makeresults | eval Metric="F1 Score" | eval Champion=0 | eval Challenger=0 | eval Delta=0]
+| table Metric, Champion, Challenger, Delta</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="wrap">true</option>
+        <format type="color" field="Delta">
+          <colorPalette type="list">[0xDC4E41,0xF8BE34,0x53A051]</colorPalette>
+          <scale type="threshold">-0.01,0.01</scale>
+        </format>
+      </table>
+    </panel>
+    <panel>
+      <title>Recommendation</title>
+      <single>
+        <search>
+          <query>| inputlookup pii_training_feedback_lookup 
+| where split_assignment="test" 
+| apply pii_detection_model 
+| eval champion_pred=if('predicted(pii_label)'>0.5, 1, 0) 
+| apply pii_detection_model_challenger 
+| eval challenger_pred=if('predicted(pii_label)'>0.5, 1, 0) 
+| eval champion_tp=if(pii_label=1 AND champion_pred=1, 1, 0), champion_fn=if(pii_label=1 AND champion_pred=0, 1, 0), champion_fp=if(pii_label=0 AND champion_pred=1, 1, 0)
+| eval challenger_tp=if(pii_label=1 AND challenger_pred=1, 1, 0), challenger_fn=if(pii_label=1 AND challenger_pred=0, 1, 0), challenger_fp=if(pii_label=0 AND challenger_pred=1, 1, 0)
+| stats sum(champion_tp) AS c_tp, sum(champion_fn) AS c_fn, sum(champion_fp) AS c_fp, sum(challenger_tp) AS ch_tp, sum(challenger_fn) AS ch_fn, sum(challenger_fp) AS ch_fp
+| eval champion_precision=c_tp/(c_tp+c_fp), champion_recall=c_tp/(c_tp+c_fn), champion_f1=2*champion_precision*champion_recall/(champion_precision+champion_recall)
+| eval challenger_precision=ch_tp/(ch_tp+ch_fp), challenger_recall=ch_tp/(ch_tp+ch_fn), challenger_f1=2*challenger_precision*challenger_recall/(challenger_precision+challenger_recall)
+| eval recommendation=if(challenger_f1>champion_f1 AND challenger_recall>=champion_recall, "PROMOTE", "KEEP")
+| table recommendation</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x53A051","0xF8BE34"]</option>
+        <option name="rangeValues">[0]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+  </row>
+
+  <!-- Threshold Analysis -->
+  <row>
+    <panel>
+      <title>Threshold Analysis - Challenger Model on Validation Set</title>
+      <table>
+        <search>
+          <query>| inputlookup pii_training_feedback_lookup 
+| where split_assignment="valid" 
+| apply pii_detection_model_challenger 
+| eval risk_score=round('predicted(pii_label)', 4) 
+| eval pred_03=if(risk_score>0.3, 1, 0), pred_04=if(risk_score>0.4, 1, 0), pred_05=if(risk_score>0.5, 1, 0), pred_06=if(risk_score>0.6, 1, 0), pred_07=if(risk_score>0.7, 1, 0), pred_08=if(risk_score>0.8, 1, 0)
+| eval tp_03=if(pii_label=1 AND pred_03=1, 1, 0), fp_03=if(pii_label=0 AND pred_03=1, 1, 0), fn_03=if(pii_label=1 AND pred_03=0, 1, 0)
+| eval tp_04=if(pii_label=1 AND pred_04=1, 1, 0), fp_04=if(pii_label=0 AND pred_04=1, 1, 0), fn_04=if(pii_label=1 AND pred_04=0, 1, 0)
+| eval tp_05=if(pii_label=1 AND pred_05=1, 1, 0), fp_05=if(pii_label=0 AND pred_05=1, 1, 0), fn_05=if(pii_label=1 AND pred_05=0, 1, 0)
+| eval tp_06=if(pii_label=1 AND pred_06=1, 1, 0), fp_06=if(pii_label=0 AND pred_06=1, 1, 0), fn_06=if(pii_label=1 AND pred_06=0, 1, 0)
+| eval tp_07=if(pii_label=1 AND pred_07=1, 1, 0), fp_07=if(pii_label=0 AND pred_07=1, 1, 0), fn_07=if(pii_label=1 AND pred_07=0, 1, 0)
+| eval tp_08=if(pii_label=1 AND pred_08=1, 1, 0), fp_08=if(pii_label=0 AND pred_08=1, 1, 0), fn_08=if(pii_label=1 AND pred_08=0, 1, 0)
+| stats sum(tp_03) AS tp_03, sum(fp_03) AS fp_03, sum(fn_03) AS fn_03,
+    sum(tp_04) AS tp_04, sum(fp_04) AS fp_04, sum(fn_04) AS fn_04,
+    sum(tp_05) AS tp_05, sum(fp_05) AS fp_05, sum(fn_05) AS fn_05,
+    sum(tp_06) AS tp_06, sum(fp_06) AS fp_06, sum(fn_06) AS fn_06,
+    sum(tp_07) AS tp_07, sum(fp_07) AS fp_07, sum(fn_07) AS fn_07,
+    sum(tp_08) AS tp_08, sum(fp_08) AS fp_08, sum(fn_08) AS fn_08
+| eval precision_03=round(tp_03/(tp_03+fp_03), 3), recall_03=round(tp_03/(tp_03+fn_03), 3), f1_03=round(2*precision_03*recall_03/(precision_03+recall_03), 3)
+| eval precision_04=round(tp_04/(tp_04+fp_04), 3), recall_04=round(tp_04/(tp_04+fn_04), 3), f1_04=round(2*precision_04*recall_04/(precision_04+recall_04), 3)
+| eval precision_05=round(tp_05/(tp_05+fp_05), 3), recall_05=round(tp_05/(tp_05+fn_05), 3), f1_05=round(2*precision_05*recall_05/(precision_05+recall_05), 3)
+| eval precision_06=round(tp_06/(tp_06+fp_06), 3), recall_06=round(tp_06/(tp_06+fn_06), 3), f1_06=round(2*precision_06*recall_06/(precision_06+recall_06), 3)
+| eval precision_07=round(tp_07/(tp_07+fp_07), 3), recall_07=round(tp_07/(tp_07+fn_07), 3), f1_07=round(2*precision_07*recall_07/(precision_07+recall_07), 3)
+| eval precision_08=round(tp_08/(tp_08+fp_08), 3), recall_08=round(tp_08/(tp_08+fn_08), 3), f1_08=round(2*precision_08*recall_08/(precision_08+recall_08), 3)
+| eval best_f1=max(f1_03, f1_04, f1_05, f1_06, f1_07, f1_08)
+| eval t03_best=if(f1_03=best_f1, "*", ""), t04_best=if(f1_04=best_f1, "*", ""), t05_best=if(f1_05=best_f1, "*", ""), t06_best=if(f1_06=best_f1, "*", ""), t07_best=if(f1_07=best_f1, "*", ""), t08_best=if(f1_08=best_f1, "*", "")
+| eval row1="0.3".t03_best, row2="0.4".t04_best, row3="0.5".t05_best, row4="0.6".t06_best, row5="0.7".t07_best, row6="0.8".t08_best
+| table row1, precision_03, recall_03, f1_03, row2, precision_04, recall_04, f1_04, row3, precision_05, recall_05, f1_05, row4, precision_06, recall_06, f1_06, row5, precision_07, recall_07, f1_07, row6, precision_08, recall_08, f1_08</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- Feedback Distribution -->
+  <row>
+    <panel>
+      <title>Feedback Type Distribution</title>
+      <chart>
+        <search>
+          <query>| inputlookup pii_training_feedback_lookup 
+| stats count by feedback_type 
+| eval feedback_type=case(
+    feedback_type="confirmed_pii", "Confirmed PII (TP)",
+    feedback_type="confirmed_clean", "Confirmed Clean (TN)",
+    feedback_type="false_positive", "False Positive",
+    feedback_type="false_negative", "False Negative",
+    1=1, feedback_type
+)</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Feedback Over Time</title>
+      <chart>
+        <search>
+          <query>| inputlookup pii_training_feedback_lookup 
+| eval date=strftime(extracted_at, "%Y-%m-%d")
+| stats count by date, feedback_type
+| xyseries date feedback_type count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- Model Promotion Button -->
+  <row>
+    <panel>
+      <html>
+        <div style="text-align: center; padding: 20px;">
+          <h3>Model Promotion</h3>
+          <p>After reviewing the metrics above, promote the challenger model to champion if it shows improved performance.</p>
+          <button id="promoteModelBtn" type="button" style="background: #5cb85c; color: white; border: none; padding: 15px 40px; font-size: 16px; font-weight: bold; border-radius: 4px; cursor: pointer; margin-top: 10px;">
+            Promote Challenger to Champion
+          </button>
+          <span id="promoteStatusMsg" style="margin-left: 15px; font-size: 14px;"></span>
+          <p style="margin-top: 15px; color: #888; font-size: 12px;">
+            Note: This will save the current challenger model as the new production champion and register it in the model registry.
+          </p>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- Navigation -->
+  <row>
+    <panel>
+      <html>
+        <div style="text-align: center; padding: 12px;">
+          <a href="/app/TA-gen_ai_cim/pii_feedback_loop_model_registry" style="color: #5dade2; margin-right: 20px;">View Model Registry</a>
+          <a href="/app/TA-gen_ai_cim/review_queue" style="color: #5dade2;">Review Queue</a>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+</form>

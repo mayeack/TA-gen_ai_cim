@@ -1,0 +1,23 @@
+<nav search_view="search" color="#3C444D">
+  <a href="/app/search/search?q=search%20index%3Dgen_ai_log">Search</a>
+  <collection label="Dashboards">
+    <view name="ai_governance_overview" default='true' label="AI Governance Overview" />
+    <view name="governance_safety" label="TF-IDF Anomaly Detection" />
+    <view name="pii_detection" label="PII Detection" />
+    <view name="prompt_injection_detection" label="Prompt Injection Detection" />
+  </collection>
+  <collection label="Governance Review">
+    <view name="review_queue" label="Review Queue" />
+    <view name="event_review" label="Event Review" />
+  </collection>
+  <collection label="ML Feedback Loop">
+    <view name="pii_feedback_loop_model_comparison" label="PII - Model Comparison" />
+    <view name="pii_feedback_loop_model_registry" label="PII - Model Registry" />
+    <view name="tfidf_feedback_loop_model_comparison" label="TF-IDF - Model Comparison" />
+    <view name="tfidf_feedback_loop_model_registry" label="TF-IDF - Model Registry" />
+  </collection>
+  <view name="configuration" label="Configuration" />
+  <view name="datasets" />
+  <view name="reports" />
+  <view name="alerts" />
+</nav>

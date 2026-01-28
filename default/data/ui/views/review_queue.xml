@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  review_queue.xml - Review Queue Dashboard
+  TA-gen_ai_cim
+-->
+<form version="1.1">
+  <label>Review Queue</label>
+  <description>AI events flagged for human review. Click any row to open detailed review.</description>
+  
+  <fieldset submitButton="true" autoRun="true">
+    <input type="dropdown" token="filter_priority" searchWhenChanged="false">
+      <label>Priority</label>
+      <choice value="*">All</choice>
+      <choice value="critical">Critical</choice>
+      <choice value="high">High</choice>
+      <choice value="medium">Medium</choice>
+      <choice value="low">Low</choice>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
+    
+    <input type="dropdown" token="filter_service" searchWhenChanged="false">
+      <label>Service/App</label>
+      <choice value="*">All Services</choice>
+      <default>*</default>
+      <initialValue>*</initialValue>
+      <search>
+        <query>index=gen_ai_log earliest=-30d@d | stats count BY "gen_ai.app.name" | sort - count | fields "gen_ai.app.name"</query>
+        <earliest>-30d@d</earliest>
+        <latest>now</latest>
+      </search>
+      <fieldForLabel>gen_ai.app.name</fieldForLabel>
+      <fieldForValue>gen_ai.app.name</fieldForValue>
+    </input>
+    
+    <input type="dropdown" token="filter_model" searchWhenChanged="false">
+      <label>Model</label>
+      <choice value="*">All Models</choice>
+      <default>*</default>
+      <initialValue>*</initialValue>
+      <search>
+        <query>index=gen_ai_log earliest=-30d@d | stats count BY "gen_ai.request.model" | sort - count | fields "gen_ai.request.model"</query>
+        <earliest>-30d@d</earliest>
+        <latest>now</latest>
+      </search>
+      <fieldForLabel>gen_ai.request.model</fieldForLabel>
+      <fieldForValue>gen_ai.request.model</fieldForValue>
+    </input>
+  </fieldset>
+  
+  <!-- Status Summary Row -->
+  <row>
+    <panel>
+      <single>
+        <title>In Progress</title>
+        <search>
+          <query>| inputlookup gen_ai_review_findings_lookup 
+| search gen_ai_review_status IN ("new", "assigned", "in_review")
+| where "$filter_priority$"="*" OR gen_ai_review_priority="$filter_priority$"
+| join type=left gen_ai_event_id [
+    search index=gen_ai_log earliest=-90d@d
+    | eval gen_ai_event_id='gen_ai.event.id'
+    | eval service_app='gen_ai.app.name'
+    | eval model='gen_ai.request.model'
+    | table gen_ai_event_id, service_app, model
+]
+| where "$filter_service$"="*" OR service_app="$filter_service$"
+| where "$filter_model$"="*" OR model="$filter_model$"
+| stats count</query>
+          <earliest>-90d@d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x5A9BD5","0x5A9BD5"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>Review Completed</title>
+        <search>
+          <query>| inputlookup gen_ai_review_findings_lookup 
+| search gen_ai_review_status IN ("completed", "rejected")
+| where "$filter_priority$"="*" OR gen_ai_review_priority="$filter_priority$"
+| join type=left gen_ai_event_id [
+    search index=gen_ai_log earliest=-90d@d
+    | eval gen_ai_event_id='gen_ai.event.id'
+    | eval service_app='gen_ai.app.name'
+    | eval model='gen_ai.request.model'
+    | table gen_ai_event_id, service_app, model
+]
+| where "$filter_service$"="*" OR service_app="$filter_service$"
+| where "$filter_model$"="*" OR model="$filter_model$"
+| stats count</query>
+          <earliest>-90d@d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x53A051","0x53A051"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>Confirmed Issues</title>
+        <search>
+          <query>| inputlookup gen_ai_review_findings_lookup 
+| search gen_ai_review_status="completed"
+| where "$filter_priority$"="*" OR gen_ai_review_priority="$filter_priority$"
+| where (gen_ai_review_pii_confirmed="true" OR gen_ai_review_pii_confirmed=1) OR (gen_ai_review_phi_confirmed="true" OR gen_ai_review_phi_confirmed=1) OR (gen_ai_review_prompt_injection_confirmed="true" OR gen_ai_review_prompt_injection_confirmed=1) OR gen_ai_review_anomaly_prompt_reviewed="TRUE" OR gen_ai_review_anomaly_response_reviewed="TRUE"
+| join type=left gen_ai_event_id [
+    search index=gen_ai_log earliest=-90d@d
+    | eval gen_ai_event_id='gen_ai.event.id'
+    | eval service_app='gen_ai.app.name'
+    | eval model='gen_ai.request.model'
+    | table gen_ai_event_id, service_app, model
+]
+| where "$filter_service$"="*" OR service_app="$filter_service$"
+| where "$filter_model$"="*" OR model="$filter_model$"
+| stats count</query>
+          <earliest>-90d@d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0xDC4E41","0xDC4E41"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+  </row>
+  
+  <!-- Main Review Queue Table - Shows events with New, Assigned, In Review status -->
+  <row>
+    <panel>
+      <title>Events Pending Review</title>
+      <table>
+        <search>
+          <query>| inputlookup gen_ai_review_findings_lookup
+| search gen_ai_review_status IN ("new", "assigned", "in_review")
+| where "$filter_priority$"="*" OR gen_ai_review_priority="$filter_priority$"
+| join type=left gen_ai_event_id [
+    search index=gen_ai_log earliest=-90d@d
+    | eval gen_ai_event_id='gen_ai.event.id'
+    | eval service_app='gen_ai.app.name'
+    | eval model='gen_ai.request.model'
+    | eval event_date=strftime(_time, "%Y-%m-%d %H:%M:%S")
+    | table gen_ai_event_id, service_app, model, event_date
+]
+| where "$filter_service$"="*" OR service_app="$filter_service$"
+| where "$filter_model$"="*" OR model="$filter_model$"
+| eval status_display=case(gen_ai_review_status="new", "🟠 New", gen_ai_review_status="assigned", "🟡 Assigned", gen_ai_review_status="in_review", "🔵 In Review", 1=1, gen_ai_review_status)
+| eval priority_display=case(gen_ai_review_priority="critical", "🔴 Critical", gen_ai_review_priority="high", "🟠 High", gen_ai_review_priority="medium", "🟡 Medium", gen_ai_review_priority="low", "🟢 Low", 1=1, gen_ai_review_priority)
+| sort - event_date
+| table gen_ai_event_id, event_date, status_display, priority_display, gen_ai_review_assignee
+| rename gen_ai_event_id AS "Event ID", event_date AS "Event Date", status_display AS "Status", priority_display AS "Priority", gen_ai_review_assignee AS "Assignee"</query>
+          <earliest>-90d@d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">25</option>
+        <option name="drilldown">row</option>
+        <option name="rowNumbers">true</option>
+        <option name="wrap">true</option>
+        <format type="color" field="Status">
+          <colorPalette type="map">{"🟠 New":#F8BE34,"🟡 Assigned":#F1D357,"🔵 In Review":#5A9BD5}</colorPalette>
+        </format>
+        <format type="color" field="Priority">
+          <colorPalette type="map">{"🔴 Critical":#DC4E41,"🟠 High":#F8BE34,"🟡 Medium":#F1D357,"🟢 Low":#53A051}</colorPalette>
+        </format>
+        <drilldown>
+          <link target="_blank">/app/TA-gen_ai_cim/event_review?form.event_id=$row.Event ID$</link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+  
+  <!-- Charts Row -->
+  <row>
+    <panel>
+      <title>Events by Service/App (Last 30 Days)</title>
+      <chart>
+        <search>
+          <query>| inputlookup gen_ai_review_findings_lookup
+| where "$filter_priority$"="*" OR gen_ai_review_priority="$filter_priority$"
+| join type=left gen_ai_event_id [
+    search index=gen_ai_log earliest=-30d@d
+    | eval gen_ai_event_id='gen_ai.event.id'
+    | eval service_app='gen_ai.app.name'
+    | eval model='gen_ai.request.model'
+    | table gen_ai_event_id, service_app, model
+]
+| where "$filter_service$"="*" OR service_app="$filter_service$"
+| where "$filter_model$"="*" OR model="$filter_model$"
+| fillnull value="Unknown" service_app
+| stats count BY service_app
+| rename service_app AS "Service/App"</query>
+          <earliest>-30d@d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Event Reviews Initiated (Last 30 Days)</title>
+      <chart>
+        <search>
+          <query>| inputlookup gen_ai_review_findings_lookup
+| where "$filter_priority$"="*" OR gen_ai_review_priority="$filter_priority$"
+| join type=left gen_ai_event_id [
+    search index=gen_ai_log earliest=-30d@d
+    | eval gen_ai_event_id='gen_ai.event.id'
+    | eval service_app='gen_ai.app.name'
+    | eval model='gen_ai.request.model'
+    | table gen_ai_event_id, service_app, model
+]
+| where "$filter_service$"="*" OR service_app="$filter_service$"
+| where "$filter_model$"="*" OR model="$filter_model$"
+| eval created_date=strftime(gen_ai_review_created_at, "%Y-%m-%d")
+| where gen_ai_review_created_at > relative_time(now(), "-30d@d")
+| stats count BY created_date
+| rename created_date AS "Date", count AS "Reviews Initiated"</query>
+          <earliest>-30d@d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.chart.nullValueMode">zero</option>
+      </chart>
+    </panel>
+  </row>
+  
+</form>

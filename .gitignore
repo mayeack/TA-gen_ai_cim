@@ -1,0 +1,40 @@
+# Local configuration (contains instance-specific settings and credentials)
+local/
+metadata/local.meta
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Splunk-generated ML models (large binary files)
+lookups/*.mlmodel
+
+# Lookup data files (may contain sensitive data)
+lookups/*.csv
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-*
+
+# Log files
+*.log
+
+# Planning documents (AI assistant collaboration)
+planning/
+
+# Cursor IDE configuration (development-only)
+.cursor/
+
+# Environment files
+.env
+.env.*

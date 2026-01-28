@@ -1,0 +1,2454 @@
+
+<dashboard version="2" theme="dark">
+    <label>AI Governance Overview</label>
+    <description>A centralized view of genAI usage, cost, performance, and risk—tracking safety/PII/policy events, anomalous prompts/responses, token spend, and latency across models, services, and sessions.</description>
+    <definition><![CDATA[
+{
+    "title": "AI Governance Overview",
+    "description": "A centralized view of genAI usage, cost, performance, and risk—tracking safety/PII/policy events, anomalous prompts/responses, token spend, and latency across models, services, and sessions.",
+    "inputs": {
+        "input_model": {
+            "dataSources": {
+                "primary": "ds_model_filter"
+            },
+            "options": {
+                "defaultValue": "*",
+                "items": [
+                    {
+                        "label": "All Models",
+                        "value": "*"
+                    }
+                ],
+                "token": "model_filter"
+            },
+            "title": "Model ID",
+            "type": "input.dropdown"
+        },
+        "input_service": {
+            "dataSources": {
+                "primary": "ds_service_filter"
+            },
+            "options": {
+                "defaultValue": "*",
+                "items": [
+                    {
+                        "label": "All Services",
+                        "value": "*"
+                    }
+                ],
+                "token": "service_filter"
+            },
+            "title": "Service",
+            "type": "input.dropdown"
+        },
+        "input_time": {
+            "options": {
+                "defaultValue": "-24h@h,now",
+                "token": "time"
+            },
+            "title": "Time Range",
+            "type": "input.timerange"
+        }
+    },
+    "defaults": {
+        "dataSources": {
+            "ds.search": {
+                "options": {
+                    "queryParameters": {
+                        "earliest": "-24h@h",
+                        "latest": "now"
+                    }
+                }
+            }
+        }
+    },
+    "visualizations": {
+        "viz_avg_latency": {
+            "dataSources": {
+                "primary": "ds_avg_latency"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 2000,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 2000,
+                        "to": 5000,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 5000,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "ms",
+                "unitPosition": "after"
+            },
+            "title": "Avg Response Latency",
+            "type": "splunk.singlevalue"
+        },
+        "viz_compliance_summary": {
+            "context": {
+                "PII_Free_PctColumnFormatEditorConfig": {},
+                "PII_Free_PctRowBackgroundColorConfig": [
+                    {
+                        "to": 90,
+                        "value": "#DC4E41"
+                    },
+                    {
+                        "from": 90,
+                        "to": 98,
+                        "value": "#F8BE34"
+                    },
+                    {
+                        "from": 98,
+                        "value": "#53A051"
+                    }
+                ],
+                "Safety_Compliance_PctColumnFormatEditorConfig": {},
+                "Safety_Compliance_PctRowBackgroundColorConfig": [
+                    {
+                        "to": 85,
+                        "value": "#DC4E41"
+                    },
+                    {
+                        "from": 85,
+                        "to": 95,
+                        "value": "#F8BE34"
+                    },
+                    {
+                        "from": 95,
+                        "value": "#53A051"
+                    }
+                ]
+            },
+            "dataSources": {
+                "primary": "ds_compliance_summary"
+            },
+            "options": {
+                "columnFormat": {
+                    "PII_Free_Pct": {
+                        "data": "> table | seriesByName('PII_Free_Pct') | formatByType(PII_Free_PctColumnFormatEditorConfig)",
+                        "rowBackgroundColors": "> table | seriesByName('PII_Free_Pct') | rangeValue(PII_Free_PctRowBackgroundColorConfig)"
+                    },
+                    "Safety_Compliance_Pct": {
+                        "data": "> table | seriesByName('Safety_Compliance_Pct') | formatByType(Safety_Compliance_PctColumnFormatEditorConfig)",
+                        "rowBackgroundColors": "> table | seriesByName('Safety_Compliance_Pct') | rangeValue(Safety_Compliance_PctRowBackgroundColorConfig)"
+                    }
+                }
+            },
+            "title": "Safety Compliance Summary",
+            "type": "splunk.table"
+        },
+        "viz_cost_by_service": {
+            "dataSources": {
+                "primary": "ds_cost_by_service"
+            },
+            "options": {
+                "labelDisplay": "valuesAndPercentage",
+                "showDonutHole": true
+            },
+            "title": "Cost by Service",
+            "type": "splunk.pie"
+        },
+        "viz_cost_time": {
+            "dataSources": {
+                "primary": "ds_cost_time"
+            },
+            "options": {
+                "seriesColors": [
+                    "#f7bc38"
+                ],
+                "xAxisTitleText": "Time",
+                "yAxisTitleText": "Cost ($)"
+            },
+            "title": "Cost Over Time",
+            "type": "splunk.area"
+        },
+        "viz_error_messages": {
+            "dataSources": {
+                "primary": "ds_error_messages"
+            },
+            "options": {
+                "count": 10
+            },
+            "title": "Error Messages",
+            "type": "splunk.table"
+        },
+        "viz_guardrails_triggered": {
+            "dataSources": {
+                "primary": "ds_guardrails_triggered"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "to": 5,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 5,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Guardrails Triggered",
+            "type": "splunk.singlevalue"
+        },
+        "viz_header_compliance": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## ✅ Compliance Summary"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_header_cost": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## 💰 Cost Analysis"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_header_kpi": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## 📊 Key Performance Indicators"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_header_logs": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## 📋 Recent AI Requests"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_header_model": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## 🤖 Model Analysis"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_header_safety": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## 🛡️ Safety & Compliance Metrics"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_header_service": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## 🔧 Service Analysis"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_header_session": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## 👤 Session Analysis"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_header_status": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## ⚠️ Status & Errors"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_header_tfidf": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## 🔍 TF-IDF Anomaly Detection"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_header_trends": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## 📈 Trend Analysis"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_latency_distribution": {
+            "dataSources": {
+                "primary": "ds_latency_distribution"
+            },
+            "options": {
+                "seriesColors": [
+                    "#f7bc38"
+                ],
+                "xAxisTitleText": "Latency Bucket",
+                "yAxisTitleText": "Count"
+            },
+            "title": "Latency Distribution",
+            "type": "splunk.column"
+        },
+        "viz_latency_time": {
+            "dataSources": {
+                "primary": "ds_latency_time"
+            },
+            "options": {
+                "legendDisplay": "bottom",
+                "seriesColors": [
+                    "#53a051",
+                    "#dc4e41"
+                ],
+                "xAxisTitleText": "Time",
+                "yAxisTitleText": "Latency (ms)"
+            },
+            "title": "Response Latency Over Time",
+            "type": "splunk.line"
+        },
+        "viz_model_usage": {
+            "dataSources": {
+                "primary": "ds_model_usage"
+            },
+            "options": {
+                "count": 10
+            },
+            "title": "Model Usage Statistics",
+            "type": "splunk.table"
+        },
+        "viz_pii_detected": {
+            "dataSources": {
+                "primary": "ds_pii_detected"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "to": 5,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 5,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "PII Detected",
+            "type": "splunk.singlevalue"
+        },
+        "viz_policy_blocked": {
+            "dataSources": {
+                "primary": "ds_policy_blocked"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "to": 5,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 5,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Policy Blocked",
+            "type": "splunk.singlevalue"
+        },
+        "viz_recent_requests": {
+            "context": {
+                "PII_DetectedColumnFormatEditorConfig": {},
+                "PII_DetectedRowBackgroundColorConfig": [
+                    {
+                        "match": "false",
+                        "value": "#53A051"
+                    },
+                    {
+                        "match": "true",
+                        "value": "#DC4E41"
+                    }
+                ],
+                "Policy_BlockedColumnFormatEditorConfig": {},
+                "Policy_BlockedRowBackgroundColorConfig": [
+                    {
+                        "match": "false",
+                        "value": "#53A051"
+                    },
+                    {
+                        "match": "true",
+                        "value": "#DC4E41"
+                    }
+                ],
+                "Safety_ViolatedColumnFormatEditorConfig": {},
+                "Safety_ViolatedRowBackgroundColorConfig": [
+                    {
+                        "match": "false",
+                        "value": "#53A051"
+                    },
+                    {
+                        "match": "true",
+                        "value": "#DC4E41"
+                    }
+                ]
+            },
+            "dataSources": {
+                "primary": "ds_recent_requests"
+            },
+            "options": {
+                "columnFormat": {
+                    "PII_Detected": {
+                        "data": "> table | seriesByName('PII_Detected') | formatByType(PII_DetectedColumnFormatEditorConfig)",
+                        "rowBackgroundColors": "> table | seriesByName('PII_Detected') | matchValue(PII_DetectedRowBackgroundColorConfig)"
+                    },
+                    "Policy_Blocked": {
+                        "data": "> table | seriesByName('Policy_Blocked') | formatByType(Policy_BlockedColumnFormatEditorConfig)",
+                        "rowBackgroundColors": "> table | seriesByName('Policy_Blocked') | matchValue(Policy_BlockedRowBackgroundColorConfig)"
+                    },
+                    "Safety_Violated": {
+                        "data": "> table | seriesByName('Safety_Violated') | formatByType(Safety_ViolatedColumnFormatEditorConfig)",
+                        "rowBackgroundColors": "> table | seriesByName('Safety_Violated') | matchValue(Safety_ViolatedRowBackgroundColorConfig)"
+                    }
+                },
+                "count": 20
+            },
+            "title": "Recent AI Requests (Detailed Log)",
+            "type": "splunk.table"
+        },
+        "viz_request_volume": {
+            "dataSources": {
+                "primary": "ds_request_volume"
+            },
+            "options": {
+                "legendDisplay": "bottom",
+                "seriesColors": [
+                    "#5cc05c"
+                ],
+                "xAxisTitleText": "Time",
+                "yAxisTitleText": "Requests"
+            },
+            "title": "AI Request Volume Over Time",
+            "type": "splunk.area"
+        },
+        "viz_requests_by_service": {
+            "dataSources": {
+                "primary": "ds_requests_by_service"
+            },
+            "options": {
+                "seriesColors": [
+                    "#5cc05c"
+                ],
+                "xAxisTitleText": "Requests",
+                "yAxisTitleText": "Service"
+            },
+            "title": "Requests by Service",
+            "type": "splunk.bar"
+        },
+        "viz_retries": {
+            "dataSources": {
+                "primary": "ds_retries"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#5cc05c",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Retries",
+            "type": "splunk.singlevalue"
+        },
+        "viz_safety_violations": {
+            "dataSources": {
+                "primary": "ds_safety_violations"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "to": 5,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 5,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Safety Violations",
+            "type": "splunk.singlevalue"
+        },
+        "viz_service_performance": {
+            "dataSources": {
+                "primary": "ds_service_performance"
+            },
+            "options": {
+                "count": 10
+            },
+            "title": "Service Performance Comparison",
+            "type": "splunk.table"
+        },
+        "viz_session_activity": {
+            "dataSources": {
+                "primary": "ds_session_activity"
+            },
+            "options": {
+                "count": 10
+            },
+            "title": "Session Activity",
+            "type": "splunk.table"
+        },
+        "viz_status_distribution": {
+            "dataSources": {
+                "primary": "ds_status_distribution"
+            },
+            "options": {
+                "labelDisplay": "valuesAndPercentage",
+                "showDonutHole": true
+            },
+            "title": "HTTP Status Distribution",
+            "type": "splunk.pie"
+        },
+        "viz_tfidf_anomaly_rate": {
+            "dataSources": {
+                "primary": "ds_tfidf_anomaly_rate"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 5,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 5,
+                        "to": 10,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 10,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "%",
+                "unitPosition": "after"
+            },
+            "title": "Anomaly Rate",
+            "type": "splunk.singlevalue"
+        },
+        "viz_tfidf_high_risk": {
+            "dataSources": {
+                "primary": "ds_tfidf_high_risk"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "High Risk Events",
+            "type": "splunk.singlevalue"
+        },
+        "viz_tfidf_prompt_anomalies": {
+            "dataSources": {
+                "primary": "ds_tfidf_prompt_anomalies"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "to": 5,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 5,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Anomalous Prompts",
+            "type": "splunk.singlevalue"
+        },
+        "viz_tfidf_prompt_trend": {
+            "dataSources": {
+                "primary": "ds_tfidf_prompt_trend"
+            },
+            "options": {
+                "legendDisplay": "bottom",
+                "seriesColors": [
+                    "#dc4e41",
+                    "#53a051"
+                ],
+                "xAxisTitleText": "Time",
+                "yAxisTitleText": "Count"
+            },
+            "title": "Prompt Anomaly Trend",
+            "type": "splunk.line"
+        },
+        "viz_tfidf_response_anomalies": {
+            "dataSources": {
+                "primary": "ds_tfidf_response_anomalies"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "to": 5,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 5,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Anomalous Responses",
+            "type": "splunk.singlevalue"
+        },
+        "viz_tfidf_response_trend": {
+            "dataSources": {
+                "primary": "ds_tfidf_response_trend"
+            },
+            "options": {
+                "legendDisplay": "bottom",
+                "seriesColors": [
+                    "#dc4e41",
+                    "#53a051"
+                ],
+                "xAxisTitleText": "Time",
+                "yAxisTitleText": "Count"
+            },
+            "title": "Response Anomaly Trend",
+            "type": "splunk.line"
+        },
+        "viz_tfidf_risk_distribution": {
+            "dataSources": {
+                "primary": "ds_tfidf_risk_distribution"
+            },
+            "options": {
+                "labelDisplay": "valuesAndPercentage",
+                "seriesColorsByValue": {
+                    "HIGH": "#dc4e41",
+                    "LOW": "#f8be34",
+                    "MEDIUM": "#f1813f",
+                    "NONE": "#53a051"
+                },
+                "showDonutHole": true
+            },
+            "title": "Risk Level Distribution",
+            "type": "splunk.pie"
+        },
+        "viz_tfidf_top_sources": {
+            "dataSources": {
+                "primary": "ds_tfidf_top_sources"
+            },
+            "options": {
+                "count": 10
+            },
+            "title": "Top Anomaly Sources",
+            "type": "splunk.table"
+        },
+        "viz_token_usage_time": {
+            "dataSources": {
+                "primary": "ds_token_usage_time"
+            },
+            "options": {
+                "legendDisplay": "bottom",
+                "seriesColors": [
+                    "#6ab7c7"
+                ],
+                "xAxisTitleText": "Time",
+                "yAxisTitleText": "Total Tokens"
+            },
+            "title": "Token Usage Over Time",
+            "type": "splunk.area"
+        },
+        "viz_total_cost": {
+            "dataSources": {
+                "primary": "ds_total_cost"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#f7bc38",
+                "numberPrecision": 4,
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "$",
+                "unitPosition": "before"
+            },
+            "title": "Total Cost",
+            "type": "splunk.singlevalue"
+        },
+        "viz_total_requests": {
+            "dataSources": {
+                "primary": "ds_total_requests"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#53a051",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": ""
+            },
+            "title": "Total AI Requests",
+            "type": "splunk.singlevalue"
+        },
+        "viz_total_tokens": {
+            "dataSources": {
+                "primary": "ds_total_tokens"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#6ab7c7",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Total Token Usage",
+            "type": "splunk.singlevalue"
+        },
+        "viz_unique_sessions": {
+            "dataSources": {
+                "primary": "ds_unique_sessions"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#5cc05c",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Unique Sessions",
+            "type": "splunk.singlevalue"
+        },
+        "viz_header_pii_ml": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## 🔐 PII ML Detection\n\nMachine learning-powered detection of Personally Identifiable Information (PII) in AI responses."
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_pii_ml_total": {
+            "dataSources": {
+                "primary": "ds_pii_ml_total"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "to": 10,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 10,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "PII Detections",
+            "type": "splunk.singlevalue"
+        },
+        "viz_pii_ml_critical": {
+            "dataSources": {
+                "primary": "ds_pii_ml_critical"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "to": 5,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 5,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Critical Risk Events",
+            "type": "splunk.singlevalue"
+        },
+        "viz_pii_ml_high_risk": {
+            "dataSources": {
+                "primary": "ds_pii_ml_high_risk"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "High Risk Events",
+            "type": "splunk.singlevalue"
+        },
+        "viz_pii_ml_rate": {
+            "dataSources": {
+                "primary": "ds_pii_ml_rate"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 5,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 5,
+                        "to": 15,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 15,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "%",
+                "unitPosition": "after"
+            },
+            "title": "PII Detection Rate",
+            "type": "splunk.singlevalue"
+        },
+        "viz_pii_ml_trend": {
+            "dataSources": {
+                "primary": "ds_pii_ml_trend"
+            },
+            "options": {
+                "legendDisplay": "bottom",
+                "seriesColors": [
+                    "#dc4e41",
+                    "#f1813f"
+                ],
+                "xAxisTitleText": "Time",
+                "yAxisTitleText": "Detections"
+            },
+            "title": "PII Detection Trend",
+            "type": "splunk.line"
+        },
+        "viz_pii_ml_category": {
+            "dataSources": {
+                "primary": "ds_pii_ml_category"
+            },
+            "options": {
+                "seriesColors": [
+                    "#dc4e41",
+                    "#f8be34",
+                    "#6ab7c7",
+                    "#f1813f",
+                    "#a2cc3e",
+                    "#5cc05c"
+                ],
+                "xAxisTitleText": "Count",
+                "yAxisTitleText": "PII Category"
+            },
+            "title": "PII by Category",
+            "type": "splunk.bar"
+        },
+        "viz_pii_ml_risk_distribution": {
+            "dataSources": {
+                "primary": "ds_pii_ml_risk_distribution"
+            },
+            "options": {
+                "labelDisplay": "valuesAndPercentage",
+                "seriesColorsByValue": {
+                    "CRITICAL": "#9c1c1c",
+                    "HIGH": "#dc4e41",
+                    "MEDIUM": "#f8be34",
+                    "NONE": "#53a051"
+                },
+                "showDonutHole": true
+            },
+            "title": "Risk Level Distribution",
+            "type": "splunk.pie"
+        },
+        "viz_pii_ml_by_service": {
+            "dataSources": {
+                "primary": "ds_pii_ml_by_service"
+            },
+            "options": {
+                "count": 10
+            },
+            "title": "PII Detections by Service",
+            "type": "splunk.table"
+        },
+        "viz_pii_ml_recent": {
+            "context": {
+                "Risk_LevelColumnFormatEditorConfig": {},
+                "Risk_LevelRowBackgroundColorConfig": [
+                    {
+                        "match": "CRITICAL",
+                        "value": "#9c1c1c"
+                    },
+                    {
+                        "match": "HIGH",
+                        "value": "#DC4E41"
+                    },
+                    {
+                        "match": "MEDIUM",
+                        "value": "#F8BE34"
+                    }
+                ]
+            },
+            "dataSources": {
+                "primary": "ds_pii_ml_recent"
+            },
+            "options": {
+                "columnFormat": {
+                    "Risk_Level": {
+                        "data": "> table | seriesByName('Risk_Level') | formatByType(Risk_LevelColumnFormatEditorConfig)",
+                        "rowBackgroundColors": "> table | seriesByName('Risk_Level') | matchValue(Risk_LevelRowBackgroundColorConfig)"
+                    }
+                },
+                "count": 25
+            },
+            "title": "Recent PII Detections",
+            "type": "splunk.table"
+        },
+        "viz_header_prompt_injection": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## 🛡️ Prompt Injection Detection"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_prompt_injection_total": {
+            "dataSources": {
+                "primary": "ds_prompt_injection_total"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "to": 10,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 10,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Injection Attempts",
+            "type": "splunk.singlevalue"
+        },
+        "viz_prompt_injection_critical": {
+            "dataSources": {
+                "primary": "ds_prompt_injection_critical"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Critical Severity",
+            "type": "splunk.singlevalue"
+        },
+        "viz_prompt_injection_high": {
+            "dataSources": {
+                "primary": "ds_prompt_injection_high"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "to": 5,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 5,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "High Severity",
+            "type": "splunk.singlevalue"
+        },
+        "viz_prompt_injection_rate": {
+            "dataSources": {
+                "primary": "ds_prompt_injection_rate"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 2,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 2,
+                        "to": 5,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 5,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "%",
+                "unitPosition": "after"
+            },
+            "title": "Injection Rate",
+            "type": "splunk.singlevalue"
+        },
+        "viz_prompt_injection_trend": {
+            "dataSources": {
+                "primary": "ds_prompt_injection_trend"
+            },
+            "options": {
+                "legendDisplay": "bottom",
+                "seriesColors": [
+                    "#dc4e41",
+                    "#53a051"
+                ],
+                "xAxisTitleText": "Time",
+                "yAxisTitleText": "Count"
+            },
+            "title": "Prompt Injection Trend",
+            "type": "splunk.line"
+        },
+        "viz_prompt_injection_by_technique": {
+            "dataSources": {
+                "primary": "ds_prompt_injection_by_technique"
+            },
+            "options": {
+                "seriesColors": [
+                    "#dc4e41",
+                    "#f1813f",
+                    "#f8be34",
+                    "#6ab7c7",
+                    "#a2cc3e",
+                    "#5cc05c"
+                ],
+                "xAxisTitleText": "Count",
+                "yAxisTitleText": "Technique"
+            },
+            "title": "Injections by Technique",
+            "type": "splunk.bar"
+        },
+        "viz_prompt_injection_severity_distribution": {
+            "dataSources": {
+                "primary": "ds_prompt_injection_severity_distribution"
+            },
+            "options": {
+                "labelDisplay": "valuesAndPercentage",
+                "seriesColorsByValue": {
+                    "critical": "#9c1c1c",
+                    "high": "#dc4e41",
+                    "medium": "#f8be34",
+                    "low": "#53a051",
+                    "none": "#6ab7c7"
+                },
+                "showDonutHole": true
+            },
+            "title": "Severity Distribution",
+            "type": "splunk.pie"
+        },
+        "viz_prompt_injection_top_sources": {
+            "dataSources": {
+                "primary": "ds_prompt_injection_top_sources"
+            },
+            "options": {
+                "count": 10
+            },
+            "title": "Top Injection Sources",
+            "type": "splunk.table"
+        }
+    },
+    "dataSources": {
+        "ds_avg_latency": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | stats avg(gen_ai.client.operation.duration) as avg_latency | eval avg_latency=round(avg_latency*1000, 0) | eval avg_latency=coalesce(avg_latency, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_compliance_summary": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as Total_Requests, sum(eval(if('gen_ai.safety.violated'=\"true\", 1, 0))) as Safety_Violations, sum(eval(if('gen_ai.pii.detected'=\"true\", 1, 0))) as PII_Detections, sum(eval(if('gen_ai.policy.blocked'=\"true\", 1, 0))) as Policy_Blocks | eval Safety_Violations=coalesce(Safety_Violations, 0) | eval PII_Detections=coalesce(PII_Detections, 0) | eval Policy_Blocks=coalesce(Policy_Blocks, 0) | eval PII_Free_Pct=round(((Total_Requests-PII_Detections)/Total_Requests)*100, 2) | eval Safety_Compliance_Pct=round(((Total_Requests-Safety_Violations)/Total_Requests)*100, 2)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_cost_by_service": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(cost) as total_cost by gen_ai.app.name | sort -total_cost",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_cost_time": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | timechart span=1h sum(cost) as total_cost",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_error_messages": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" ('gen_ai.safety.violated'=\"true\" OR 'gen_ai.policy.blocked'=\"true\" OR 'gen_ai.pii.detected'=\"true\") | eval error_type=case('gen_ai.safety.violated'=\"true\", \"Safety Violation\", 'gen_ai.policy.blocked'=\"true\", \"Policy Blocked\", 'gen_ai.pii.detected'=\"true\", \"PII Detected\", 1=1, \"Unknown\") | stats count as Error_Count, latest(_time) as Last_Occurrence, values(gen_ai.app.name) as Services by error_type | eval Last_Occurrence=strftime(Last_Occurrence, \"%Y-%m-%d %H:%M:%S\") | rename error_type as Error_Type | sort -Error_Count | head 10",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_guardrails_triggered": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.guardrail.triggered'=\"true\", 1, 0))) as guardrails_triggered | eval guardrails_triggered=coalesce(guardrails_triggered, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_latency_distribution": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | eval latency_bucket=case('gen_ai.client.operation.duration'<1, \"<1s\", 'gen_ai.client.operation.duration'<2, \"1-2s\", 'gen_ai.client.operation.duration'<5, \"2-5s\", 'gen_ai.client.operation.duration'<10, \"5-10s\", 'gen_ai.client.operation.duration'<30, \"10-30s\", 1=1, \">30s\") | stats count by latency_bucket | sort latency_bucket",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_latency_time": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | eval latency_ms='gen_ai.client.operation.duration'*1000 | timechart span=1h avg(latency_ms) as avg_latency_ms, perc95(latency_ms) as p95_latency_ms",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_model_filter": {
+            "options": {
+                "query": "index=gen_ai_log | stats count by gen_ai.request.model | fields gen_ai.request.model",
+                "queryParameters": {
+                    "earliest": "-7d@d",
+                    "latest": "now"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_model_usage": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Requests, values(gen_ai.provider.name) as Provider, avg(gen_ai.request.temperature) as Avg_Temperature, avg(gen_ai.client.operation.duration) as Avg_Latency_sec, sum(gen_ai.usage.total_tokens) as Total_Tokens, sum(event_cost) as Total_Cost_USD by gen_ai.request.model | eval Avg_Temperature=round(Avg_Temperature, 2) | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | eval Total_Cost_USD=round(coalesce(Total_Cost_USD, 0), 4) | rename gen_ai.request.model as Model_ID | fields Model_ID, Requests, Provider, Avg_Temperature, Avg_Latency_ms, Total_Cost_USD, Total_Tokens | sort -Requests",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_pii_detected": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.pii.detected'=\"true\", 1, 0))) as pii_detected | eval pii_detected=coalesce(pii_detected, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_policy_blocked": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.policy.blocked'=\"true\", 1, 0))) as policy_blocked | eval policy_blocked=coalesce(policy_blocked, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_recent_requests": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval Timestamp=strftime(_time, \"%Y-%m-%d %H:%M:%S\") | eval Latency_ms=round('gen_ai.client.operation.duration'*1000, 0) | eval Tokens=coalesce('gen_ai.usage.total_tokens', 0) | eval Cost_USD=round((coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000), 6) | table Timestamp, gen_ai.request.id, gen_ai.session.id, gen_ai.app.name, gen_ai.request.model, Latency_ms, Tokens, Cost_USD, gen_ai.safety.violated, gen_ai.pii.detected, gen_ai.policy.blocked | rename gen_ai.request.id as Request_ID, gen_ai.session.id as Session_ID, gen_ai.app.name as Service, gen_ai.request.model as Model, gen_ai.safety.violated as Safety_Violated, gen_ai.pii.detected as PII_Detected, gen_ai.policy.blocked as Policy_Blocked | sort -Timestamp | head 20",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_request_volume": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | timechart span=1h count as requests",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_requests_by_service": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as requests by gen_ai.app.name | sort -requests",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_retries": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(coalesce('gen_ai.retry.count', 0))) as total_retries | eval total_retries=coalesce(total_retries, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_safety_violations": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.safety.violated'=\"true\", 1, 0))) as safety_violations | eval safety_violations=coalesce(safety_violations, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_service_filter": {
+            "options": {
+                "query": "index=gen_ai_log | stats count by gen_ai.app.name | fields gen_ai.app.name",
+                "queryParameters": {
+                    "earliest": "-7d@d",
+                    "latest": "now"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_service_performance": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Requests, avg(gen_ai.client.operation.duration) as Avg_Latency_sec, sum(gen_ai.usage.total_tokens) as Total_Tokens, sum(event_cost) as Total_Cost_USD by gen_ai.app.name | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | eval Total_Cost_USD=round(coalesce(Total_Cost_USD, 0), 4) | rename gen_ai.app.name as Service | fields Service, Requests, Avg_Latency_ms, Total_Cost_USD, Total_Tokens | sort -Requests",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_session_activity": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Interactions, min(_time) as Session_Start, max(_time) as Session_End, sum(gen_ai.usage.total_tokens) as Session_Tokens, sum(event_cost) as Session_Cost_USD, avg(gen_ai.client.operation.duration) as Avg_Latency_sec by gen_ai.session.id | eval Session_Start=strftime(Session_Start, \"%Y-%m-%d %H:%M:%S\") | eval Session_End=strftime(Session_End, \"%Y-%m-%d %H:%M:%S\") | eval Session_Cost_USD=round(coalesce(Session_Cost_USD, 0), 4) | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | rename gen_ai.session.id as Session_ID | fields Session_ID, Interactions, Session_Start, Session_End, Session_Cost_USD, Session_Tokens, Avg_Latency_ms | sort -Interactions | head 10",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_status_distribution": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval status=case('gen_ai.safety.violated'=\"true\", \"Safety Violation\", 'gen_ai.policy.blocked'=\"true\", \"Policy Blocked\", 'gen_ai.pii.detected'=\"true\", \"PII Detected\", 1=1, \"Success\") | stats count by status | sort -count",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_anomaly_rate": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:tfidf:scoring\" gen_ai.prompt.is_anomaly=\"true\" | stats count as anomalous_prompts | appendcols [search index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval has_prompt=if(isnotnull(coalesce(mvjoin('input_messages{}.content', \" \"), 'gen_ai.input.messages')), 1, 0) | stats sum(has_prompt) as total_prompts] | eval anomaly_rate=round(coalesce(anomalous_prompts, 0)/coalesce(total_prompts, 1)*100, 1) | fields anomaly_rate",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_high_risk": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" source=\"tfidf_*_scoring\" gen_ai.tfidf.risk_level=\"HIGH\" | stats count as high_risk_events | eval high_risk_events=coalesce(high_risk_events, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_prompt_anomalies": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" source=\"tfidf_*_scoring\" gen_ai.prompt.is_anomaly=\"true\" | stats count as anomalous_prompts | eval anomalous_prompts=coalesce(anomalous_prompts, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_prompt_trend": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" source=\"tfidf_*_scoring\" gen_ai.prompt.is_anomaly=* | timechart span=1h count(eval('gen_ai.prompt.is_anomaly'=\"true\")) as anomalous_prompts, count(eval('gen_ai.prompt.is_anomaly'=\"false\")) as normal_prompts",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_response_anomalies": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" source=\"tfidf_*_scoring\" gen_ai.response.is_anomaly=\"true\" | stats count as anomalous_responses | eval anomalous_responses=coalesce(anomalous_responses, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_response_trend": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" source=\"tfidf_*_scoring\" gen_ai.response.is_anomaly=* | timechart span=1h count(eval('gen_ai.response.is_anomaly'=\"true\")) as anomalous_responses, count(eval('gen_ai.response.is_anomaly'=\"false\")) as normal_responses",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_risk_distribution": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" source=\"tfidf_*_scoring\" gen_ai.tfidf.risk_level=* | stats count by gen_ai.tfidf.risk_level | rename gen_ai.tfidf.risk_level as Risk_Level | sort -count",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_top_sources": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" source=\"tfidf_*_scoring\" (gen_ai.prompt.is_anomaly=\"true\" OR gen_ai.response.is_anomaly=\"true\") | stats count as Anomaly_Count, dc(gen_ai.session.id) as Sessions, values(gen_ai.app.name) as Services by client.address | rename client.address as Source_IP | sort -Anomaly_Count | head 10",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_token_usage_time": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | timechart span=1h sum(gen_ai.usage.total_tokens) as total_tokens",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_total_cost": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(event_cost) as total_cost | eval total_cost=round(coalesce(total_cost, 0), 4)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_total_requests": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as total_requests",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_total_tokens": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(gen_ai.usage.total_tokens) as total_tokens | eval total_tokens=if(isnull(total_tokens) OR total_tokens=\"\", 0, total_tokens)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_unique_sessions": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats dc(gen_ai.session.id) as unique_sessions",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_pii_ml_total": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval response_text='gen_ai.output.messages' | where isnotnull(response_text) AND len(response_text) > 0 | eval has_ssn=if(match(response_text, \"\\d{3}-\\d{2}-\\d{4}\"), 1, 0), has_email=if(match(response_text, \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\"), 1, 0), has_phone=if(match(response_text, \"\\(?\\d{3}\\)?[-. ]?\\d{3}[-. ]?\\d{4}\"), 1, 0), has_financial=if(match(response_text, \"(\\d{4}[- ]?){3}\\d{4}\"), 1, 0) | eval pii_detected=if(has_ssn+has_email+has_phone+has_financial > 0, 1, 0) | stats sum(pii_detected) as pii_total | eval pii_total=coalesce(pii_total, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_pii_ml_critical": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval response_text='gen_ai.output.messages' | where isnotnull(response_text) AND len(response_text) > 0 | eval has_ssn=if(match(response_text, \"\\d{3}-\\d{2}-\\d{4}\"), 1, 0), has_financial=if(match(response_text, \"(\\d{4}[- ]?){3}\\d{4}\"), 1, 0) | eval is_critical=if(has_ssn + has_financial > 0, 1, 0) | stats sum(is_critical) as critical_total | eval critical_total=coalesce(critical_total, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_pii_ml_high_risk": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval response_text='gen_ai.output.messages' | where isnotnull(response_text) AND len(response_text) > 0 | eval has_ssn=if(match(response_text, \"\\d{3}-\\d{2}-\\d{4}\"), 1, 0), has_financial=if(match(response_text, \"(\\d{4}[- ]?){3}\\d{4}\"), 1, 0) | eval high_risk=if(has_ssn + has_financial >= 1, 1, 0) | stats sum(high_risk) as high_risk_total | eval high_risk_total=coalesce(high_risk_total, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_pii_ml_rate": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval response_text='gen_ai.output.messages' | where isnotnull(response_text) AND len(response_text) > 0 | eval has_ssn=if(match(response_text, \"\\d{3}-\\d{2}-\\d{4}\"), 1, 0), has_email=if(match(response_text, \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\"), 1, 0), has_phone=if(match(response_text, \"\\(?\\d{3}\\)?[-. ]?\\d{3}[-. ]?\\d{4}\"), 1, 0), has_financial=if(match(response_text, \"(\\d{4}[- ]?){3}\\d{4}\"), 1, 0) | eval pii_detected=if(has_ssn+has_email+has_phone+has_financial > 0, 1, 0) | stats sum(pii_detected) as pii_count, count as total | eval detection_rate=round(pii_count/total*100, 1) | fields detection_rate",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_pii_ml_trend": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval response_text='gen_ai.output.messages' | where isnotnull(response_text) AND len(response_text) > 0 | eval has_ssn=if(match(response_text, \"\\d{3}-\\d{2}-\\d{4}\"), 1, 0), has_email=if(match(response_text, \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\"), 1, 0), has_phone=if(match(response_text, \"\\(?\\d{3}\\)?[-. ]?\\d{3}[-. ]?\\d{4}\"), 1, 0), has_financial=if(match(response_text, \"(\\d{4}[- ]?){3}\\d{4}\"), 1, 0) | eval pii_detected=if(has_ssn+has_email+has_phone+has_financial > 0, 1, 0) | timechart span=1h sum(pii_detected) as PII_Detections",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_pii_ml_category": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval response_text='gen_ai.output.messages' | where isnotnull(response_text) AND len(response_text) > 0 | eval SSN=if(match(response_text, \"\\d{3}-\\d{2}-\\d{4}\"), 1, 0), Email=if(match(response_text, \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\"), 1, 0), Phone=if(match(response_text, \"\\(?\\d{3}\\)?[-. ]?\\d{3}[-. ]?\\d{4}\"), 1, 0), Credit_Card=if(match(response_text, \"(\\d{4}[- ]?){3}\\d{4}\"), 1, 0), Address=if(match(response_text, \"\\d+\\s+[A-Za-z]+\\s+(Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln)\"), 1, 0) | stats sum(SSN) as SSN, sum(Email) as Email, sum(Phone) as Phone, sum(Credit_Card) as Credit_Card, sum(Address) as Address | transpose 0 column_name=PII_Category header_field=count | rename \"row 1\" as Count",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_pii_ml_risk_distribution": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval response_text='gen_ai.output.messages' | where isnotnull(response_text) AND len(response_text) > 0 | eval has_ssn=if(match(response_text, \"\\d{3}-\\d{2}-\\d{4}\"), 1, 0), has_email=if(match(response_text, \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\"), 1, 0), has_phone=if(match(response_text, \"\\(?\\d{3}\\)?[-. ]?\\d{3}[-. ]?\\d{4}\"), 1, 0), has_financial=if(match(response_text, \"(\\d{4}[- ]?){3}\\d{4}\"), 1, 0), pii_score=has_ssn*3 + has_financial*2 + has_email + has_phone | eval risk_level=case(pii_score>=5, \"CRITICAL\", pii_score>=3, \"HIGH\", pii_score>=1, \"MEDIUM\", 1=1, \"NONE\") | stats count by risk_level | rename risk_level as Risk_Level",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_pii_ml_by_service": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval response_text='gen_ai.output.messages' | where isnotnull(response_text) AND len(response_text) > 0 | eval has_ssn=if(match(response_text, \"\\d{3}-\\d{2}-\\d{4}\"), 1, 0), has_email=if(match(response_text, \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\"), 1, 0), has_phone=if(match(response_text, \"\\(?\\d{3}\\)?[-. ]?\\d{3}[-. ]?\\d{4}\"), 1, 0), has_financial=if(match(response_text, \"(\\d{4}[- ]?){3}\\d{4}\"), 1, 0) | eval pii_detected=if(has_ssn+has_email+has_phone+has_financial > 0, 1, 0) | stats sum(pii_detected) as PII_Count, count as Total_Requests by gen_ai.app.name | eval PII_Rate=round(PII_Count/Total_Requests*100, 1).\"%\" | rename gen_ai.app.name as Service | sort -PII_Count",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_pii_ml_recent": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval response_text='gen_ai.output.messages' | where isnotnull(response_text) AND len(response_text) > 0 | eval has_ssn=if(match(response_text, \"\\d{3}-\\d{2}-\\d{4}\"), 1, 0), has_email=if(match(response_text, \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\"), 1, 0), has_phone=if(match(response_text, \"\\(?\\d{3}\\)?[-. ]?\\d{3}[-. ]?\\d{4}\"), 1, 0), has_financial=if(match(response_text, \"(\\d{4}[- ]?){3}\\d{4}\"), 1, 0), pii_score=has_ssn*3 + has_financial*2 + has_email + has_phone | where pii_score > 0 | eval Risk_Level=case(pii_score>=5, \"CRITICAL\", pii_score>=3, \"HIGH\", pii_score>=1, \"MEDIUM\", 1=1, \"LOW\"), Confidence=case(pii_score>=5, \"very_high\", pii_score>=3, \"high\", pii_score>=2, \"medium\", 1=1, \"low\"), PII_Types=mvappend(if(has_ssn>0, \"SSN\", null()), if(has_email>0, \"Email\", null()), if(has_phone>0, \"Phone\", null()), if(has_financial>0, \"Credit Card\", null())), Timestamp=strftime(_time, \"%Y-%m-%d %H:%M:%S\"), Request_ID='gen_ai.request.id' | table Request_ID, Timestamp, gen_ai.app.name, gen_ai.request.model, Risk_Level, PII_Types, Confidence | rename gen_ai.app.name as Service, gen_ai.request.model as Model | sort -Timestamp | head 25",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_prompt_injection_total": {
+            "options": {
+                "query": "index=gen_ai_log sourcetype=\"gen_ai:prompt_injection:scoring\" | where like('gen_ai.app.name', replace(\"$service_filter$\", \"*\", \"%\")) AND like('gen_ai.request.model', replace(\"$model_filter$\", \"*\", \"%\")) | where match(tostring('gen_ai.prompt_injection.ml_detected'), \"^true$\") | stats count as injection_total | eval injection_total=coalesce(injection_total, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_prompt_injection_critical": {
+            "options": {
+                "query": "index=gen_ai_log sourcetype=\"gen_ai:prompt_injection:scoring\" | where like('gen_ai.app.name', replace(\"$service_filter$\", \"*\", \"%\")) AND like('gen_ai.request.model', replace(\"$model_filter$\", \"*\", \"%\")) | where 'gen_ai.prompt_injection.severity'=\"critical\" | stats count as critical_total | eval critical_total=coalesce(critical_total, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_prompt_injection_high": {
+            "options": {
+                "query": "index=gen_ai_log sourcetype=\"gen_ai:prompt_injection:scoring\" | where like('gen_ai.app.name', replace(\"$service_filter$\", \"*\", \"%\")) AND like('gen_ai.request.model', replace(\"$model_filter$\", \"*\", \"%\")) | where 'gen_ai.prompt_injection.severity'=\"high\" | stats count as high_total | eval high_total=coalesce(high_total, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_prompt_injection_rate": {
+            "options": {
+                "query": "index=gen_ai_log sourcetype=\"gen_ai:prompt_injection:scoring\" | where like('gen_ai.app.name', replace(\"$service_filter$\", \"*\", \"%\")) AND like('gen_ai.request.model', replace(\"$model_filter$\", \"*\", \"%\")) | stats count as total, sum(eval(if(match(tostring('gen_ai.prompt_injection.ml_detected'), \"^true$\"), 1, 0))) as injections | eval injection_rate=round(coalesce(injections, 0)/coalesce(total, 1)*100, 1) | fields injection_rate",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_prompt_injection_trend": {
+            "options": {
+                "query": "index=gen_ai_log sourcetype=\"gen_ai:prompt_injection:scoring\" | where like('gen_ai.app.name', replace(\"$service_filter$\", \"*\", \"%\")) AND like('gen_ai.request.model', replace(\"$model_filter$\", \"*\", \"%\")) | eval is_injection=if(match(tostring('gen_ai.prompt_injection.ml_detected'), \"^true$\"), 1, 0) | timechart span=1h sum(is_injection) as injections_detected, sum(eval(if(is_injection=0, 1, 0))) as normal_prompts",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_prompt_injection_by_technique": {
+            "options": {
+                "query": "index=gen_ai_log sourcetype=\"gen_ai:prompt_injection:scoring\" | where like('gen_ai.app.name', replace(\"$service_filter$\", \"*\", \"%\")) AND like('gen_ai.request.model', replace(\"$model_filter$\", \"*\", \"%\")) | where match(tostring('gen_ai.prompt_injection.ml_detected'), \"^true$\") | stats count as Count by gen_ai.prompt_injection.technique | rename gen_ai.prompt_injection.technique as Technique | sort -Count",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_prompt_injection_severity_distribution": {
+            "options": {
+                "query": "index=gen_ai_log sourcetype=\"gen_ai:prompt_injection:scoring\" | where like('gen_ai.app.name', replace(\"$service_filter$\", \"*\", \"%\")) AND like('gen_ai.request.model', replace(\"$model_filter$\", \"*\", \"%\")) | where isnotnull('gen_ai.prompt_injection.severity') | stats count by gen_ai.prompt_injection.severity | rename gen_ai.prompt_injection.severity as Severity",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_prompt_injection_top_sources": {
+            "options": {
+                "query": "index=gen_ai_log sourcetype=\"gen_ai:prompt_injection:scoring\" | where like('gen_ai.app.name', replace(\"$service_filter$\", \"*\", \"%\")) AND like('gen_ai.request.model', replace(\"$model_filter$\", \"*\", \"%\")) | where match(tostring('gen_ai.prompt_injection.ml_detected'), \"^true$\") | stats count as Injection_Count, dc(gen_ai.session.id) as Sessions, values(gen_ai.prompt_injection.technique) as Techniques, values(gen_ai.app.name) as Services by client.address | rename client.address as Source_IP | sort -Injection_Count | head 10",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        }
+    },
+    "layout": {
+        "globalInputs": [
+            "input_time",
+            "input_service",
+            "input_model"
+        ],
+        "layoutDefinitions": {
+            "layout_1": {
+                "options": {
+                    "height": 3950,
+                    "width": 1440
+                },
+                "structure": [
+                    {
+                        "item": "viz_header_kpi",
+                        "position": {
+                            "h": 50,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 0
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_total_requests",
+                        "position": {
+                            "h": 120,
+                            "w": 288,
+                            "x": 0,
+                            "y": 50
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_unique_sessions",
+                        "position": {
+                            "h": 120,
+                            "w": 288,
+                            "x": 288,
+                            "y": 50
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_total_tokens",
+                        "position": {
+                            "h": 120,
+                            "w": 288,
+                            "x": 576,
+                            "y": 50
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_total_cost",
+                        "position": {
+                            "h": 120,
+                            "w": 288,
+                            "x": 864,
+                            "y": 50
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_avg_latency",
+                        "position": {
+                            "h": 120,
+                            "w": 288,
+                            "x": 1152,
+                            "y": 50
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_header_safety",
+                        "position": {
+                            "h": 50,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 170
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_safety_violations",
+                        "position": {
+                            "h": 120,
+                            "w": 288,
+                            "x": 0,
+                            "y": 220
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_pii_detected",
+                        "position": {
+                            "h": 120,
+                            "w": 288,
+                            "x": 288,
+                            "y": 220
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_policy_blocked",
+                        "position": {
+                            "h": 120,
+                            "w": 288,
+                            "x": 576,
+                            "y": 220
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_guardrails_triggered",
+                        "position": {
+                            "h": 120,
+                            "w": 288,
+                            "x": 864,
+                            "y": 220
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_retries",
+                        "position": {
+                            "h": 120,
+                            "w": 288,
+                            "x": 1152,
+                            "y": 220
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_header_trends",
+                        "position": {
+                            "h": 50,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 340
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_request_volume",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 390
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_token_usage_time",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 390
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_latency_distribution",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 670
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_latency_time",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 670
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_header_cost",
+                        "position": {
+                            "h": 50,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 950
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_cost_time",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 1000
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_cost_by_service",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 1000
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_header_service",
+                        "position": {
+                            "h": 50,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 1280
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_requests_by_service",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 1330
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_service_performance",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 1330
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_header_model",
+                        "position": {
+                            "h": 50,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 1610
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_model_usage",
+                        "position": {
+                            "h": 280,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 1660
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_header_session",
+                        "position": {
+                            "h": 50,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 1940
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_session_activity",
+                        "position": {
+                            "h": 280,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 1990
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_header_status",
+                        "position": {
+                            "h": 50,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 2270
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_status_distribution",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 2320
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_error_messages",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 2320
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_header_logs",
+                        "position": {
+                            "h": 50,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 2600
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_recent_requests",
+                        "position": {
+                            "h": 300,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 2650
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_header_compliance",
+                        "position": {
+                            "h": 50,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 2950
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_compliance_summary",
+                        "position": {
+                            "h": 180,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 3000
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_header_tfidf",
+                        "position": {
+                            "h": 50,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 3200
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_prompt_anomalies",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 0,
+                            "y": 3250
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_response_anomalies",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 360,
+                            "y": 3250
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_high_risk",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 720,
+                            "y": 3250
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_anomaly_rate",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 1080,
+                            "y": 3250
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_prompt_trend",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 3370
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_response_trend",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 3370
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_risk_distribution",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 3650
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_top_sources",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 3650
+                        },
+                        "type": "block"
+                    }
+                ],
+                "type": "grid"
+            },
+            "layout_paps5C1R": {
+                "options": {
+                    "height": 1950,
+                    "width": 1440
+                },
+                "structure": [
+                    {
+                        "item": "viz_header_tfidf",
+                        "position": {
+                            "h": 50,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 0
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_prompt_anomalies",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 0,
+                            "y": 50
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_response_anomalies",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 360,
+                            "y": 50
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_high_risk",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 720,
+                            "y": 50
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_anomaly_rate",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 1080,
+                            "y": 50
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_prompt_trend",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 170
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_response_trend",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 170
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_risk_distribution",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 450
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_top_sources",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 450
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_header_prompt_injection",
+                        "position": {
+                            "h": 50,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 750
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_prompt_injection_total",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 0,
+                            "y": 800
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_prompt_injection_critical",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 360,
+                            "y": 800
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_prompt_injection_high",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 720,
+                            "y": 800
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_prompt_injection_rate",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 1080,
+                            "y": 800
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_prompt_injection_trend",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 920
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_prompt_injection_by_technique",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 920
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_prompt_injection_severity_distribution",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 1200
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_prompt_injection_top_sources",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 1200
+                        },
+                        "type": "block"
+                    }
+                ],
+                "type": "grid"
+            },
+            "layout_pii_ml": {
+                "options": {
+                    "height": 1400,
+                    "width": 1440
+                },
+                "structure": [
+                    {
+                        "item": "viz_header_pii_ml",
+                        "position": {
+                            "h": 70,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 0
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_pii_ml_total",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 0,
+                            "y": 70
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_pii_ml_critical",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 360,
+                            "y": 70
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_pii_ml_high_risk",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 720,
+                            "y": 70
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_pii_ml_rate",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 1080,
+                            "y": 70
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_pii_ml_trend",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 190
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_pii_ml_category",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 190
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_pii_ml_risk_distribution",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 470
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_pii_ml_by_service",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 470
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_pii_ml_recent",
+                        "position": {
+                            "h": 350,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 750
+                        },
+                        "type": "block"
+                    }
+                ],
+                "type": "grid"
+            }
+        },
+        "options": {
+            "showTitleAndDescription": true
+        },
+        "tabs": {
+            "items": [
+                {
+                    "label": "Overview",
+                    "layoutId": "layout_1"
+                },
+                {
+                    "label": "TF-IDF Anomaly Detection",
+                    "layoutId": "layout_paps5C1R"
+                },
+                {
+                    "label": "PII Detection",
+                    "layoutId": "layout_pii_ml"
+                }
+            ]
+        }
+    }
+}
+    ]]></definition>
+</dashboard>

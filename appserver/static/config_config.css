@@ -1,0 +1,523 @@
+/**
+ * ServiceNow Configuration Page Styles
+ * Matches Splunk UCC framework styling
+ */
+
+.config-container {
+    font-family: "Splunk Platform Sans", "Proxima Nova", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    padding: 0;
+}
+
+/* Tabs */
+.config-tabs {
+    border-bottom: 1px solid #c3cbd4;
+    margin-bottom: 0;
+    padding: 0 20px;
+    background: #f5f5f5;
+}
+
+.config-tab {
+    background: transparent;
+    border: none;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #333;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.2s;
+}
+
+.config-tab:hover {
+    color: #5CC05C;
+}
+
+.config-tab.active {
+    color: #5CC05C;
+    border-bottom-color: #5CC05C;
+}
+
+/* Tab Content */
+.config-tab-content {
+    display: none;
+    padding: 20px;
+}
+
+.config-tab-content.active {
+    display: block;
+}
+
+/* Config Header */
+.config-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.item-count {
+    font-size: 14px;
+    color: #666;
+}
+
+.config-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.search-input {
+    padding: 8px 12px;
+    border: 1px solid #c3cbd4;
+    border-radius: 4px;
+    font-size: 14px;
+    width: 200px;
+}
+
+.search-input:focus {
+    border-color: #5CC05C;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(92, 192, 92, 0.2);
+}
+
+/* Buttons */
+.btn {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: #5CC05C;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #4da64d;
+}
+
+.btn-secondary {
+    background: #f5f5f5;
+    color: #333;
+    border: 1px solid #c3cbd4;
+}
+
+.btn-secondary:hover {
+    background: #e8e8e8;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Table */
+.config-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.config-table th {
+    text-align: left;
+    padding: 12px 15px;
+    background: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+    font-weight: 600;
+    color: #333;
+}
+
+.config-table th.sortable {
+    cursor: pointer;
+}
+
+.config-table th.sortable:hover {
+    background: #e9ecef;
+}
+
+.sort-icon {
+    font-size: 10px;
+    margin-left: 5px;
+    color: #999;
+}
+
+.config-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #dee2e6;
+    color: #333;
+}
+
+.config-table tbody tr:hover {
+    background: #f8f9fa;
+}
+
+.config-table .no-records td {
+    text-align: center;
+    color: #666;
+    padding: 40px;
+}
+
+.config-table .actions-cell {
+    white-space: nowrap;
+}
+
+.action-link {
+    color: #5CC05C;
+    text-decoration: none;
+    margin-right: 15px;
+    cursor: pointer;
+}
+
+.action-link:hover {
+    text-decoration: underline;
+}
+
+.action-link.delete {
+    color: #dc3545;
+}
+
+/* Modal */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 50px;
+    overflow-y: auto;
+}
+
+.modal-overlay.show {
+    display: flex;
+}
+
+.modal-dialog {
+    background: white;
+    border-radius: 4px;
+    width: 800px;
+    max-width: 95%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    margin-bottom: 50px;
+}
+
+.modal-dialog.modal-sm {
+    width: 400px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 500;
+    color: #333;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: #999;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.modal-close:hover {
+    color: #333;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 15px 20px;
+    border-top: 1px solid #e0e0e0;
+    background: #f8f9fa;
+}
+
+/* Form */
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: #333;
+    font-size: 14px;
+}
+
+.form-group label .required {
+    color: #dc3545;
+    margin-right: 2px;
+}
+
+.form-group input[type="text"],
+.form-group input[type="password"] {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #c3cbd4;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.form-group select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #c3cbd4;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+    background-color: white;
+    color: #333;
+    cursor: pointer;
+    height: auto;
+    min-height: 42px;
+}
+
+.form-group select option {
+    color: #333;
+    background-color: white;
+    padding: 10px;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    border-color: #5CC05C;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(92, 192, 92, 0.2);
+}
+
+.form-group .help-text {
+    font-size: 12px;
+    color: #666;
+    margin-top: 5px;
+}
+
+.form-error {
+    color: #dc3545;
+    font-size: 13px;
+    margin-top: 10px;
+    display: none;
+}
+
+.form-error.show {
+    display: block;
+}
+
+/* Auth Fields Sections */
+.auth-fields {
+    border-top: 1px solid #e0e0e0;
+    padding-top: 15px;
+    margin-top: 15px;
+}
+
+/* Hide default Splunk panel styling */
+.dashboard-body .dashboard-panel {
+    background: white;
+    border: 1px solid #c3cbd4;
+    border-radius: 4px;
+}
+
+.dashboard-body .panel-body {
+    padding: 0;
+}
+
+.dashboard-body .panel-head {
+    display: none;
+}
+
+/* GenAI Settings Styles */
+.genai-settings,
+.detection-settings {
+    max-width: 700px;
+}
+
+.settings-section {
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.settings-section:last-of-type {
+    border-bottom: none;
+}
+
+.settings-section h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+    margin: 0 0 10px 0;
+}
+
+.section-description {
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 20px;
+    line-height: 1.5;
+}
+
+/* Toggle Switch */
+.toggle-group {
+    margin-bottom: 25px;
+}
+
+.toggle-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 26px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 26px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: #5CC05C;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(24px);
+}
+
+.toggle-label {
+    font-size: 14px;
+    color: #666;
+    font-weight: 500;
+}
+
+.toggle-label.enabled {
+    color: #5CC05C;
+}
+
+/* API Settings */
+#api-settings {
+    transition: opacity 0.3s;
+}
+
+#api-settings.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* RNG Seed Field */
+#rng-seed-group {
+    transition: opacity 0.3s;
+}
+
+#rng-seed-group.disabled {
+    opacity: 0.5;
+}
+
+#rng-seed-group.disabled input {
+    background-color: #f5f5f5;
+    cursor: not-allowed;
+}
+
+.form-group input[type="number"] {
+    width: 150px;
+    padding: 10px 12px;
+    border: 1px solid #c3cbd4;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+/* Settings Actions */
+.settings-actions {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding-top: 20px;
+}
+
+.save-status {
+    font-size: 14px;
+    color: #666;
+}
+
+.save-status.success {
+    color: #5CC05C;
+}
+
+.save-status.error {
+    color: #dc3545;
+}
+
+/* Links in help text */
+.help-text a {
+    color: #5CC05C;
+    text-decoration: none;
+}
+
+.help-text a:hover {
+    text-decoration: underline;
+}

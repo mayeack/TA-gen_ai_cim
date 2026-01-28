@@ -1,0 +1,591 @@
+
+<dashboard version="2" theme="dark">
+    <label>Prompt Injection Detection</label>
+    <description>ML-based detection of adversarial prompt injection attacks targeting AI models.</description>
+    <definition><![CDATA[
+{
+    "title": "Prompt Injection Detection",
+    "description": "ML-based detection of adversarial prompt injection attacks targeting AI models.",
+    "inputs": {
+        "input_model": {
+            "dataSources": {
+                "primary": "ds_model_filter"
+            },
+            "options": {
+                "defaultValue": "*",
+                "items": [
+                    {
+                        "label": "All Models",
+                        "value": "*"
+                    }
+                ],
+                "token": "model_filter"
+            },
+            "title": "Model ID",
+            "type": "input.dropdown"
+        },
+        "input_service": {
+            "dataSources": {
+                "primary": "ds_service_filter"
+            },
+            "options": {
+                "defaultValue": "*",
+                "items": [
+                    {
+                        "label": "All Services",
+                        "value": "*"
+                    }
+                ],
+                "token": "service_filter"
+            },
+            "title": "Service",
+            "type": "input.dropdown"
+        },
+        "input_time": {
+            "options": {
+                "defaultValue": "-24h@h,now",
+                "token": "time"
+            },
+            "title": "Time Range",
+            "type": "input.timerange"
+        }
+    },
+    "defaults": {
+        "dataSources": {
+            "ds.search": {
+                "options": {
+                    "queryParameters": {
+                        "earliest": "-24h@h",
+                        "latest": "now"
+                    }
+                }
+            }
+        }
+    },
+    "visualizations": {
+        "viz_header_prompt_injection": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## Prompt Injection Detection"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_total_scanned": {
+            "dataSources": {
+                "primary": "ds_total_scanned"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#53a051",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Total Scanned",
+            "type": "splunk.singlevalue"
+        },
+        "viz_injections_detected": {
+            "dataSources": {
+                "primary": "ds_injections_detected"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "to": 10,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 10,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Injections Detected",
+            "type": "splunk.singlevalue"
+        },
+        "viz_critical_severity": {
+            "dataSources": {
+                "primary": "ds_critical_severity"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Critical Severity",
+            "type": "splunk.singlevalue"
+        },
+        "viz_high_severity": {
+            "dataSources": {
+                "primary": "ds_high_severity"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "to": 5,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 5,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "High Severity",
+            "type": "splunk.singlevalue"
+        },
+        "viz_detection_rate": {
+            "dataSources": {
+                "primary": "ds_detection_rate"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 2,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 2,
+                        "to": 5,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 5,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "%",
+                "unitPosition": "after"
+            },
+            "title": "Detection Rate",
+            "type": "splunk.singlevalue"
+        },
+        "viz_detection_trend": {
+            "dataSources": {
+                "primary": "ds_detection_trend"
+            },
+            "options": {
+                "legendDisplay": "bottom",
+                "seriesColors": [
+                    "#dc4e41",
+                    "#53a051"
+                ],
+                "xAxisTitleText": "Time",
+                "yAxisTitleText": "Count"
+            },
+            "title": "Detection Trend",
+            "type": "splunk.line"
+        },
+        "viz_technique_distribution": {
+            "dataSources": {
+                "primary": "ds_technique_distribution"
+            },
+            "options": {
+                "seriesColors": [
+                    "#dc4e41",
+                    "#f1813f",
+                    "#f8be34",
+                    "#6ab7c7",
+                    "#a2cc3e",
+                    "#5cc05c"
+                ],
+                "xAxisTitleText": "Count",
+                "yAxisTitleText": "Technique"
+            },
+            "title": "Injections by Technique",
+            "type": "splunk.bar"
+        },
+        "viz_severity_distribution": {
+            "dataSources": {
+                "primary": "ds_severity_distribution"
+            },
+            "options": {
+                "labelDisplay": "valuesAndPercentage",
+                "seriesColorsByValue": {
+                    "critical": "#9c1c1c",
+                    "high": "#dc4e41",
+                    "medium": "#f8be34",
+                    "low": "#53a051",
+                    "none": "#6ab7c7"
+                },
+                "showDonutHole": true
+            },
+            "title": "Severity Distribution",
+            "type": "splunk.pie"
+        },
+        "viz_confidence_distribution": {
+            "dataSources": {
+                "primary": "ds_confidence_distribution"
+            },
+            "options": {
+                "labelDisplay": "valuesAndPercentage",
+                "seriesColorsByValue": {
+                    "very_high": "#9c1c1c",
+                    "high": "#dc4e41",
+                    "medium": "#f8be34",
+                    "low": "#53a051",
+                    "very_low": "#6ab7c7"
+                },
+                "showDonutHole": true
+            },
+            "title": "Confidence Distribution",
+            "type": "splunk.pie"
+        },
+        "viz_top_sources": {
+            "dataSources": {
+                "primary": "ds_top_sources"
+            },
+            "options": {
+                "count": 10
+            },
+            "title": "Top Injection Sources",
+            "type": "splunk.table"
+        },
+        "viz_recent_detections": {
+            "context": {
+                "SeverityColumnFormatEditorConfig": {},
+                "SeverityRowBackgroundColorConfig": [
+                    {
+                        "match": "critical",
+                        "value": "#9c1c1c"
+                    },
+                    {
+                        "match": "high",
+                        "value": "#DC4E41"
+                    },
+                    {
+                        "match": "medium",
+                        "value": "#F8BE34"
+                    }
+                ]
+            },
+            "dataSources": {
+                "primary": "ds_recent_detections"
+            },
+            "eventHandlers": [
+                {
+                    "type": "drilldown.linkToSearch",
+                    "options": {
+                        "search": "index=gen_ai_log gen_ai.request.id=\"$row.Request_ID.value$\"",
+                        "earliest": "$time.earliest$",
+                        "latest": "$time.latest$",
+                        "openInNewTab": true
+                    }
+                }
+            ],
+            "options": {
+                "columnFormat": {
+                    "Severity": {
+                        "data": "> table | seriesByName('Severity') | formatByType(SeverityColumnFormatEditorConfig)",
+                        "rowBackgroundColors": "> table | seriesByName('Severity') | matchValue(SeverityRowBackgroundColorConfig)"
+                    }
+                },
+                "count": 25,
+                "drilldown": "row"
+            },
+            "title": "Recent Detections",
+            "type": "splunk.table"
+        }
+    },
+    "dataSources": {
+        "ds_model_filter": {
+            "options": {
+                "query": "index=gen_ai_log | stats count by gen_ai.request.model | fields gen_ai.request.model",
+                "queryParameters": {
+                    "earliest": "-7d@d",
+                    "latest": "now"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_service_filter": {
+            "options": {
+                "query": "index=gen_ai_log | stats count by gen_ai.app.name | fields gen_ai.app.name",
+                "queryParameters": {
+                    "earliest": "-7d@d",
+                    "latest": "now"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_total_scanned": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" | stats count as total_scanned | eval total_scanned=coalesce(total_scanned, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_injections_detected": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" gen_ai.prompt_injection.ml_detected=\"true\" | stats count as injections_detected | eval injections_detected=coalesce(injections_detected, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_critical_severity": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" gen_ai.prompt_injection.severity=\"critical\" | stats count as critical_count | eval critical_count=coalesce(critical_count, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_high_severity": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" gen_ai.prompt_injection.severity=\"high\" | stats count as high_count | eval high_count=coalesce(high_count, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_detection_rate": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" | stats count as total, sum(eval(if('gen_ai.prompt_injection.ml_detected'=\"true\", 1, 0))) as detected | eval detection_rate=round(coalesce(detected, 0)/coalesce(total, 1)*100, 1) | fields detection_rate",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_detection_trend": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" | timechart span=1h count(eval('gen_ai.prompt_injection.ml_detected'=\"true\")) as injections_detected, count(eval('gen_ai.prompt_injection.ml_detected'=\"false\")) as clean_prompts",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_technique_distribution": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" gen_ai.prompt_injection.ml_detected=\"true\" | stats count as Count by gen_ai.prompt_injection.technique | rename gen_ai.prompt_injection.technique as Technique | sort -Count",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_severity_distribution": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" gen_ai.prompt_injection.severity=* | stats count by gen_ai.prompt_injection.severity | rename gen_ai.prompt_injection.severity as Severity",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_confidence_distribution": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" gen_ai.prompt_injection.confidence=* | stats count by gen_ai.prompt_injection.confidence | rename gen_ai.prompt_injection.confidence as Confidence",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_top_sources": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" gen_ai.prompt_injection.ml_detected=\"true\" | stats count as Injection_Count, dc(gen_ai.session.id) as Sessions, values(gen_ai.prompt_injection.technique) as Techniques, values(gen_ai.app.name) as Services by client.address | rename client.address as Source_IP | sort -Injection_Count | head 10",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_recent_detections": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" | eval Timestamp=strftime(_time, \"%Y-%m-%d %H:%M:%S\"), Request_ID='gen_ai.request.id', Service='gen_ai.app.name', Model='gen_ai.request.model', Detected='gen_ai.prompt_injection.ml_detected', Severity='gen_ai.prompt_injection.severity', Technique='gen_ai.prompt_injection.technique', Confidence='gen_ai.prompt_injection.confidence', Risk_Score='gen_ai.prompt_injection.risk_score' | table Request_ID, Timestamp, Service, Model, Detected, Severity, Technique, Confidence, Risk_Score | sort -Timestamp | head 25",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        }
+    },
+    "layout": {
+        "globalInputs": [
+            "input_time",
+            "input_service",
+            "input_model"
+        ],
+        "options": {
+            "showTitleAndDescription": true,
+            "height": 1400,
+            "width": 1440
+        },
+        "type": "grid",
+        "structure": [
+            {
+                "item": "viz_header_prompt_injection",
+                "position": {
+                    "h": 50,
+                    "w": 1440,
+                    "x": 0,
+                    "y": 0
+                },
+                "type": "block"
+            },
+            {
+                "item": "viz_total_scanned",
+                "position": {
+                    "h": 120,
+                    "w": 288,
+                    "x": 0,
+                    "y": 50
+                },
+                "type": "block"
+            },
+            {
+                "item": "viz_injections_detected",
+                "position": {
+                    "h": 120,
+                    "w": 288,
+                    "x": 288,
+                    "y": 50
+                },
+                "type": "block"
+            },
+            {
+                "item": "viz_critical_severity",
+                "position": {
+                    "h": 120,
+                    "w": 288,
+                    "x": 576,
+                    "y": 50
+                },
+                "type": "block"
+            },
+            {
+                "item": "viz_high_severity",
+                "position": {
+                    "h": 120,
+                    "w": 288,
+                    "x": 864,
+                    "y": 50
+                },
+                "type": "block"
+            },
+            {
+                "item": "viz_detection_rate",
+                "position": {
+                    "h": 120,
+                    "w": 288,
+                    "x": 1152,
+                    "y": 50
+                },
+                "type": "block"
+            },
+            {
+                "item": "viz_detection_trend",
+                "position": {
+                    "h": 280,
+                    "w": 720,
+                    "x": 0,
+                    "y": 170
+                },
+                "type": "block"
+            },
+            {
+                "item": "viz_technique_distribution",
+                "position": {
+                    "h": 280,
+                    "w": 720,
+                    "x": 720,
+                    "y": 170
+                },
+                "type": "block"
+            },
+            {
+                "item": "viz_severity_distribution",
+                "position": {
+                    "h": 280,
+                    "w": 720,
+                    "x": 0,
+                    "y": 450
+                },
+                "type": "block"
+            },
+            {
+                "item": "viz_confidence_distribution",
+                "position": {
+                    "h": 280,
+                    "w": 720,
+                    "x": 720,
+                    "y": 450
+                },
+                "type": "block"
+            },
+            {
+                "item": "viz_top_sources",
+                "position": {
+                    "h": 280,
+                    "w": 720,
+                    "x": 0,
+                    "y": 730
+                },
+                "type": "block"
+            },
+            {
+                "item": "viz_recent_detections",
+                "position": {
+                    "h": 350,
+                    "w": 1440,
+                    "x": 0,
+                    "y": 1010
+                },
+                "type": "block"
+            }
+        ]
+    }
+}
+]]></definition>
+</dashboard>

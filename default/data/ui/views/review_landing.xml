@@ -1,0 +1,50 @@
+<dashboard version="1.1" theme="dark" script="review_landing.js" hideEdit="true" hideExport="true">
+  <label>Opening AI Review...</label>
+  
+  <!-- Standalone search at dashboard level for JavaScript access -->
+  <search id="fetch_event_data">
+    <query>index=gen_ai_log gen_ai.event.id="$event_id$" 
+| head 1 
+| eval event_id='gen_ai.event.id',
+    trace_id=coalesce('gen_ai.trace.id', trace_id, ""),
+    event_time=_time,
+    app=coalesce('gen_ai.app.name', service_name, "Unknown"),
+    model=coalesce('gen_ai.request.model', request_model, "Unknown"),
+    prompt_preview=substr(coalesce('gen_ai.input.messages', ""), 1, 200),
+    response_preview=substr(coalesce('gen_ai.output.messages', ""), 1, 200)
+| table event_id, trace_id, event_time, app, model, prompt_preview, response_preview</query>
+    <earliest>-90d@d</earliest>
+    <latest>now</latest>
+  </search>
+  
+  <row>
+    <panel>
+      <html>
+        <div id="review_status" style="text-align: center; padding: 50px; font-size: 18px;">
+          <div id="loading_message">
+            <p>Processing request...</p>
+            <p style="color: #999; font-size: 14px;">Creating review queue entry</p>
+          </div>
+          <div id="error_message" style="display: none; color: #dc3545;">
+            <p>Error</p>
+            <p id="error_text" style="font-size: 14px;"></p>
+          </div>
+          <div id="success_message" style="display: none; color: #28a745;">
+            <p>Redirecting to Event Review...</p>
+            <p style="font-size: 14px;"><a id="manual_link" href="#" target="_self">Click here if not redirected</a></p>
+          </div>
+        </div>
+      </html>
+    </panel>
+  </row>
+  
+  <row>
+    <panel>
+      <table id="review_results" style="display: none;">
+        <search base="fetch_event_data" />
+        <option name="drilldown">none</option>
+        <option name="refresh.display">none</option>
+      </table>
+    </panel>
+  </row>
+</dashboard>

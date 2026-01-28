@@ -1,0 +1,331 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<form version="1.1" theme="dark" script="review_save.js" stylesheet="event_review.css">
+  <label>Event Review</label>
+  <description>Review AI event content and record findings.</description>
+
+  <!-- Load detection settings to control field visibility -->
+  <search id="load_detection_settings">
+    <query>| rest /servicesNS/nobody/TA-gen_ai_cim/configs/conf-ta_gen_ai_cim_detection/settings 
+| eval show_pii=if(detect_pii=="1" OR detect_pii=="true", "true", "")
+| eval show_phi=if(detect_phi=="1" OR detect_phi=="true", "true", "")
+| eval show_injection=if(detect_prompt_injection=="1" OR detect_prompt_injection=="true", "true", "")
+| eval show_anomaly=if(detect_anomalies=="1" OR detect_anomalies=="true", "true", "")
+| table show_pii, show_phi, show_injection, show_anomaly</query>
+    <earliest>-1m</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.show_anomaly$==&quot;true&quot;">
+        <set token="show_anomaly_fields">true</set>
+      </condition>
+      <condition>
+        <unset token="show_anomaly_fields"></unset>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Load existing values when event_id changes -->
+  <search id="load_existing">
+    <query>| inputlookup gen_ai_review_findings_lookup 
+| search gen_ai_event_id="$form.event_id$" 
+| head 1
+| eval pii_confirmed=if(gen_ai_review_pii_confirmed=="1" OR gen_ai_review_pii_confirmed=="true", "true", "false")
+| eval phi_confirmed=if(gen_ai_review_phi_confirmed=="1" OR gen_ai_review_phi_confirmed=="true", "true", "false")
+| eval prompt_injection_confirmed=if(gen_ai_review_prompt_injection_confirmed=="1" OR gen_ai_review_prompt_injection_confirmed=="true", "true", "false")
+| eval pii_types_reviewed=if(isnull(gen_ai_review_pii_types_reviewed) OR gen_ai_review_pii_types_reviewed=="", "", gen_ai_review_pii_types_reviewed)
+| eval anomaly_prompt_detected=if(isnull(gen_ai_review_anomaly_prompt_detected) OR gen_ai_review_anomaly_prompt_detected=="", "n/a", gen_ai_review_anomaly_prompt_detected)
+| eval anomaly_prompt_reviewed=if(isnull(gen_ai_review_anomaly_prompt_reviewed) OR gen_ai_review_anomaly_prompt_reviewed=="", "n/a", gen_ai_review_anomaly_prompt_reviewed)
+| eval anomaly_response_detected=if(isnull(gen_ai_review_anomaly_response_detected) OR gen_ai_review_anomaly_response_detected=="", "n/a", gen_ai_review_anomaly_response_detected)
+| eval anomaly_response_reviewed=if(isnull(gen_ai_review_anomaly_response_reviewed) OR gen_ai_review_anomaly_response_reviewed=="", "n/a", gen_ai_review_anomaly_response_reviewed)
+| table gen_ai_review_status, gen_ai_review_priority, gen_ai_review_assignee, pii_confirmed, gen_ai_review_pii_types, pii_types_reviewed, phi_confirmed, gen_ai_review_phi_types, prompt_injection_confirmed, gen_ai_review_prompt_injection_type, anomaly_prompt_detected, anomaly_prompt_reviewed, anomaly_response_detected, anomaly_response_reviewed, gen_ai_review_notes</query>
+    <earliest>-1m</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$job.resultCount$ &gt; 0">
+        <set token="form.input_status">$result.gen_ai_review_status$</set>
+        <set token="form.input_priority">$result.gen_ai_review_priority$</set>
+        <set token="form.input_assignee">$result.gen_ai_review_assignee$</set>
+        <set token="form.input_pii_confirmed">$result.pii_confirmed$</set>
+        <set token="form.input_pii_types">$result.gen_ai_review_pii_types$</set>
+        <set token="form.input_phi_confirmed">$result.phi_confirmed$</set>
+        <set token="form.input_phi_types">$result.gen_ai_review_phi_types$</set>
+        <set token="form.input_injection_confirmed">$result.prompt_injection_confirmed$</set>
+        <set token="form.input_injection_type">$result.gen_ai_review_prompt_injection_type$</set>
+        <set token="form.input_anomaly_prompt_detected">$result.anomaly_prompt_detected$</set>
+        <set token="form.input_anomaly_prompt_reviewed">$result.anomaly_prompt_reviewed$</set>
+        <set token="form.input_anomaly_response_detected">$result.anomaly_response_detected$</set>
+        <set token="form.input_anomaly_response_reviewed">$result.anomaly_response_reviewed$</set>
+        <set token="form.input_notes">$result.gen_ai_review_notes$</set>
+      </condition>
+      <condition>
+        <set token="form.input_pii_confirmed">false</set>
+        <set token="form.input_pii_types"></set>
+        <set token="form.input_phi_confirmed">false</set>
+        <set token="form.input_phi_types"></set>
+        <set token="form.input_injection_confirmed">false</set>
+        <set token="form.input_injection_type"></set>
+        <set token="form.input_anomaly_prompt_detected">n/a</set>
+        <set token="form.input_anomaly_prompt_reviewed">n/a</set>
+        <set token="form.input_anomaly_response_detected">n/a</set>
+        <set token="form.input_anomaly_response_reviewed">n/a</set>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Search for prompt content -->
+  <search id="search_prompt">
+    <query>index=gen_ai_log gen_ai.event.id="$form.event_id$" gen_ai.input.messages=* | head 1 | table gen_ai.input.messages</query>
+    <earliest>-90d@d</earliest>
+    <latest>now</latest>
+  </search>
+
+  <!-- Search for response content -->
+  <search id="search_response">
+    <query>index=gen_ai_log gen_ai.event.id="$form.event_id$" gen_ai.output.messages=* | head 1 | table gen_ai.output.messages</query>
+    <earliest>-90d@d</earliest>
+    <latest>now</latest>
+  </search>
+
+  <!-- Search for detected PII types from event data (may be in pii_ml_scoring source) -->
+  <search id="search_detected_pii">
+    <query>index=* gen_ai.event.id="$form.event_id$" gen_ai.pii.types=* | head 1 | eval pii_types='gen_ai.pii.types' | table pii_types</query>
+    <earliest>-90d@d</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$job.resultCount$ &gt; 0">
+        <set token="form.input_pii_types_detected">$result.pii_types$</set>
+      </condition>
+      <condition>
+        <set token="form.input_pii_types_detected"></set>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Search for anomaly detection from tfidf_combined_scoring -->
+  <search id="search_anomaly_scoring">
+    <query>index=gen_ai_log gen_ai.event.id="$form.event_id$" source=tfidf_combined_scoring | head 1 | eval prompt_anomaly_detected=if(isnull('gen_ai.prompt.is_anomaly') OR 'gen_ai.prompt.is_anomaly'="", "n/a", upper('gen_ai.prompt.is_anomaly')), response_anomaly_detected=if(isnull('gen_ai.response.is_anomaly') OR 'gen_ai.response.is_anomaly'="", "n/a", upper('gen_ai.response.is_anomaly')) | table prompt_anomaly_detected, response_anomaly_detected</query>
+    <earliest>-90d@d</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$job.resultCount$ &gt; 0">
+        <set token="form.input_anomaly_prompt_detected">$result.prompt_anomaly_detected$</set>
+        <set token="form.input_anomaly_response_detected">$result.response_anomaly_detected$</set>
+      </condition>
+      <condition>
+        <set token="form.input_anomaly_prompt_detected">n/a</set>
+        <set token="form.input_anomaly_response_detected">n/a</set>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Event ID Selection Row -->
+  <row>
+    <panel>
+      <input type="dropdown" token="event_id" searchWhenChanged="true">
+        <label>Event ID</label>
+        <fieldForLabel>gen_ai_event_id</fieldForLabel>
+        <fieldForValue>gen_ai_event_id</fieldForValue>
+        <search>
+          <query>| inputlookup gen_ai_review_findings_lookup | search gen_ai_review_status IN ("new", "assigned", "in_review") | dedup gen_ai_event_id | sort -gen_ai_review_updated_at | table gen_ai_event_id</query>
+        </search>
+        <choice value="">-- Select Event --</choice>
+      </input>
+    </panel>
+    <panel>
+      <html>
+        <button id="saveReviewBtn" type="button" class="btn btn-primary">Save</button>
+        <span id="saveStatusMsg"></span>
+      </html>
+    </panel>
+  </row>
+
+  <!-- Reviewer Notes Row -->
+  <row depends="$form.event_id$">
+    <panel>
+      <html>
+        <div class="notes-container">
+          <label class="notes-label">Reviewer Notes</label>
+          <textarea id="notesTextarea" placeholder="Enter reviewer notes..."></textarea>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- Main Three-Column Layout: Review Findings | Prompt | Response -->
+  <row depends="$form.event_id$">
+    <!-- LEFT: Review Findings -->
+    <panel>
+      <title>Review Findings</title>
+      <html>
+        <style>
+          /* Expand form inputs in Review Findings panel */
+          .dashboard-row:nth-child(3) .dashboard-panel:first-child .input {
+            width: 100% !important;
+            max-width: none !important;
+          }
+          .dashboard-row:nth-child(3) .dashboard-panel:first-child .input select,
+          .dashboard-row:nth-child(3) .dashboard-panel:first-child .input input[type="text"],
+          .dashboard-row:nth-child(3) .dashboard-panel:first-child .splunk-choice-input {
+            width: 100% !important;
+            min-width: 200px !important;
+          }
+        </style>
+      </html>
+      <input type="dropdown" token="input_status">
+        <label>Status</label>
+        <choice value="new">New</choice>
+        <choice value="assigned">Assigned</choice>
+        <choice value="in_review">In Review</choice>
+        <choice value="completed">Completed</choice>
+        <choice value="rejected">Rejected</choice>
+      </input>
+      <input type="dropdown" token="input_priority">
+        <label>Priority</label>
+        <choice value="low">Low</choice>
+        <choice value="medium">Medium</choice>
+        <choice value="high">High</choice>
+        <choice value="critical">Critical</choice>
+      </input>
+      <input type="dropdown" token="input_assignee">
+        <label>Assignee</label>
+        <choice value="">-- Unassigned --</choice>
+        <fieldForLabel>title</fieldForLabel>
+        <fieldForValue>name</fieldForValue>
+        <search>
+          <query>| rest /services/authentication/users | search roles="ai_reviewers" | table name, title</query>
+        </search>
+      </input>
+      <input type="dropdown" token="input_pii_confirmed" id="input_pii_confirmed">
+        <label>PII Present?</label>
+        <choice value="false">No</choice>
+        <choice value="true">Yes</choice>
+      </input>
+      <input type="multiselect" token="input_pii_types_detected" id="input_pii_types_detected">
+        <label>PII Types (Detected)</label>
+        <choice value="SSN">SSN</choice>
+        <choice value="EMAIL">EMAIL</choice>
+        <choice value="PHONE">PHONE</choice>
+        <choice value="DOB">DOB</choice>
+        <choice value="ADDRESS">ADDRESS</choice>
+        <choice value="CREDIT_CARD">CREDIT_CARD</choice>
+        <choice value="NAME">NAME</choice>
+        <delimiter>,</delimiter>
+      </input>
+      <input type="multiselect" token="input_pii_types_reviewed" id="input_pii_types_reviewed">
+        <label>PII Types (Reviewed)</label>
+        <choice value="SSN">SSN</choice>
+        <choice value="EMAIL">EMAIL</choice>
+        <choice value="PHONE">PHONE</choice>
+        <choice value="DOB">DOB</choice>
+        <choice value="ADDRESS">ADDRESS</choice>
+        <choice value="CREDIT_CARD">CREDIT_CARD</choice>
+        <choice value="NAME">NAME</choice>
+        <delimiter>,</delimiter>
+      </input>
+      <input type="dropdown" token="input_phi_confirmed" id="input_phi_confirmed">
+        <label>PHI Present?</label>
+        <choice value="false">No</choice>
+        <choice value="true">Yes</choice>
+      </input>
+      <input type="multiselect" token="input_phi_types" id="input_phi_types">
+        <label>PHI Types</label>
+        <choice value="MEDICAL_RECORD">Medical Record</choice>
+        <choice value="DIAGNOSIS">Diagnosis</choice>
+        <choice value="TREATMENT">Treatment</choice>
+        <choice value="MEDICATION">Medication</choice>
+        <choice value="HEALTH_INSURANCE">Health Insurance</choice>
+        <choice value="PROVIDER_INFO">Provider Info</choice>
+        <delimiter>,</delimiter>
+      </input>
+      <input type="dropdown" token="input_injection_confirmed" id="input_injection_confirmed">
+        <label>Injection Detected?</label>
+        <choice value="false">No</choice>
+        <choice value="true">Yes</choice>
+      </input>
+      <input type="dropdown" token="input_injection_type" id="input_injection_type">
+        <label>Injection Type</label>
+        <choice value="">N/A</choice>
+        <choice value="jailbreak">Jailbreak</choice>
+        <choice value="data_exfil">Data Exfiltration</choice>
+        <choice value="other">Other</choice>
+      </input>
+      <input type="dropdown" token="input_anomaly_prompt_detected" id="input_anomaly_prompt_detected" depends="$show_anomaly_fields$">
+        <label>Prompt Anomaly (Detected)</label>
+        <choice value="n/a">n/a</choice>
+        <choice value="FALSE">FALSE</choice>
+        <choice value="TRUE">TRUE</choice>
+        <default>n/a</default>
+      </input>
+      <input type="dropdown" token="input_anomaly_prompt_reviewed" id="input_anomaly_prompt_reviewed" depends="$show_anomaly_fields$">
+        <label>Prompt Anomaly (Reviewed)</label>
+        <choice value="n/a">n/a</choice>
+        <choice value="FALSE">FALSE</choice>
+        <choice value="TRUE">TRUE</choice>
+        <default>n/a</default>
+      </input>
+      <input type="dropdown" token="input_anomaly_response_detected" id="input_anomaly_response_detected" depends="$show_anomaly_fields$">
+        <label>Response Anomaly (Detected)</label>
+        <choice value="n/a">n/a</choice>
+        <choice value="FALSE">FALSE</choice>
+        <choice value="TRUE">TRUE</choice>
+        <default>n/a</default>
+      </input>
+      <input type="dropdown" token="input_anomaly_response_reviewed" id="input_anomaly_response_reviewed" depends="$show_anomaly_fields$">
+        <label>Response Anomaly (Reviewed)</label>
+        <choice value="n/a">n/a</choice>
+        <choice value="FALSE">FALSE</choice>
+        <choice value="TRUE">TRUE</choice>
+        <default>n/a</default>
+      </input>
+    </panel>
+    <!-- MIDDLE: Prompt -->
+    <panel>
+      <title>Prompt (Input)</title>
+      <table>
+        <search base="search_prompt">
+          <query>| rename gen_ai.input.messages AS "Input Messages"</query>
+        </search>
+        <option name="wrap">true</option>
+        <option name="drilldown">none</option>
+        <option name="count">1</option>
+      </table>
+    </panel>
+    <!-- RIGHT: Response -->
+    <panel>
+      <title>Response (Output)</title>
+      <table>
+        <search base="search_response">
+          <query>| rename gen_ai.output.messages AS "Output Messages"</query>
+        </search>
+        <option name="wrap">true</option>
+        <option name="drilldown">none</option>
+        <option name="count">1</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- Event Context -->
+  <row depends="$form.event_id$">
+    <panel>
+      <title>Event Context</title>
+      <table>
+        <search>
+          <query>index=gen_ai_log gen_ai.event.id="$form.event_id$" | head 1 | eval service=coalesce('gen_ai.app.name', "N/A"), model=coalesce('gen_ai.request.model', "N/A"), user=coalesce('gen_ai.user.id', "N/A") | table service, model, user | rename service AS "Service", model AS "Model", user AS "User"</query>
+          <earliest>-30d@d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <html>
+        <div style="text-align: center; padding: 12px;">
+          <a href="/app/TA-gen_ai_cim/review_queue">← Back to Review Queue</a>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+</form>

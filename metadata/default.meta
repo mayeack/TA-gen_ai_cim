@@ -1,0 +1,149 @@
+#
+# default.meta - Permissions and metadata
+# TA-gen_ai_cim
+#
+# Updated: Added ServiceNow AI Case Management integration permissions
+#
+
+# Global settings
+[]
+access = read : [ * ], write : [ admin ]
+export = system
+
+# Views (if any dashboards are added)
+[views]
+access = read : [ * ], write : [ admin, power ]
+export = system
+
+# Saved searches
+[savedsearches]
+access = read : [ * ], write : [ admin, power ]
+export = system
+
+# Lookups (if any are added)
+[lookups]
+access = read : [ * ], write : [ admin ]
+export = system
+
+# Macros (if any are added)
+[macros]
+access = read : [ * ], write : [ admin ]
+export = system
+
+# KV Store collections
+[collections]
+access = read : [ * ], write : [ admin ]
+export = system
+
+# KV Store lookup transforms
+[transforms/genai_token_cost_lookup]
+access = read : [ * ], write : [ admin ]
+export = system
+
+###############################################################################
+# SERVICENOW AI CASE MANAGEMENT INTEGRATION PERMISSIONS
+###############################################################################
+
+# ServiceNow case mapping KV Store lookup
+[transforms/gen_ai_snow_case_map_lookup]
+access = read : [ * ], write : [ admin, power ]
+export = system
+
+# ServiceNow case mapping KV Store collection
+# Allow power users to create cases, admin to manage
+[collections/gen_ai_snow_case_map]
+access = read : [ * ], write : [ admin, power ]
+export = system
+
+# Custom search command - aicase
+# All users can read (run the command), admins can modify
+[commands/aicase]
+access = read : [ * ], write : [ admin ]
+export = system
+
+# Workflow actions for Event Context menu
+[workflow_actions]
+access = read : [ * ], write : [ admin ]
+export = system
+
+# Specific workflow action permissions
+[workflow_actions/open_case_in_servicenow]
+access = read : [ power, admin ], write : [ admin ]
+export = system
+
+# ServiceNow setup configuration view
+[views/servicenow_setup]
+access = read : [ admin ], write : [ admin ]
+export = none
+
+# ServiceNow case redirect view
+[views/servicenow_case]
+access = read : [ * ], write : [ admin ]
+export = system
+
+# ServiceNow account configuration (conf file)
+[conf/ta_gen_ai_cim_account]
+access = read : [ admin ], write : [ admin ]
+export = none
+
+[configs/conf-ta_gen_ai_cim_account]
+access = read : [ admin ], write : [ admin ]
+export = none
+
+# REST endpoint for account management
+[admin:ta_gen_ai_cim_account]
+access = read : [ admin ], write : [ admin ]
+export = none
+
+[admin_external:ta_gen_ai_cim_account]
+access = read : [ admin ], write : [ admin ]
+export = none
+
+###############################################################################
+# AI GOVERNANCE REVIEW INTEGRATION PERMISSIONS
+###############################################################################
+
+# Review findings KV Store collection - ai_reviewers can write
+[collections/gen_ai_review_findings]
+access = read : [ * ], write : [ admin, ai_reviewers, power ]
+export = system
+
+# Review audit log KV Store collection
+[collections/gen_ai_review_audit]
+access = read : [ * ], write : [ admin, ai_reviewers ]
+export = system
+
+# Review findings lookup transform - ai_reviewers can write
+[transforms/gen_ai_review_findings_lookup]
+access = read : [ * ], write : [ admin, ai_reviewers ]
+export = system
+
+# Review audit lookup transform
+[transforms/gen_ai_review_audit_lookup]
+access = read : [ * ], write : [ admin, ai_reviewers ]
+export = system
+
+# Open AI Review workflow action - available to all users
+[workflow_actions/1_open_ai_review]
+access = read : [ * ], write : [ admin ]
+export = system
+
+# Review Queue dashboard
+[views/review_queue]
+access = read : [ * ], write : [ admin, power ]
+export = system
+
+# Event Review form
+[views/event_review]
+access = read : [ * ], write : [ admin, power ]
+export = system
+
+# Navigation
+[nav]
+access = read : [ * ], write : [ admin ]
+export = system
+
+# Authorization (ai_reviewers role)
+[authorize]
+access = read : [ * ], write : [ admin ]
+export = system

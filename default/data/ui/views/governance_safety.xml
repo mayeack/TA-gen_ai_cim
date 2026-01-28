@@ -1,0 +1,465 @@
+
+<dashboard version="2" theme="dark">
+    <label>TF-IDF Anomaly Detection</label>
+    <description>TF-IDF anomaly detection for prompts and responses - identify unusual patterns and potential security risks.</description>
+    <definition><![CDATA[
+{
+    "title": "TF-IDF Anomaly Detection",
+    "description": "TF-IDF anomaly detection for prompts and responses - identify unusual patterns and potential security risks.",
+    "inputs": {
+        "input_model": {
+            "dataSources": {
+                "primary": "ds_model_filter"
+            },
+            "options": {
+                "defaultValue": "*",
+                "items": [
+                    {
+                        "label": "All Models",
+                        "value": "*"
+                    }
+                ],
+                "token": "model_filter"
+            },
+            "title": "Model ID",
+            "type": "input.dropdown"
+        },
+        "input_service": {
+            "dataSources": {
+                "primary": "ds_service_filter"
+            },
+            "options": {
+                "defaultValue": "*",
+                "items": [
+                    {
+                        "label": "All Services",
+                        "value": "*"
+                    }
+                ],
+                "token": "service_filter"
+            },
+            "title": "Service",
+            "type": "input.dropdown"
+        },
+        "input_time": {
+            "options": {
+                "defaultValue": "-24h@h,now",
+                "token": "time"
+            },
+            "title": "Time Range",
+            "type": "input.timerange"
+        }
+    },
+    "defaults": {
+        "dataSources": {
+            "ds.search": {
+                "options": {
+                    "queryParameters": {
+                        "earliest": "-24h@h",
+                        "latest": "now"
+                    }
+                }
+            }
+        }
+    },
+    "visualizations": {
+        "viz_header_tfidf": {
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## TF-IDF Anomaly Detection"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_tfidf_anomaly_rate": {
+            "dataSources": {
+                "primary": "ds_tfidf_anomaly_rate"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 5,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 5,
+                        "to": 10,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 10,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "%",
+                "unitPosition": "after"
+            },
+            "title": "Anomaly Rate",
+            "type": "splunk.singlevalue"
+        },
+        "viz_tfidf_high_risk": {
+            "dataSources": {
+                "primary": "ds_tfidf_high_risk"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "High Risk Events",
+            "type": "splunk.singlevalue"
+        },
+        "viz_tfidf_prompt_anomalies": {
+            "dataSources": {
+                "primary": "ds_tfidf_prompt_anomalies"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "to": 5,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 5,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Anomalous Prompts",
+            "type": "splunk.singlevalue"
+        },
+        "viz_tfidf_prompt_trend": {
+            "dataSources": {
+                "primary": "ds_tfidf_prompt_trend"
+            },
+            "options": {
+                "legendDisplay": "bottom",
+                "seriesColors": [
+                    "#dc4e41",
+                    "#53a051"
+                ],
+                "xAxisTitleText": "Time",
+                "yAxisTitleText": "Count"
+            },
+            "title": "Prompt Anomaly Trend",
+            "type": "splunk.line"
+        },
+        "viz_tfidf_response_anomalies": {
+            "dataSources": {
+                "primary": "ds_tfidf_response_anomalies"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#53a051"
+                    },
+                    {
+                        "from": 1,
+                        "to": 5,
+                        "value": "#f8be34"
+                    },
+                    {
+                        "from": 5,
+                        "value": "#dc4e41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Anomalous Responses",
+            "type": "splunk.singlevalue"
+        },
+        "viz_tfidf_response_trend": {
+            "dataSources": {
+                "primary": "ds_tfidf_response_trend"
+            },
+            "options": {
+                "legendDisplay": "bottom",
+                "seriesColors": [
+                    "#dc4e41",
+                    "#53a051"
+                ],
+                "xAxisTitleText": "Time",
+                "yAxisTitleText": "Count"
+            },
+            "title": "Response Anomaly Trend",
+            "type": "splunk.line"
+        },
+        "viz_tfidf_risk_distribution": {
+            "dataSources": {
+                "primary": "ds_tfidf_risk_distribution"
+            },
+            "options": {
+                "labelDisplay": "valuesAndPercentage",
+                "seriesColorsByValue": {
+                    "HIGH": "#dc4e41",
+                    "LOW": "#f8be34",
+                    "MEDIUM": "#f1813f",
+                    "NONE": "#53a051"
+                },
+                "showDonutHole": true
+            },
+            "title": "Risk Level Distribution",
+            "type": "splunk.pie"
+        },
+        "viz_tfidf_top_sources": {
+            "dataSources": {
+                "primary": "ds_tfidf_top_sources"
+            },
+            "options": {
+                "count": 10
+            },
+            "title": "Top Anomaly Sources",
+            "type": "splunk.table"
+        }
+    },
+    "dataSources": {
+        "ds_model_filter": {
+            "options": {
+                "query": "index=gen_ai_log | stats count by gen_ai.request.model | fields gen_ai.request.model",
+                "queryParameters": {
+                    "earliest": "-7d@d",
+                    "latest": "now"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_service_filter": {
+            "options": {
+                "query": "index=gen_ai_log | stats count by gen_ai.app.name | fields gen_ai.app.name",
+                "queryParameters": {
+                    "earliest": "-7d@d",
+                    "latest": "now"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_anomaly_rate": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:tfidf:scoring\" | stats count as total, sum(eval(if('gen_ai.prompt.is_anomaly'=\"true\" OR 'gen_ai.response.is_anomaly'=\"true\", 1, 0))) as anomalous | eval anomaly_rate=round(coalesce(anomalous, 0)/coalesce(total, 1)*100, 1) | fields anomaly_rate",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_high_risk": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" source=\"tfidf_combined_scoring\" gen_ai.tfidf.risk_level=\"HIGH\" | stats count as high_risk_events | eval high_risk_events=coalesce(high_risk_events, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_prompt_anomalies": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" source=\"tfidf_prompt_scoring\" gen_ai.prompt.is_anomaly=\"true\" | stats count as anomalous_prompts | eval anomalous_prompts=coalesce(anomalous_prompts, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_prompt_trend": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" source=\"tfidf_prompt_scoring\" gen_ai.prompt.is_anomaly=* | timechart span=1h count(eval('gen_ai.prompt.is_anomaly'=\"true\")) as anomalous_prompts, count(eval('gen_ai.prompt.is_anomaly'=\"false\")) as normal_prompts",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_response_anomalies": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" source=\"tfidf_response_scoring\" gen_ai.response.is_anomaly=\"true\" | stats count as anomalous_responses | eval anomalous_responses=coalesce(anomalous_responses, 0)",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_response_trend": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" source=\"tfidf_response_scoring\" gen_ai.response.is_anomaly=* | timechart span=1h count(eval('gen_ai.response.is_anomaly'=\"true\")) as anomalous_responses, count(eval('gen_ai.response.is_anomaly'=\"false\")) as normal_responses",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_risk_distribution": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" source=\"tfidf_combined_scoring\" gen_ai.tfidf.risk_level=* | stats count by gen_ai.tfidf.risk_level | rename gen_ai.tfidf.risk_level as Risk_Level | sort -count",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_tfidf_top_sources": {
+            "options": {
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" source=\"tfidf_combined_scoring\" (gen_ai.prompt.is_anomaly=\"true\" OR gen_ai.response.is_anomaly=\"true\") | stats count as Anomaly_Count, dc(gen_ai.session.id) as Sessions, values(gen_ai.app.name) as Services by client.address | rename client.address as Source_IP | sort -Anomaly_Count | head 10",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            },
+            "type": "ds.search"
+        }
+    },
+    "layout": {
+        "globalInputs": [
+            "input_time",
+            "input_service",
+            "input_model"
+        ],
+        "layoutDefinitions": {
+            "layout_1": {
+                "options": {
+                    "height": 750,
+                    "width": 1440
+                },
+                "structure": [
+                    {
+                        "item": "viz_header_tfidf",
+                        "position": {
+                            "h": 50,
+                            "w": 1440,
+                            "x": 0,
+                            "y": 0
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_prompt_anomalies",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 0,
+                            "y": 50
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_response_anomalies",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 360,
+                            "y": 50
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_high_risk",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 720,
+                            "y": 50
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_anomaly_rate",
+                        "position": {
+                            "h": 120,
+                            "w": 360,
+                            "x": 1080,
+                            "y": 50
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_prompt_trend",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 170
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_response_trend",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 170
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_risk_distribution",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 0,
+                            "y": 450
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_tfidf_top_sources",
+                        "position": {
+                            "h": 280,
+                            "w": 720,
+                            "x": 720,
+                            "y": 450
+                        },
+                        "type": "block"
+                    }
+                ],
+                "type": "grid"
+            }
+        },
+        "options": {
+            "showTitleAndDescription": true
+        },
+        "tabs": {
+            "items": [
+                {
+                    "label": "New tab",
+                    "layoutId": "layout_1"
+                }
+            ]
+        }
+    }
+}
+]]></definition>
+</dashboard>
