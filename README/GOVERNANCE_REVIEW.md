@@ -65,32 +65,16 @@ The AI Governance Review workflow enables security and compliance teams to:
 
 ## Review Queue
 
-The **Review Queue** (`review_queue.xml`) displays all events pending human review.
+The **Review Queue** dashboard displays all events pending human review. It serves as the central triage point for the governance workflow.
 
-### Accessing the Review Queue
+**Access:** Navigate to **Apps → GenAI Governance → Governance Review → Review Queue**
 
-1. Navigate to **Apps → GenAI Governance**
-2. Click **Governance Review** in the navigation
-3. Select **Review Queue**
+**Key Features:**
+- Status summary cards (In Progress, Completed, Confirmed Issues)
+- Filterable event table with drilldown to Event Review
+- Trend charts for review workload analysis
 
-### Queue Features
-
-| Feature | Description |
-|---------|-------------|
-| Status Filter | Filter by New, Assigned, In Review, Completed |
-| Priority Sort | Sort by Critical, High, Medium, Low priority |
-| Assignee Filter | Filter by assigned reviewer |
-| Event ID Link | Click to open Event Review page |
-
-### Event Statuses
-
-| Status | Description |
-|--------|-------------|
-| `new` | Newly escalated, not yet reviewed |
-| `assigned` | Assigned to a reviewer |
-| `in_review` | Currently being reviewed |
-| `completed` | Review finished |
-| `rejected` | Event rejected (false positive, etc.) |
+**Full Documentation:** See [DASHBOARDS/REVIEW_QUEUE.md](DASHBOARDS/REVIEW_QUEUE.md) for detailed panel descriptions and configuration.
 
 ---
 
@@ -119,7 +103,7 @@ The page uses a multi-row layout:
 │                 │                     │                     │
 │ - Priority      │   User's prompt     │   AI's response     │
 │ - Assignee      │   to the AI model   │   to the user       │
-│ - PII Present?  │                     │                     │
+│ - PII Present   │                     │                     │
 │ - PII Types     │                     │                     │
 │ - PHI Present?  │                     │                     │
 │ - PHI Types     │                     │                     │
@@ -199,7 +183,7 @@ When a detection type is **disabled** in Detection Settings, the corresponding f
 
 | Detection Setting | When Disabled, Hides Fields |
 |-------------------|----------------------------|
-| **Detect PII** OFF | "PII Present?" and "PII Types" |
+| **Detect PII** OFF | "PII Present (Detected)" and "PII Types" |
 | **Detect PHI** OFF | "PHI Present?" and "PHI Types" |
 | **Detect Prompt Injection** OFF | "Injection Detected?" and "Injection Type" |
 | **Detect Anomalies** OFF | "Anomaly Detected?" and "Anomaly Description" |
@@ -264,7 +248,7 @@ The Reviewer Notes field has its own dedicated row to provide ample space for th
 
 | Field | Type | Description | Visible When |
 |-------|------|-------------|--------------|
-| **PII Present?** | Dropdown | Whether PII was confirmed (Yes/No) | Detect PII = ON |
+| **PII Present (Detected)** | Dropdown | ML detection status (n/a, FALSE, TRUE) | Detect PII = ON |
 | **PII Types** | Multi-select | Types of PII found | Detect PII = ON |
 
 **PII Types Options:**

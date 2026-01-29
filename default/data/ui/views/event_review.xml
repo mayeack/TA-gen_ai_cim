@@ -28,7 +28,7 @@
     <query>| inputlookup gen_ai_review_findings_lookup 
 | search gen_ai_event_id="$form.event_id$" 
 | head 1
-| eval pii_confirmed=if(gen_ai_review_pii_confirmed=="1" OR gen_ai_review_pii_confirmed=="true", "true", "false")
+| eval pii_confirmed=case(gen_ai_review_pii_confirmed=="TRUE" OR gen_ai_review_pii_confirmed=="true" OR gen_ai_review_pii_confirmed=="1", "TRUE", gen_ai_review_pii_confirmed=="FALSE" OR gen_ai_review_pii_confirmed=="false" OR gen_ai_review_pii_confirmed=="0", "FALSE", 1=1, "n/a")
 | eval phi_confirmed=if(gen_ai_review_phi_confirmed=="1" OR gen_ai_review_phi_confirmed=="true", "true", "false")
 | eval prompt_injection_confirmed=if(gen_ai_review_prompt_injection_confirmed=="1" OR gen_ai_review_prompt_injection_confirmed=="true", "true", "false")
 | eval pii_types_reviewed=if(isnull(gen_ai_review_pii_types_reviewed) OR gen_ai_review_pii_types_reviewed=="", "", gen_ai_review_pii_types_reviewed)
@@ -57,7 +57,7 @@
         <set token="form.input_notes">$result.gen_ai_review_notes$</set>
       </condition>
       <condition>
-        <set token="form.input_pii_confirmed">false</set>
+        <set token="form.input_pii_confirmed">n/a</set>
         <set token="form.input_pii_types"></set>
         <set token="form.input_phi_confirmed">false</set>
         <set token="form.input_phi_types"></set>
@@ -96,6 +96,21 @@
       </condition>
       <condition>
         <set token="form.input_pii_types_detected"></set>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Search for PII ML detection status from event data -->
+  <search id="search_pii_ml_detected">
+    <query>index=* gen_ai.event.id="$form.event_id$" gen_ai.pii.ml_detected=* | head 1 | eval pii_ml_detected=upper('gen_ai.pii.ml_detected') | table pii_ml_detected</query>
+    <earliest>-90d@d</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$job.resultCount$ &gt; 0">
+        <set token="form.input_pii_confirmed">$result.pii_ml_detected$</set>
+      </condition>
+      <condition>
+        <set token="form.input_pii_confirmed">n/a</set>
       </condition>
     </done>
   </search>
@@ -195,9 +210,11 @@
         </search>
       </input>
       <input type="dropdown" token="input_pii_confirmed" id="input_pii_confirmed">
-        <label>PII Present?</label>
-        <choice value="false">No</choice>
-        <choice value="true">Yes</choice>
+        <label>PII Present (Detected)</label>
+        <choice value="n/a">n/a</choice>
+        <choice value="FALSE">FALSE</choice>
+        <choice value="TRUE">TRUE</choice>
+        <default>n/a</default>
       </input>
       <input type="multiselect" token="input_pii_types_detected" id="input_pii_types_detected">
         <label>PII Types (Detected)</label>

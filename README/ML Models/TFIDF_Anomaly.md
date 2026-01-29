@@ -419,43 +419,14 @@ index=gen_ai_log sourcetype!="gen_ai:*:scoring" earliest=-1h latest=now
 
 ---
 
-## Dashboard Panels
+## Dashboard
 
-### Prompt Anomaly Trend
+The TF-IDF Anomaly Detection tab in the AI Governance Overview dashboard provides visualizations for:
+- Anomalous prompt/response counts and trends
+- Risk level distribution (HIGH, MEDIUM, LOW, NONE)
+- Top anomaly sources by client address
 
-```spl
-index=gen_ai_log earliest=-24h gen_ai.prompt.is_anomaly=*
-| timechart span=1h 
-    count(eval('gen_ai.prompt.is_anomaly'="true")) as anomalous_prompts,
-    count(eval('gen_ai.prompt.is_anomaly'="false")) as normal_prompts
-```
-
-### Response Anomaly Trend
-
-```spl
-index=gen_ai_log earliest=-24h gen_ai.response.is_anomaly=*
-| timechart span=1h 
-    count(eval('gen_ai.response.is_anomaly'="true")) as anomalous_responses,
-    count(eval('gen_ai.response.is_anomaly'="false")) as normal_responses
-```
-
-### Risk Level Distribution
-
-```spl
-index=gen_ai_log earliest=-24h gen_ai.tfidf.risk_level=*
-| stats count by gen_ai.tfidf.risk_level
-| sort -count
-```
-
-### Top Anomaly Sources
-
-```spl
-index=gen_ai_log earliest=-24h
-    (gen_ai.prompt.is_anomaly="true" OR gen_ai.response.is_anomaly="true")
-| stats count as anomaly_count by client.address
-| sort -anomaly_count
-| head 20
-```
+**Full Dashboard Documentation:** See [DASHBOARDS/TFIDF_ANOMALY_DETECTION.md](../DASHBOARDS/TFIDF_ANOMALY_DETECTION.md)
 
 ---
 

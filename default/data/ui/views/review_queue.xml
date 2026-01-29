@@ -20,8 +20,8 @@
     </input>
     
     <input type="dropdown" token="filter_service" searchWhenChanged="false">
-      <label>Service/App</label>
-      <choice value="*">All Services</choice>
+      <label>App Name</label>
+      <choice value="*">All Apps</choice>
       <default>*</default>
       <initialValue>*</initialValue>
       <search>
@@ -109,7 +109,7 @@
           <query>| inputlookup gen_ai_review_findings_lookup 
 | search gen_ai_review_status="completed"
 | where "$filter_priority$"="*" OR gen_ai_review_priority="$filter_priority$"
-| where (gen_ai_review_pii_confirmed="true" OR gen_ai_review_pii_confirmed=1) OR (gen_ai_review_phi_confirmed="true" OR gen_ai_review_phi_confirmed=1) OR (gen_ai_review_prompt_injection_confirmed="true" OR gen_ai_review_prompt_injection_confirmed=1) OR gen_ai_review_anomaly_prompt_reviewed="TRUE" OR gen_ai_review_anomaly_response_reviewed="TRUE"
+| where (gen_ai_review_pii_confirmed="true" OR gen_ai_review_pii_confirmed="TRUE" OR gen_ai_review_pii_confirmed=1) OR (gen_ai_review_phi_confirmed="true" OR gen_ai_review_phi_confirmed=1) OR (gen_ai_review_prompt_injection_confirmed="true" OR gen_ai_review_prompt_injection_confirmed=1) OR gen_ai_review_anomaly_prompt_reviewed="TRUE" OR gen_ai_review_anomaly_response_reviewed="TRUE"
 | join type=left gen_ai_event_id [
     search index=gen_ai_log earliest=-90d@d
     | eval gen_ai_event_id='gen_ai.event.id'

@@ -39,19 +39,18 @@ index=gen_ai_log earliest=-1h
 $SPLUNK_HOME/bin/splunk edit saved-search "GenAI - Safety Violation Alert" -app TA-gen_ai_cim -action.email.to your-team@example.com
 ```
 
-### 4. Access the Dashboard
+### 4. Access the Dashboards
 
-The **GenAI Governance Overview** dashboard is automatically installed!
+Pre-built dashboards are **automatically installed** with the TA.
 
-**Access it:**
+**Access:**
 1. Navigate to **Apps → GenAI Governance** in Splunk Web
-2. The dashboard opens by default
-3. Or go to **Dashboards** and search for "GenAI Governance Overview"
+2. The AI Governance Overview dashboard opens by default
+3. Additional dashboards available: PII Detection, Prompt Injection Detection, Review Queue
 
-**Customization (optional):**
-- Edit the installed dashboard: **Settings → User Interface → Views → genai_governance_overview**
-- Create Dashboard Studio version: See `README/DASHBOARD_PANELS.md` for JSON template
-- Clone and modify: Create custom versions for different teams
+**Documentation:** See [DASHBOARDS/](DASHBOARDS/) for detailed documentation on each dashboard.
+
+**Customization:** Edit dashboards via **Settings → User Interface → Views** or clone to create custom versions.
 
 ### 5. (Optional) Train MLTK Models
 

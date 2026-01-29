@@ -68,7 +68,7 @@ require([
             search: '| inputlookup pii_training_feedback_lookup ' +
                 '| where split_assignment="test" ' +
                 '| apply pii_detection_model_challenger ' +
-                '| eval pred=if(\'predicted(pii_label)\'>0.5, 1, 0) ' +
+                '| eval pred=if(coalesce(\'probability(pii_label=1)\', \'predicted(pii_label)\')>0.5, 1, 0) ' +
                 '| eval tp=if(pii_label=1 AND pred=1, 1, 0), fp=if(pii_label=0 AND pred=1, 1, 0), fn=if(pii_label=1 AND pred=0, 1, 0), tn=if(pii_label=0 AND pred=0, 1, 0) ' +
                 '| stats sum(tp) AS tp, sum(fp) AS fp, sum(fn) AS fn, sum(tn) AS tn, count AS total, sum(pii_label) AS pii_count ' +
                 '| eval accuracy=round((tp+tn)/total, 4) ' +
@@ -103,7 +103,7 @@ require([
                             "_key": "pii_detection_model_" + modelVersion,
                             "model_name": "pii_detection_model",
                             "model_version": modelVersion,
-                            "algorithm": "RandomForestClassifier",
+                            "algorithm": "LogisticRegression",
                             "feature_count": 20,
                             "accuracy": parseFloat(metrics.accuracy) || 0,
                             "precision": parseFloat(metrics.precision) || 0,

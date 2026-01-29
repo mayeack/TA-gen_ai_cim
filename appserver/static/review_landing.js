@@ -122,7 +122,7 @@ require([
             "gen_ai_review_assignee": "",
             "gen_ai_review_status": "new",
             "gen_ai_review_priority": "medium",
-            "gen_ai_review_pii_confirmed": "false",
+            "gen_ai_review_pii_confirmed": "n/a",
             "gen_ai_review_pii_types": "",
             "gen_ai_review_phi_confirmed": "false",
             "gen_ai_review_phi_types": "",

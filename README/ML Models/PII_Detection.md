@@ -76,7 +76,7 @@ gen_ai.pii.location         - Where found: prompt, response, both, none
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  ML Model (RandomForestClassifier)                                       │
+│  ML Model (LogisticRegression)                                            │
 │  ├── Input: 20 engineered features                                      │
 │  ├── Output: Probability score (0-1)                                    │
 │  └── Model: pii_detection_model                                         │
@@ -252,12 +252,6 @@ This processes the included 200k healthcare training dataset (~5-10 minutes).
 
 ### Step 2: Train the Model
 
-**Recommended: Random Forest (better for imbalanced data)**
-```spl
-| savedsearch "GenAI - PII Train Step 2 Alt - Random Forest Model"
-```
-
-**Alternative: Logistic Regression (faster, interpretable)**
 ```spl
 | savedsearch "GenAI - PII Train Step 2 - Logistic Regression Model"
 ```
@@ -307,19 +301,14 @@ The TA includes `llm_pii_mixed_responses_200k.csv` with 200,000 healthcare AI re
 - Clean (0): ~190,000 (95%)
 - PII (1): ~10,000 (5%)
 
-### Training SPL (RandomForestClassifier)
+### Training SPL (LogisticRegression)
 
 ```spl
 | inputlookup pii_training_data_engineered.csv
-| fit RandomForestClassifier pii_label
+| fit LogisticRegression pii_label
     from output_length word_count digit_ratio special_char_ratio uppercase_ratio
-    has_member_id has_claim_number has_ssn has_email has_phone has_credit_card has_dob
-    has_address has_zipcode has_patient_name has_medication
-    has_insurance_terms has_financial_terms has_identity_terms has_contact_terms
-    max_depth=15
-    max_features=8
-    n_estimators=100
-    random_state=42
+    has_ssn has_email has_phone has_dob has_address has_credit_card has_name
+    probabilities=true
     into app:pii_detection_model
 ```
 
@@ -502,7 +491,6 @@ With the 200k healthcare dataset:
 | Algorithm | Accuracy | Precision | Recall | F1 Score |
 |-----------|----------|-----------|--------|----------|
 | Logistic Regression | 93-95% | 78-82% | 88-92% | 82-86% |
-| Random Forest | 94-96% | 80-85% | 90-94% | 84-89% |
 
 ### Confusion Matrix Query
 
@@ -611,8 +599,7 @@ index=gen_ai_log | head 5
 | Saved Search | Description |
 |--------------|-------------|
 | GenAI - PII Train Step 1 - Feature Engineering from Initial Dataset | Prepare features from 200k dataset |
-| GenAI - PII Train Step 2 - Logistic Regression Model | Train LogisticRegression |
-| GenAI - PII Train Step 2 Alt - Random Forest Model | Train RandomForestClassifier |
+| GenAI - PII Train Step 2 - Logistic Regression Model | Train LogisticRegression with probability output |
 | GenAI - PII Train Step 3 - Validate Model Performance | Calculate performance metrics |
 
 ### Saved Searches - Scoring

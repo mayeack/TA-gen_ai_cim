@@ -25,7 +25,7 @@ Built using **SimpleXML (Form)** with custom JavaScript (`review_save.js`) and C
 │  │                 │                     │                     │   │
 │  │ - Priority      │   User's prompt     │   AI's response     │   │
 │  │ - Assignee      │   to the AI model   │   to the user       │   │
-│  │ - PII Present?  │                     │                     │   │
+│  │ - PII Present   │                     │                     │   │
 │  │ - PII Types     │                     │                     │   │
 │  │ - PHI Present?  │                     │                     │   │
 │  │ - PHI Types     │                     │                     │   │
@@ -60,7 +60,7 @@ Detection fields are dynamically shown/hidden based on **Detection Settings** in
 
 | Detection Setting OFF | Fields Hidden |
 |-----------------------|---------------|
-| Detect PII | "PII Present?", "PII Types" |
+| Detect PII | "PII Present (Detected)", "PII Types" |
 | Detect PHI | "PHI Present?", "PHI Types" |
 | Detect Prompt Injection | "Injection Detected?", "Injection Type" |
 | Detect Anomalies | "Anomaly Detected?", "Anomaly Description" |
@@ -89,7 +89,7 @@ When an event is selected, any existing review findings are automatically loaded
 ### PII Detection Fields
 | Field | Type | Options |
 |-------|------|---------|
-| PII Present? | Dropdown | Yes, No |
+| PII Present (Detected) | Dropdown | n/a, FALSE, TRUE |
 | PII Types | Multi-select | SSN, EMAIL, PHONE, DOB, ADDRESS, CREDIT_CARD, NAME |
 
 ### PHI Detection Fields

@@ -21,10 +21,10 @@
             "dataSources": { "primary": "ds_service_filter" },
             "options": {
                 "defaultValue": "*",
-                "items": [{ "label": "All Services", "value": "*" }],
+                "items": [{ "label": "All Apps", "value": "*" }],
                 "token": "service_filter"
             },
-            "title": "Service",
+            "title": "App Name",
             "type": "input.dropdown"
         },
         "input_time": {
@@ -100,7 +100,7 @@
                         "earliest": "$time.earliest$",
                         "latest": "$time.latest$",
                         "openInNewTab": true,
-                        "search": "index=gen_ai_log gen_ai.request.id=\"$row.Request_ID.value$\""
+                        "search": "index=gen_ai_log source=pii_ml_scoring gen_ai.request.id=\"$row.Request_ID.value$\""
                     },
                     "type": "drilldown.linkToSearch"
                 }
@@ -199,70 +199,70 @@
     "dataSources": {
         "ds_model_filter": {
             "options": {
-                "query": "index=gen_ai_log | stats count by gen_ai.request.model | fields gen_ai.request.model",
+                "query": "index=gen_ai_log source=pii_ml_scoring | stats count by gen_ai.request.model | fields gen_ai.request.model",
                 "queryParameters": { "earliest": "-7d@d", "latest": "now" }
             },
             "type": "ds.search"
         },
         "ds_service_filter": {
             "options": {
-                "query": "index=gen_ai_log | stats count by gen_ai.app.name | fields gen_ai.app.name",
+                "query": "index=gen_ai_log source=pii_ml_scoring | stats count by gen_ai.app.name | fields gen_ai.app.name",
                 "queryParameters": { "earliest": "-7d@d", "latest": "now" }
             },
             "type": "ds.search"
         },
         "ds_pii_ml_by_service": {
             "options": {
-                "query": "index=gen_ai_log (gen_ai.pii.ml_detected=\"true\" OR gen_ai.pii.ml_detected=\"false\") gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.pii.ml_detected'=\"true\", 1, 0))) as PII_Count, count as Total_Requests by gen_ai.app.name | eval PII_Rate=round(PII_Count/Total_Requests*100, 1).\"%\" | rename gen_ai.app.name as Service | sort -PII_Count",
+                "query": "index=gen_ai_log source=pii_ml_scoring (gen_ai.pii.ml_detected=\"true\" OR gen_ai.pii.ml_detected=\"false\") gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.pii.ml_detected'=\"true\", 1, 0))) as PII_Count, count as Total_Requests by gen_ai.app.name | eval PII_Rate=round(PII_Count/Total_Requests*100, 1).\"%\" | rename gen_ai.app.name as Service | sort -PII_Count",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_pii_ml_category": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.pii.ml_detected=\"true\" gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval pii_types=split('gen_ai.pii.types', \",\") | mvexpand pii_types | eval pii_types=trim(pii_types) | stats count as Count by pii_types | rename pii_types as PII_Category | sort -Count",
+                "query": "index=gen_ai_log source=pii_ml_scoring gen_ai.pii.ml_detected=\"true\" gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval pii_types=split('gen_ai.pii.types', \",\") | mvexpand pii_types | eval pii_types=trim(pii_types) | stats count as Count by pii_types | rename pii_types as PII_Category | sort -Count",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_pii_ml_rate": {
             "options": {
-                "query": "index=gen_ai_log (gen_ai.pii.ml_detected=\"true\" OR gen_ai.pii.ml_detected=\"false\") gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.pii.ml_detected'=\"true\", 1, 0))) as pii_count, count as total | eval detection_rate=round(pii_count/total*100, 1) | fields detection_rate",
+                "query": "index=gen_ai_log source=pii_ml_scoring (gen_ai.pii.ml_detected=\"true\" OR gen_ai.pii.ml_detected=\"false\") gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.pii.ml_detected'=\"true\", 1, 0))) as pii_count, count as total | eval detection_rate=round(pii_count/total*100, 1) | fields detection_rate",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_pii_ml_recent": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.pii.ml_detected=\"true\" gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval Risk_Level=case('gen_ai.pii.risk_score'>=0.8 OR match('gen_ai.pii.types', \"SSN|CREDIT_CARD\"), \"CRITICAL\", 'gen_ai.pii.risk_score'>=0.6, \"HIGH\", 'gen_ai.pii.risk_score'>=0.3, \"MEDIUM\", 1=1, \"LOW\"), Timestamp=strftime(_time, \"%Y-%m-%d %H:%M:%S\"), Request_ID='gen_ai.request.id', PII_Types='gen_ai.pii.types', Confidence='gen_ai.pii.confidence' | table Request_ID, Timestamp, gen_ai.app.name, gen_ai.request.model, Risk_Level, PII_Types, Confidence | rename gen_ai.app.name as Service, gen_ai.request.model as Model | sort -Timestamp | head 25",
+                "query": "index=gen_ai_log source=pii_ml_scoring gen_ai.pii.ml_detected=\"true\" gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval Risk_Level=case('gen_ai.pii.risk_score'>=0.8 OR match('gen_ai.pii.types', \"SSN|CREDIT_CARD\"), \"CRITICAL\", 'gen_ai.pii.risk_score'>=0.6, \"HIGH\", 'gen_ai.pii.risk_score'>=0.3, \"MEDIUM\", 1=1, \"LOW\"), Timestamp=strftime(_time, \"%Y-%m-%d %H:%M:%S\"), Request_ID='gen_ai.request.id', PII_Types='gen_ai.pii.types', Confidence='gen_ai.pii.confidence' | table Request_ID, Timestamp, gen_ai.app.name, gen_ai.request.model, Risk_Level, PII_Types, Confidence | rename gen_ai.app.name as Service, gen_ai.request.model as Model | sort -Timestamp | head 25",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_pii_ml_risk_distribution": {
             "options": {
-                "query": "index=gen_ai_log (gen_ai.pii.ml_detected=\"true\" OR gen_ai.pii.ml_detected=\"false\") gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval risk_level=case('gen_ai.pii.risk_score'>=0.8 OR match('gen_ai.pii.types', \"SSN|CREDIT_CARD\"), \"CRITICAL\", 'gen_ai.pii.risk_score'>=0.6, \"HIGH\", 'gen_ai.pii.risk_score'>=0.3, \"MEDIUM\", 1=1, \"NONE\") | stats count by risk_level | rename risk_level as Risk_Level",
+                "query": "index=gen_ai_log source=pii_ml_scoring (gen_ai.pii.ml_detected=\"true\" OR gen_ai.pii.ml_detected=\"false\") gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval risk_level=case('gen_ai.pii.risk_score'>=0.8 OR match('gen_ai.pii.types', \"SSN|CREDIT_CARD\"), \"CRITICAL\", 'gen_ai.pii.risk_score'>=0.6, \"HIGH\", 'gen_ai.pii.risk_score'>=0.3, \"MEDIUM\", 1=1, \"NONE\") | stats count by risk_level | rename risk_level as Risk_Level",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_pii_ml_total": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.pii.ml_detected=\"true\" gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as pii_total | eval pii_total=coalesce(pii_total, 0)",
+                "query": "index=gen_ai_log source=pii_ml_scoring gen_ai.pii.ml_detected=\"true\" gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as pii_total | eval pii_total=coalesce(pii_total, 0)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_pii_ml_total_events": {
             "options": {
-                "query": "index=gen_ai_log (gen_ai.pii.ml_detected=\"true\" OR gen_ai.pii.ml_detected=\"false\") gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as total_events",
+                "query": "index=gen_ai_log source=pii_ml_scoring (gen_ai.pii.ml_detected=\"true\" OR gen_ai.pii.ml_detected=\"false\") gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as total_events",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_pii_ml_trend": {
             "options": {
-                "query": "index=gen_ai_log (gen_ai.pii.ml_detected=\"true\" OR gen_ai.pii.ml_detected=\"false\") gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | timechart span=1h sum(eval(if('gen_ai.pii.ml_detected'=\"true\", 1, 0))) as PII_Detections, count as Total_Events",
+                "query": "index=gen_ai_log source=pii_ml_scoring (gen_ai.pii.ml_detected=\"true\" OR gen_ai.pii.ml_detected=\"false\") gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | timechart span=1h sum(eval(if('gen_ai.pii.ml_detected'=\"true\", 1, 0))) as PII_Detections, count as Total_Events",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"

@@ -32,13 +32,13 @@
                 "defaultValue": "*",
                 "items": [
                     {
-                        "label": "All Services",
+                        "label": "All Apps",
                         "value": "*"
                     }
                 ],
                 "token": "service_filter"
             },
-            "title": "Service",
+            "title": "App Name",
             "type": "input.dropdown"
         },
         "input_time": {

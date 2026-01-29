@@ -8,7 +8,7 @@ The TA includes four ML-based detection systems:
 
 | Model | Purpose | Algorithm | Training Data |
 |-------|---------|-----------|---------------|
-| **PII Detection** | Detect PII/PHI in AI responses | RandomForestClassifier | 200k healthcare examples |
+| **PII Detection** | Detect PII/PHI in AI responses | LogisticRegression | 200k healthcare examples |
 | **Prompt Injection** | Detect adversarial prompt attacks | RandomForestClassifier | 1200+ labeled attack examples |
 | **TF-IDF Prompt Anomaly** | Detect unusual prompts | HashingVectorizer + PCA + OneClassSVM | Normal prompt corpus |
 | **TF-IDF Response Anomaly** | Detect unusual responses | HashingVectorizer + PCA + OneClassSVM | Normal response corpus |

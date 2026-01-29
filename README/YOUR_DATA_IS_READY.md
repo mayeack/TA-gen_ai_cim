@@ -93,20 +93,14 @@ Copy this SPL into Splunk Search:
 
 ### Step 2: Train Model (10-30 minutes)
 
-**Recommended: Random Forest (Best for your imbalanced data)**
+**Train with LogisticRegression:**
 
 ```spl
 | inputlookup pii_healthcare_training_data_engineered.csv
-| fit RandomForestClassifier pii_label 
+| fit LogisticRegression pii_label 
     from output_length word_count digit_ratio special_char_ratio uppercase_ratio 
-    has_mrn has_member_id has_claim_number has_ssn has_email has_phone has_credit_card has_dob 
-    has_address has_zipcode has_patient_name has_medication
-    has_medical_terms has_insurance_terms has_financial_terms has_identity_terms has_contact_terms 
-    max_depth=15 
-    max_features=8 
-    n_estimators=100
-    class_weight=balanced
-    random_state=42
+    has_ssn has_email has_phone has_dob has_address has_credit_card has_name
+    probabilities=true
     into app:pii_healthcare_model
 ```
 

@@ -86,10 +86,10 @@
           <query>| inputlookup pii_training_feedback_lookup 
 | where split_assignment="test" 
 | apply pii_detection_model 
-| eval champion_score=round('predicted(pii_label)', 4) 
+| eval champion_score=round(coalesce('probability(pii_label=1)', 'predicted(pii_label)'), 4) 
 | eval champion_pred=if(champion_score>0.5, 1, 0) 
 | apply pii_detection_model_challenger 
-| eval challenger_score=round('predicted(pii_label)', 4) 
+| eval challenger_score=round(coalesce('probability(pii_label=1)', 'predicted(pii_label)'), 4) 
 | eval challenger_pred=if(challenger_score>0.5, 1, 0) 
 | eval champion_tp=if(pii_label=1 AND champion_pred=1, 1, 0) 
 | eval champion_fp=if(pii_label=0 AND champion_pred=1, 1, 0) 
@@ -138,9 +138,9 @@
           <query>| inputlookup pii_training_feedback_lookup 
 | where split_assignment="test" 
 | apply pii_detection_model 
-| eval champion_pred=if('predicted(pii_label)'>0.5, 1, 0) 
+| eval champion_pred=if(coalesce('probability(pii_label=1)', 'predicted(pii_label)')>0.5, 1, 0) 
 | apply pii_detection_model_challenger 
-| eval challenger_pred=if('predicted(pii_label)'>0.5, 1, 0) 
+| eval challenger_pred=if(coalesce('probability(pii_label=1)', 'predicted(pii_label)')>0.5, 1, 0) 
 | eval champion_tp=if(pii_label=1 AND champion_pred=1, 1, 0), champion_fn=if(pii_label=1 AND champion_pred=0, 1, 0), champion_fp=if(pii_label=0 AND champion_pred=1, 1, 0)
 | eval challenger_tp=if(pii_label=1 AND challenger_pred=1, 1, 0), challenger_fn=if(pii_label=1 AND challenger_pred=0, 1, 0), challenger_fp=if(pii_label=0 AND challenger_pred=1, 1, 0)
 | stats sum(champion_tp) AS c_tp, sum(champion_fn) AS c_fn, sum(champion_fp) AS c_fp, sum(challenger_tp) AS ch_tp, sum(challenger_fn) AS ch_fn, sum(challenger_fp) AS ch_fp
@@ -169,7 +169,7 @@
           <query>| inputlookup pii_training_feedback_lookup 
 | where split_assignment="valid" 
 | apply pii_detection_model_challenger 
-| eval risk_score=round('predicted(pii_label)', 4) 
+| eval risk_score=round(coalesce('probability(pii_label=1)', 'predicted(pii_label)'), 4) 
 | eval pred_03=if(risk_score>0.3, 1, 0), pred_04=if(risk_score>0.4, 1, 0), pred_05=if(risk_score>0.5, 1, 0), pred_06=if(risk_score>0.6, 1, 0), pred_07=if(risk_score>0.7, 1, 0), pred_08=if(risk_score>0.8, 1, 0)
 | eval tp_03=if(pii_label=1 AND pred_03=1, 1, 0), fp_03=if(pii_label=0 AND pred_03=1, 1, 0), fn_03=if(pii_label=1 AND pred_03=0, 1, 0)
 | eval tp_04=if(pii_label=1 AND pred_04=1, 1, 0), fp_04=if(pii_label=0 AND pred_04=1, 1, 0), fn_04=if(pii_label=1 AND pred_04=0, 1, 0)

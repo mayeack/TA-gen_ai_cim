@@ -32,13 +32,13 @@
                 "defaultValue": "*",
                 "items": [
                     {
-                        "label": "All Services",
+                        "label": "All Apps",
                         "value": "*"
                     }
                 ],
                 "token": "service_filter"
             },
-            "title": "Service",
+            "title": "App Name",
             "type": "input.dropdown"
         },
         "input_time": {
@@ -85,12 +85,6 @@
         },
         "viz_compliance_summary": {
             "context": {
-                "PII_Free_PctColumnFormatEditorConfig": {},
-                "PII_Free_PctRowBackgroundColorConfig": [
-                    { "to": 90, "value": "#DC4E41" },
-                    { "from": 90, "to": 98, "value": "#F8BE34" },
-                    { "from": 98, "value": "#53A051" }
-                ],
                 "Safety_Compliance_PctColumnFormatEditorConfig": {},
                 "Safety_Compliance_PctRowBackgroundColorConfig": [
                     { "to": 85, "value": "#DC4E41" },
@@ -103,13 +97,9 @@
             },
             "options": {
                 "columnFormat": {
-                    "PII_Free_Pct": {
-                        "data": "> table | seriesByName('PII_Free_Pct') | formatByType(PII_Free_PctColumnFormatEditorConfig)",
-                        "rowBackgroundColors": "> table | seriesByName('PII_Free_Pct') | rangeValue(PII_Free_PctRowBackgroundColorConfig)"
-                    },
-                    "Safety_Compliance_Pct": {
-                        "data": "> table | seriesByName('Safety_Compliance_Pct') | formatByType(Safety_Compliance_PctColumnFormatEditorConfig)",
-                        "rowBackgroundColors": "> table | seriesByName('Safety_Compliance_Pct') | rangeValue(Safety_Compliance_PctRowBackgroundColorConfig)"
+                    "Safety Compliance Pct": {
+                        "data": "> table | seriesByName('Safety Compliance Pct') | formatByType(Safety_Compliance_PctColumnFormatEditorConfig)",
+                        "rowBackgroundColors": "> table | seriesByName('Safety Compliance Pct') | rangeValue(Safety_Compliance_PctRowBackgroundColorConfig)"
                     }
                 }
             },
@@ -131,12 +121,6 @@
             },
             "title": "Cost Over Time",
             "type": "splunk.area"
-        },
-        "viz_error_messages": {
-            "dataSources": { "primary": "ds_error_messages" },
-            "options": { "count": 10 },
-            "title": "Error Messages",
-            "type": "splunk.table"
         },
         "viz_guardrails_triggered": {
             "dataSources": { "primary": "ds_guardrails_triggered" },
@@ -255,8 +239,8 @@
         },
         "viz_recent_requests": {
             "context": {
-                "PII_DetectedColumnFormatEditorConfig": {},
-                "PII_DetectedRowBackgroundColorConfig": [
+                "Guardrail_TriggeredColumnFormatEditorConfig": {},
+                "Guardrail_TriggeredRowBackgroundColorConfig": [
                     { "match": "false", "value": "#53A051" },
                     { "match": "true", "value": "#DC4E41" }
                 ],
@@ -274,17 +258,17 @@
             "dataSources": { "primary": "ds_recent_requests" },
             "options": {
                 "columnFormat": {
-                    "PII_Detected": {
-                        "data": "> table | seriesByName('PII_Detected') | formatByType(PII_DetectedColumnFormatEditorConfig)",
-                        "rowBackgroundColors": "> table | seriesByName('PII_Detected') | matchValue(PII_DetectedRowBackgroundColorConfig)"
+                    "Guardrail Triggered": {
+                        "data": "> table | seriesByName('Guardrail Triggered') | formatByType(Guardrail_TriggeredColumnFormatEditorConfig)",
+                        "rowBackgroundColors": "> table | seriesByName('Guardrail Triggered') | matchValue(Guardrail_TriggeredRowBackgroundColorConfig)"
                     },
-                    "Policy_Blocked": {
-                        "data": "> table | seriesByName('Policy_Blocked') | formatByType(Policy_BlockedColumnFormatEditorConfig)",
-                        "rowBackgroundColors": "> table | seriesByName('Policy_Blocked') | matchValue(Policy_BlockedRowBackgroundColorConfig)"
+                    "Policy Blocked": {
+                        "data": "> table | seriesByName('Policy Blocked') | formatByType(Policy_BlockedColumnFormatEditorConfig)",
+                        "rowBackgroundColors": "> table | seriesByName('Policy Blocked') | matchValue(Policy_BlockedRowBackgroundColorConfig)"
                     },
-                    "Safety_Violated": {
-                        "data": "> table | seriesByName('Safety_Violated') | formatByType(Safety_ViolatedColumnFormatEditorConfig)",
-                        "rowBackgroundColors": "> table | seriesByName('Safety_Violated') | matchValue(Safety_ViolatedRowBackgroundColorConfig)"
+                    "Safety Violated": {
+                        "data": "> table | seriesByName('Safety Violated') | formatByType(Safety_ViolatedColumnFormatEditorConfig)",
+                        "rowBackgroundColors": "> table | seriesByName('Safety Violated') | matchValue(Safety_ViolatedRowBackgroundColorConfig)"
                     }
                 },
                 "count": 20
@@ -354,9 +338,23 @@
         },
         "viz_status_distribution": {
             "dataSources": { "primary": "ds_status_distribution" },
-            "options": { "labelDisplay": "valuesAndPercentage", "showDonutHole": true },
-            "title": "HTTP Status Distribution",
-            "type": "splunk.pie"
+            "options": {
+                "seriesColors": ["#dc4e41", "#f8be34", "#f1813f", "#53a051"],
+                "xAxisTitleText": "Status",
+                "yAxisTitleText": "Count"
+            },
+            "title": "Status Outcome",
+            "type": "splunk.bar"
+        },
+        "viz_ml_detection_summary": {
+            "dataSources": { "primary": "ds_ml_detection_summary" },
+            "options": {
+                "seriesColors": ["#dc4e41", "#f8be34", "#6ab7c7"],
+                "xAxisTitleText": "Detection Type",
+                "yAxisTitleText": "Count"
+            },
+            "title": "ML Detection Summary",
+            "type": "splunk.bar"
         },
         "viz_token_usage_time": {
             "dataSources": { "primary": "ds_token_usage_time" },
@@ -421,182 +419,182 @@
     "dataSources": {
         "ds_avg_latency": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | stats avg(gen_ai.client.operation.duration) as avg_latency | eval avg_latency=round(avg_latency*1000, 0) | eval avg_latency=coalesce(avg_latency, 0)",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | stats avg(gen_ai.client.operation.duration) as avg_latency | eval avg_latency=round(avg_latency*1000, 0) | eval avg_latency=coalesce(avg_latency, 0)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_compliance_summary": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as Total_Requests, sum(eval(if('gen_ai.safety.violated'=\"true\", 1, 0))) as Safety_Violations, sum(eval(if('gen_ai.pii.detected'=\"true\", 1, 0))) as PII_Detections, sum(eval(if('gen_ai.policy.blocked'=\"true\", 1, 0))) as Policy_Blocks | eval Safety_Violations=coalesce(Safety_Violations, 0) | eval PII_Detections=coalesce(PII_Detections, 0) | eval Policy_Blocks=coalesce(Policy_Blocks, 0) | eval PII_Free_Pct=round(((Total_Requests-PII_Detections)/Total_Requests)*100, 2) | eval Safety_Compliance_Pct=round(((Total_Requests-Safety_Violations)/Total_Requests)*100, 2)",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as total_events, sum(eval(if('gen_ai.safety.violated'=\"true\", 1, 0))) as safety_violations, sum(eval(if('gen_ai.guardrail.triggered'=\"true\", 1, 0))) as guardrails_triggered, sum(eval(if('gen_ai.policy.blocked'=\"true\", 1, 0))) as policy_blocks | eval safety_violations=coalesce(safety_violations, 0) | eval guardrails_triggered=coalesce(guardrails_triggered, 0) | eval policy_blocks=coalesce(policy_blocks, 0) | eval safety_compliance_pct=round(((total_events-safety_violations)/total_events)*100, 2) | rename total_events as \"Total Events\", safety_violations as \"Safety Violations\", guardrails_triggered as \"Guardrails Triggered\", policy_blocks as \"Policy Blocks\", safety_compliance_pct as \"Safety Compliance Pct\"",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_cost_by_service": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(cost) as total_cost by gen_ai.app.name | sort -total_cost",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(cost) as total_cost by gen_ai.app.name | sort -total_cost",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_cost_time": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | timechart span=1h sum(cost) as total_cost",
-                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
-            },
-            "type": "ds.search"
-        },
-        "ds_error_messages": {
-            "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" ('gen_ai.safety.violated'=\"true\" OR 'gen_ai.policy.blocked'=\"true\" OR 'gen_ai.pii.detected'=\"true\") | eval error_type=case('gen_ai.safety.violated'=\"true\", \"Safety Violation\", 'gen_ai.policy.blocked'=\"true\", \"Policy Blocked\", 'gen_ai.pii.detected'=\"true\", \"PII Detected\", 1=1, \"Unknown\") | stats count as Error_Count, latest(_time) as Last_Occurrence, values(gen_ai.app.name) as Services by error_type | eval Last_Occurrence=strftime(Last_Occurrence, \"%Y-%m-%d %H:%M:%S\") | rename error_type as Error_Type | sort -Error_Count | head 10",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | timechart span=1h sum(cost) as total_cost",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_guardrails_triggered": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.guardrail.triggered'=\"true\", 1, 0))) as guardrails_triggered | eval guardrails_triggered=coalesce(guardrails_triggered, 0)",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.guardrail.triggered'=\"true\", 1, 0))) as guardrails_triggered | eval guardrails_triggered=coalesce(guardrails_triggered, 0)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_latency_distribution": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | eval latency_bucket=case('gen_ai.client.operation.duration'<1, \"<1s\", 'gen_ai.client.operation.duration'<2, \"1-2s\", 'gen_ai.client.operation.duration'<5, \"2-5s\", 'gen_ai.client.operation.duration'<10, \"5-10s\", 'gen_ai.client.operation.duration'<30, \"10-30s\", 1=1, \">30s\") | stats count by latency_bucket | sort latency_bucket",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | eval latency_bucket=case('gen_ai.client.operation.duration'<1, \"<1s\", 'gen_ai.client.operation.duration'<2, \"1-2s\", 'gen_ai.client.operation.duration'<5, \"2-5s\", 'gen_ai.client.operation.duration'<10, \"5-10s\", 'gen_ai.client.operation.duration'<30, \"10-30s\", 1=1, \">30s\") | stats count by latency_bucket | sort latency_bucket",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_latency_time": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | eval latency_ms='gen_ai.client.operation.duration'*1000 | timechart span=1h avg(latency_ms) as avg_latency_ms, perc95(latency_ms) as p95_latency_ms",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | eval latency_ms='gen_ai.client.operation.duration'*1000 | timechart span=1h avg(latency_ms) as avg_latency_ms, perc95(latency_ms) as p95_latency_ms",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_model_filter": {
             "options": {
-                "query": "index=gen_ai_log | stats count by gen_ai.request.model | fields gen_ai.request.model",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring | stats count by gen_ai.request.model | fields gen_ai.request.model",
                 "queryParameters": { "earliest": "-7d@d", "latest": "now" }
             },
             "type": "ds.search"
         },
         "ds_model_usage": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Requests, values(gen_ai.provider.name) as Provider, avg(gen_ai.request.temperature) as Avg_Temperature, avg(gen_ai.client.operation.duration) as Avg_Latency_sec, sum(gen_ai.usage.total_tokens) as Total_Tokens, sum(event_cost) as Total_Cost_USD by gen_ai.request.model | eval Avg_Temperature=round(Avg_Temperature, 2) | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | eval Total_Cost_USD=round(coalesce(Total_Cost_USD, 0), 4) | rename gen_ai.request.model as Model_ID | fields Model_ID, Requests, Provider, Avg_Temperature, Avg_Latency_ms, Total_Cost_USD, Total_Tokens | sort -Requests",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Requests, values(gen_ai.provider.name) as Provider, avg(gen_ai.request.temperature) as Avg_Temperature, avg(gen_ai.client.operation.duration) as Avg_Latency_sec, sum(gen_ai.usage.total_tokens) as Total_Tokens, sum(event_cost) as Total_Cost_USD by gen_ai.request.model | eval Avg_Temperature=round(Avg_Temperature, 2) | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | eval Total_Cost_USD=round(coalesce(Total_Cost_USD, 0), 4) | rename gen_ai.request.model as Model_ID | fields Model_ID, Requests, Provider, Avg_Temperature, Avg_Latency_ms, Total_Cost_USD, Total_Tokens | sort -Requests",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_pii_detected": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.pii.detected'=\"true\", 1, 0))) as pii_detected | eval pii_detected=coalesce(pii_detected, 0)",
+                "query": "index=gen_ai_log source=pii_ml_scoring gen_ai.pii.ml_detected=\"true\" gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as pii_detected | eval pii_detected=coalesce(pii_detected, 0)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_policy_blocked": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.policy.blocked'=\"true\", 1, 0))) as policy_blocked | eval policy_blocked=coalesce(policy_blocked, 0)",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.policy.blocked'=\"true\", 1, 0))) as policy_blocked | eval policy_blocked=coalesce(policy_blocked, 0)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_recent_requests": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval Timestamp=strftime(_time, \"%Y-%m-%d %H:%M:%S\") | eval Latency_ms=round('gen_ai.client.operation.duration'*1000, 0) | eval Tokens=coalesce('gen_ai.usage.total_tokens', 0) | eval Cost_USD=round((coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000), 6) | table Timestamp, gen_ai.request.id, gen_ai.session.id, gen_ai.app.name, gen_ai.request.model, Latency_ms, Tokens, Cost_USD, gen_ai.safety.violated, gen_ai.pii.detected, gen_ai.policy.blocked | rename gen_ai.request.id as Request_ID, gen_ai.session.id as Session_ID, gen_ai.app.name as Service, gen_ai.request.model as Model, gen_ai.safety.violated as Safety_Violated, gen_ai.pii.detected as PII_Detected, gen_ai.policy.blocked as Policy_Blocked | sort -Timestamp | head 20",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval Timestamp=strftime(_time, \"%Y-%m-%d %H:%M:%S\") | eval Latency_ms=round('gen_ai.client.operation.duration'*1000, 0) | eval Tokens=coalesce('gen_ai.usage.total_tokens', 0) | eval Cost_USD=round((coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000), 6) | table Timestamp, gen_ai.event.id, gen_ai.session.id, gen_ai.app.name, gen_ai.request.model, Latency_ms, Tokens, Cost_USD, gen_ai.safety.violated, gen_ai.guardrail.triggered, gen_ai.policy.blocked | rename gen_ai.event.id as \"Event ID\", gen_ai.session.id as \"Session ID\", gen_ai.app.name as \"App Name\", gen_ai.request.model as Model, gen_ai.safety.violated as \"Safety Violated\", gen_ai.guardrail.triggered as \"Guardrail Triggered\", gen_ai.policy.blocked as \"Policy Blocked\" | sort -Timestamp | head 20",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_request_volume": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | timechart span=1h count as requests",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | timechart span=1h count as requests",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_requests_by_service": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as requests by gen_ai.app.name | sort -requests",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as requests by gen_ai.app.name | sort -requests",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_retries": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(coalesce('gen_ai.retry.count', 0))) as total_retries | eval total_retries=coalesce(total_retries, 0)",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(coalesce('gen_ai.retry.count', 0))) as total_retries | eval total_retries=coalesce(total_retries, 0)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_safety_violations": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.safety.violated'=\"true\", 1, 0))) as safety_violations | eval safety_violations=coalesce(safety_violations, 0)",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.safety.violated'=\"true\", 1, 0))) as safety_violations | eval safety_violations=coalesce(safety_violations, 0)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_service_filter": {
             "options": {
-                "query": "index=gen_ai_log | stats count by gen_ai.app.name | fields gen_ai.app.name",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring | stats count by gen_ai.app.name | fields gen_ai.app.name",
                 "queryParameters": { "earliest": "-7d@d", "latest": "now" }
             },
             "type": "ds.search"
         },
         "ds_service_performance": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Requests, avg(gen_ai.client.operation.duration) as Avg_Latency_sec, sum(gen_ai.usage.total_tokens) as Total_Tokens, sum(event_cost) as Total_Cost_USD by gen_ai.app.name | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | eval Total_Cost_USD=round(coalesce(Total_Cost_USD, 0), 4) | rename gen_ai.app.name as Service | fields Service, Requests, Avg_Latency_ms, Total_Cost_USD, Total_Tokens | sort -Requests",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Requests, avg(gen_ai.client.operation.duration) as Avg_Latency_sec, sum(gen_ai.usage.total_tokens) as Total_Tokens, sum(event_cost) as Total_Cost_USD by gen_ai.app.name | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | eval Total_Cost_USD=round(coalesce(Total_Cost_USD, 0), 4) | rename gen_ai.app.name as Service | fields Service, Requests, Avg_Latency_ms, Total_Cost_USD, Total_Tokens | sort -Requests",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_session_activity": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Interactions, min(_time) as Session_Start, max(_time) as Session_End, sum(gen_ai.usage.total_tokens) as Session_Tokens, sum(event_cost) as Session_Cost_USD, avg(gen_ai.client.operation.duration) as Avg_Latency_sec by gen_ai.session.id | eval Session_Start=strftime(Session_Start, \"%Y-%m-%d %H:%M:%S\") | eval Session_End=strftime(Session_End, \"%Y-%m-%d %H:%M:%S\") | eval Session_Cost_USD=round(coalesce(Session_Cost_USD, 0), 4) | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | rename gen_ai.session.id as Session_ID | fields Session_ID, Interactions, Session_Start, Session_End, Session_Cost_USD, Session_Tokens, Avg_Latency_ms | sort -Interactions | head 10",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Interactions, min(_time) as Session_Start, max(_time) as Session_End, sum(gen_ai.usage.total_tokens) as Session_Tokens, sum(event_cost) as Session_Cost_USD, avg(gen_ai.client.operation.duration) as Avg_Latency_sec by gen_ai.session.id | eval Session_Start=strftime(Session_Start, \"%Y-%m-%d %H:%M:%S\") | eval Session_End=strftime(Session_End, \"%Y-%m-%d %H:%M:%S\") | eval Session_Cost_USD=round(coalesce(Session_Cost_USD, 0), 4) | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | rename gen_ai.session.id as Session_ID | fields Session_ID, Interactions, Session_Start, Session_End, Session_Cost_USD, Session_Tokens, Avg_Latency_ms | sort -Interactions | head 10",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_status_distribution": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval status=case('gen_ai.safety.violated'=\"true\", \"Safety Violation\", 'gen_ai.policy.blocked'=\"true\", \"Policy Blocked\", 'gen_ai.pii.detected'=\"true\", \"PII Detected\", 1=1, \"Success\") | stats count by status | sort -count",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.safety.violated'=\"true\", 1, 0))) as Safety_Violation, sum(eval(if('gen_ai.policy.blocked'=\"true\", 1, 0))) as Policy_Blocked, sum(eval(if('gen_ai.guardrail.triggered'=\"true\", 1, 0))) as Guardrail_Triggered, sum(eval(if('gen_ai.safety.violated'!=\"true\" AND 'gen_ai.policy.blocked'!=\"true\" AND 'gen_ai.guardrail.triggered'!=\"true\", 1, 0))) as Success | transpose | rename column as status, \"Row 1\" as count",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_ml_detection_summary": {
+            "options": {
+                "query": "index=gen_ai_log source=*_scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if(source=\"pii_ml_scoring\" AND 'gen_ai.pii.ml_detected'=\"true\", 1, 0))) as PII_Detected, sum(eval(if(source=\"prompt_injection_ml_scoring\" AND 'gen_ai.prompt_injection.ml_detected'=\"true\", 1, 0))) as Prompt_Injection, sum(eval(if('gen_ai.response.is_anomaly'=\"true\" OR 'gen_ai.prompt.is_anomaly'=\"True\", 1, 0))) as Anomaly_Detected | transpose | rename column as detection_type, \"Row 1\" as count",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_token_usage_time": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | timechart span=1h sum(gen_ai.usage.total_tokens) as total_tokens",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | timechart span=1h sum(gen_ai.usage.total_tokens) as total_tokens",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_total_cost": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(event_cost) as total_cost | eval total_cost=round(coalesce(total_cost, 0), 4)",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(event_cost) as total_cost | eval total_cost=round(coalesce(total_cost, 0), 4)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_total_requests": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as total_requests",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as total_requests",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_total_tokens": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(gen_ai.usage.total_tokens) as total_tokens | eval total_tokens=if(isnull(total_tokens) OR total_tokens=\"\", 0, total_tokens)",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(gen_ai.usage.total_tokens) as total_tokens | eval total_tokens=if(isnull(total_tokens) OR total_tokens=\"\", 0, total_tokens)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_unique_sessions": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats dc(gen_ai.session.id) as unique_sessions",
+                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats dc(gen_ai.session.id) as unique_sessions",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
@@ -636,7 +634,7 @@
             { "item": "viz_session_activity", "position": { "h": 280, "w": 1440, "x": 0, "y": 1990 }, "type": "block" },
             { "item": "viz_header_status", "position": { "h": 50, "w": 1440, "x": 0, "y": 2270 }, "type": "block" },
             { "item": "viz_status_distribution", "position": { "h": 280, "w": 720, "x": 0, "y": 2320 }, "type": "block" },
-            { "item": "viz_error_messages", "position": { "h": 280, "w": 720, "x": 720, "y": 2320 }, "type": "block" },
+            { "item": "viz_ml_detection_summary", "position": { "h": 280, "w": 720, "x": 720, "y": 2320 }, "type": "block" },
             { "item": "viz_header_logs", "position": { "h": 50, "w": 1440, "x": 0, "y": 2600 }, "type": "block" },
             { "item": "viz_recent_requests", "position": { "h": 300, "w": 1440, "x": 0, "y": 2650 }, "type": "block" },
             { "item": "viz_header_compliance", "position": { "h": 50, "w": 1440, "x": 0, "y": 2950 }, "type": "block" },

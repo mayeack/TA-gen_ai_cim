@@ -74,7 +74,7 @@ require([
         
         // Map type to label texts as fallback
         var labelMap = {
-            'pii': ['PII Present?', 'PII Types (Detected)', 'PII Types (Reviewed)'],
+            'pii': ['PII Present (Detected)', 'PII Types (Detected)', 'PII Types (Reviewed)'],
             'phi': ['PHI Present?', 'PHI Types'],
             'injection': ['Injection Detected?', 'Injection Type'],
             'anomaly': ['Prompt Anomaly (Detected)', 'Prompt Anomaly (Reviewed)', 'Response Anomaly (Detected)', 'Response Anomaly (Reviewed)']
@@ -232,7 +232,7 @@ require([
             "gen_ai_review_priority": getToken("input_priority") || "medium",
             "gen_ai_review_assignee": assignee,
             "gen_ai_review_reviewer": currentUser,
-            "gen_ai_review_pii_confirmed": getToken("input_pii_confirmed") || "false",
+            "gen_ai_review_pii_confirmed": getToken("input_pii_confirmed") || "n/a",
             "gen_ai_review_pii_types": getToken("input_pii_types_detected") || "",
             "gen_ai_review_pii_types_reviewed": getToken("input_pii_types_reviewed") || "",
             "gen_ai_review_phi_confirmed": getToken("input_phi_confirmed") || "false",

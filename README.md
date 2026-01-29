@@ -1,6 +1,6 @@
 # TA-gen_ai_cim
 
-> **⚠️ ALPHA SOFTWARE** - This Technology Add-on is in active development. Features may change, break, or be removed without notice. Use at your own risk in non-production environments.
+> **⚠️ ALPHA SOFTWARE** - This Technology Add-on is in active development. Features may change, break, or be removed without notice. Use at your own risk in non-production environments. This application is currently for demonstration purposes only.
 
 **Splunk Technology Add-on for Generative AI Common Information Model**
 
@@ -157,8 +157,8 @@ The following MLTK algorithms are used for ML-based detection features:
 | `HashingVectorizer` | Text-to-vector conversion | TF-IDF anomaly detection |
 | `PCA` | Dimensionality reduction | TF-IDF anomaly detection |
 | `OneClassSVM` | Unsupervised anomaly detection | Prompt/response anomaly detection |
-| `RandomForestClassifier` | Supervised classification | PII detection, prompt injection detection |
-| `LogisticRegression` | Supervised classification | PII detection (alternative model) |
+| `LogisticRegression` | Supervised classification | PII detection |
+| `RandomForestClassifier` | Supervised classification | Prompt injection detection |
 
 **Note:** These algorithms are provided by MLTK's Python for Scientific Computing add-on.
 
@@ -397,49 +397,19 @@ $SPLUNK_HOME/bin/splunk search "| savedsearch \"GenAI - *\""
 
 ## Dashboards
 
-Pre-built dashboard **automatically installed** with the TA in both **Dashboard Studio (JSON)** and **Classic Dashboard (XML)** formats.
+Pre-built dashboards are **automatically installed** with the TA, providing comprehensive AI governance monitoring.
 
-### GenAI Governance Overview Dashboard
+| Dashboard | Description | Documentation |
+|-----------|-------------|---------------|
+| **AI Governance Overview** | Main dashboard with KPIs, safety/compliance metrics, trends | [Details](README/DASHBOARDS/AI_GOVERNANCE_OVERVIEW.md) |
+| **TF-IDF Anomaly Detection** | ML-based detection of unusual prompts/responses | [Details](README/DASHBOARDS/TFIDF_ANOMALY_DETECTION.md) |
+| **PII Detection** | ML-powered PII detection and monitoring | [Details](README/DASHBOARDS/PII_DETECTION.md) |
+| **Prompt Injection Detection** | Adversarial attack detection and analysis | [Details](README/DASHBOARDS/PROMPT_INJECTION_DETECTION.md) |
+| **Review Queue** | Human review workflow and triage | [Details](README/DASHBOARDS/REVIEW_QUEUE.md) |
 
-**Automatically Available After Installation** ✓
+**Access:** Navigate to **Apps → GenAI Governance** in Splunk Web after installation.
 
-The dashboard is immediately accessible at:
-- **Classic Dashboard:** `GenAI Governance Overview` (auto-installed)
-- **Dashboard Studio:** Can be created from JSON template in documentation
-
-**Access the Dashboard:**
-1. Install the TA (see Installation section)
-2. Navigate to the TA in Splunk Web: **Apps → GenAI Governance**
-3. The `GenAI Governance Overview` dashboard opens by default
-
-**Dashboard Includes:**
-- **KPI Panels:** Safety violation rate, PII rate, total cost, P95 latency
-- **Safety Timeline:** Violations over time by severity
-- **PII Detection:** Events, types, risk scores
-- **Model Drift:** Status by deployment, trend over time
-- **Cost Analysis:** Daily cost by model, per deployment
-- **Latency Analysis:** Distribution, trends, outliers
-- **MLTK Risk:** Prompt injection detection, combined risk heatmap
-
-**Customization Options:**
-
-If you want to customize the auto-installed dashboard:
-1. Navigate to **Settings → User Interface → Views**
-2. Find `genai_governance_overview`
-3. Click **Edit** to modify the XML
-4. Or clone it to create a custom version
-
-**Dashboard Studio Version:**
-
-To create a Dashboard Studio version (Splunk 9.0+):
-1. Navigate to **Dashboards → Create New Dashboard**
-2. Select **Dashboard Studio**
-3. Click **Source** (< > icon)
-4. Copy JSON from `README/DASHBOARD_PANELS.md` (Dashboard Studio section)
-5. Paste and Save
-
-**Full dashboard definitions and customization:** See [Dashboard Panels](README/DASHBOARD_PANELS.md)  
-**Dashboard comparison:** See [Dashboard Studio vs Classic](README/DASHBOARD_COMPARISON.md)
+**Full documentation:** See [README/DASHBOARDS/](README/DASHBOARDS/) for detailed panel descriptions and customization options.
 
 ### Governance Review Workflow
 
@@ -459,7 +429,7 @@ The Event Review page dynamically shows/hides detection fields based on Detectio
 
 | When This Setting is OFF | These Fields are Hidden |
 |--------------------------|-------------------------|
-| Detect PII | "PII Present?" and "PII Types" |
+| Detect PII | "PII Present (Detected)" and "PII Types" |
 | Detect PHI | "PHI Present?" and "PHI Types" |
 | Detect Prompt Injection | "Injection Detected?" and "Injection Type" |
 | Detect Anomalies | "Anomaly Detected?" and "Anomaly Description" |
@@ -1045,8 +1015,7 @@ The TA supports compliance requirements for:
 
 - **Deployment Guide:** [README/DEPLOYMENT_GUIDE.md](README/DEPLOYMENT_GUIDE.md)
 - **Provider Examples:** [README/PROVIDER_EXAMPLES.md](README/PROVIDER_EXAMPLES.md)
-- **Dashboard Panels:** [README/DASHBOARD_PANELS.md](README/DASHBOARD_PANELS.md)
-- **Dashboard Comparison:** [README/DASHBOARD_COMPARISON.md](README/DASHBOARD_COMPARISON.md)
+- **Dashboards:** [README/DASHBOARDS/](README/DASHBOARDS/) (AI Governance Overview, PII Detection, Prompt Injection, TF-IDF Anomaly, Review Queue)
 - **Governance Review Workflow:** [README/GOVERNANCE_REVIEW.md](README/GOVERNANCE_REVIEW.md)
 - **PII/PHI Detection (Complete Guide):** [README/ML Models/PII_Detection.md](README/ML%20Models/PII_Detection.md)
 - **MLTK Detection:** [README/ML Models/README.md](README/ML%20Models/README.md)
