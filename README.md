@@ -522,8 +522,8 @@ index=gen_ai_log earliest=-1h
 **Scoring:**
 ```spl
 | apply prompt_injection_model
-| eval gen_ai.prompt_injection.risk_score=round('predicted(injection_label)', 3)
-| eval gen_ai.prompt_injection.ml_detected=if('risk_score'>0.6, "true", "false")
+| eval gen_ai.prompt_injection.risk_score=round('RandomForestClassifier:probability(injection_label=1)', 3)
+| eval gen_ai.prompt_injection.ml_detected=if('gen_ai.prompt_injection.risk_score'>0.6, "true", "false")
 ```
 
 **Full MLTK documentation:** See [ML Models Overview](README/ML%20Models/README.md)
