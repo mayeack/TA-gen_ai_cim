@@ -32,6 +32,9 @@ Thumbs.db
 # Planning documents (AI assistant collaboration)
 planning/
 
+# Key Features documentation (AI-generated, instance-specific)
+README/KEY_FEATURES.md
+
 # Cursor IDE configuration (development-only)
 .cursor/
 
