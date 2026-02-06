@@ -419,63 +419,63 @@
     "dataSources": {
         "ds_avg_latency": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | stats avg(gen_ai.client.operation.duration) as avg_latency | eval avg_latency=round(avg_latency*1000, 0) | eval avg_latency=coalesce(avg_latency, 0)",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | stats avg(gen_ai.client.operation.duration) as avg_latency | eval avg_latency=round(avg_latency*1000, 0) | eval avg_latency=coalesce(avg_latency, 0)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_compliance_summary": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as total_events, sum(eval(if('gen_ai.safety.violated'=\"true\", 1, 0))) as safety_violations, sum(eval(if('gen_ai.guardrail.triggered'=\"true\", 1, 0))) as guardrails_triggered, sum(eval(if('gen_ai.policy.blocked'=\"true\", 1, 0))) as policy_blocks | eval safety_violations=coalesce(safety_violations, 0) | eval guardrails_triggered=coalesce(guardrails_triggered, 0) | eval policy_blocks=coalesce(policy_blocks, 0) | eval safety_compliance_pct=round(((total_events-safety_violations)/total_events)*100, 2) | rename total_events as \"Total Events\", safety_violations as \"Safety Violations\", guardrails_triggered as \"Guardrails Triggered\", policy_blocks as \"Policy Blocks\", safety_compliance_pct as \"Safety Compliance Pct\"",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as total_events, sum(eval(if('gen_ai.safety.violated'=\"true\", 1, 0))) as safety_violations, sum(eval(if('gen_ai.guardrail.triggered'=\"true\", 1, 0))) as guardrails_triggered, sum(eval(if('gen_ai.policy.blocked'=\"true\", 1, 0))) as policy_blocks | eval safety_violations=coalesce(safety_violations, 0) | eval guardrails_triggered=coalesce(guardrails_triggered, 0) | eval policy_blocks=coalesce(policy_blocks, 0) | eval safety_compliance_pct=round(((total_events-safety_violations)/total_events)*100, 2) | rename total_events as \"Total Events\", safety_violations as \"Safety Violations\", guardrails_triggered as \"Guardrails Triggered\", policy_blocks as \"Policy Blocks\", safety_compliance_pct as \"Safety Compliance Pct\"",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_cost_by_service": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(cost) as total_cost by gen_ai.app.name | sort -total_cost",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(cost) as total_cost by gen_ai.app.name | sort -total_cost",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_cost_time": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | timechart span=1h sum(cost) as total_cost",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | timechart span=1h sum(cost) as total_cost",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_guardrails_triggered": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.guardrail.triggered'=\"true\", 1, 0))) as guardrails_triggered | eval guardrails_triggered=coalesce(guardrails_triggered, 0)",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.guardrail.triggered'=\"true\", 1, 0))) as guardrails_triggered | eval guardrails_triggered=coalesce(guardrails_triggered, 0)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_latency_distribution": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | eval latency_bucket=case('gen_ai.client.operation.duration'<1, \"<1s\", 'gen_ai.client.operation.duration'<2, \"1-2s\", 'gen_ai.client.operation.duration'<5, \"2-5s\", 'gen_ai.client.operation.duration'<10, \"5-10s\", 'gen_ai.client.operation.duration'<30, \"10-30s\", 1=1, \">30s\") | stats count by latency_bucket | sort latency_bucket",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | eval latency_bucket=case('gen_ai.client.operation.duration'<1, \"<1s\", 'gen_ai.client.operation.duration'<2, \"1-2s\", 'gen_ai.client.operation.duration'<5, \"2-5s\", 'gen_ai.client.operation.duration'<10, \"5-10s\", 'gen_ai.client.operation.duration'<30, \"10-30s\", 1=1, \">30s\") | stats count by latency_bucket | sort latency_bucket",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_latency_time": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | eval latency_ms='gen_ai.client.operation.duration'*1000 | timechart span=1h avg(latency_ms) as avg_latency_ms, perc95(latency_ms) as p95_latency_ms",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | eval latency_ms='gen_ai.client.operation.duration'*1000 | timechart span=1h avg(latency_ms) as avg_latency_ms, perc95(latency_ms) as p95_latency_ms",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_model_filter": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring | stats count by gen_ai.request.model | fields gen_ai.request.model",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` | stats count by gen_ai.request.model | fields gen_ai.request.model",
                 "queryParameters": { "earliest": "-7d@d", "latest": "now" }
             },
             "type": "ds.search"
         },
         "ds_model_usage": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Requests, values(gen_ai.provider.name) as Provider, avg(gen_ai.request.temperature) as Avg_Temperature, avg(gen_ai.client.operation.duration) as Avg_Latency_sec, sum(gen_ai.usage.total_tokens) as Total_Tokens, sum(event_cost) as Total_Cost_USD by gen_ai.request.model | eval Avg_Temperature=round(Avg_Temperature, 2) | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | eval Total_Cost_USD=round(coalesce(Total_Cost_USD, 0), 4) | rename gen_ai.request.model as Model_ID | fields Model_ID, Requests, Provider, Avg_Temperature, Avg_Latency_ms, Total_Cost_USD, Total_Tokens | sort -Requests",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Requests, values(gen_ai.provider.name) as Provider, avg(gen_ai.request.temperature) as Avg_Temperature, avg(gen_ai.client.operation.duration) as Avg_Latency_sec, sum(gen_ai.usage.total_tokens) as Total_Tokens, sum(event_cost) as Total_Cost_USD by gen_ai.request.model | eval Avg_Temperature=round(Avg_Temperature, 2) | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | eval Total_Cost_USD=round(coalesce(Total_Cost_USD, 0), 4) | rename gen_ai.request.model as Model_ID | fields Model_ID, Requests, Provider, Avg_Temperature, Avg_Latency_ms, Total_Cost_USD, Total_Tokens | sort -Requests",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
@@ -489,70 +489,70 @@
         },
         "ds_policy_blocked": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.policy.blocked'=\"true\", 1, 0))) as policy_blocked | eval policy_blocked=coalesce(policy_blocked, 0)",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.policy.blocked'=\"true\", 1, 0))) as policy_blocked | eval policy_blocked=coalesce(policy_blocked, 0)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_recent_requests": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval Timestamp=strftime(_time, \"%Y-%m-%d %H:%M:%S\") | eval Latency_ms=round('gen_ai.client.operation.duration'*1000, 0) | eval Tokens=coalesce('gen_ai.usage.total_tokens', 0) | eval Cost_USD=round((coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000), 6) | table Timestamp, gen_ai.event.id, gen_ai.session.id, gen_ai.app.name, gen_ai.request.model, Latency_ms, Tokens, Cost_USD, gen_ai.safety.violated, gen_ai.guardrail.triggered, gen_ai.policy.blocked | rename gen_ai.event.id as \"Event ID\", gen_ai.session.id as \"Session ID\", gen_ai.app.name as \"App Name\", gen_ai.request.model as Model, gen_ai.safety.violated as \"Safety Violated\", gen_ai.guardrail.triggered as \"Guardrail Triggered\", gen_ai.policy.blocked as \"Policy Blocked\" | sort -Timestamp | head 20",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval Timestamp=strftime(_time, \"%Y-%m-%d %H:%M:%S\") | eval Latency_ms=round('gen_ai.client.operation.duration'*1000, 0) | eval Tokens=coalesce('gen_ai.usage.total_tokens', 0) | eval Cost_USD=round((coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000), 6) | table Timestamp, gen_ai.event.id, gen_ai.session.id, gen_ai.app.name, gen_ai.request.model, Latency_ms, Tokens, Cost_USD, gen_ai.safety.violated, gen_ai.guardrail.triggered, gen_ai.policy.blocked | rename gen_ai.event.id as \"Event ID\", gen_ai.session.id as \"Session ID\", gen_ai.app.name as \"App Name\", gen_ai.request.model as Model, gen_ai.safety.violated as \"Safety Violated\", gen_ai.guardrail.triggered as \"Guardrail Triggered\", gen_ai.policy.blocked as \"Policy Blocked\" | sort -Timestamp | head 20",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_request_volume": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | timechart span=1h count as requests",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | timechart span=1h count as requests",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_requests_by_service": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as requests by gen_ai.app.name | sort -requests",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as requests by gen_ai.app.name | sort -requests",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_retries": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(coalesce('gen_ai.retry.count', 0))) as total_retries | eval total_retries=coalesce(total_retries, 0)",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(coalesce('gen_ai.retry.count', 0))) as total_retries | eval total_retries=coalesce(total_retries, 0)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_safety_violations": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.safety.violated'=\"true\", 1, 0))) as safety_violations | eval safety_violations=coalesce(safety_violations, 0)",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.safety.violated'=\"true\", 1, 0))) as safety_violations | eval safety_violations=coalesce(safety_violations, 0)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_service_filter": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring | stats count by gen_ai.app.name | fields gen_ai.app.name",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` | stats count by gen_ai.app.name | fields gen_ai.app.name",
                 "queryParameters": { "earliest": "-7d@d", "latest": "now" }
             },
             "type": "ds.search"
         },
         "ds_service_performance": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Requests, avg(gen_ai.client.operation.duration) as Avg_Latency_sec, sum(gen_ai.usage.total_tokens) as Total_Tokens, sum(event_cost) as Total_Cost_USD by gen_ai.app.name | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | eval Total_Cost_USD=round(coalesce(Total_Cost_USD, 0), 4) | rename gen_ai.app.name as Service | fields Service, Requests, Avg_Latency_ms, Total_Cost_USD, Total_Tokens | sort -Requests",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Requests, avg(gen_ai.client.operation.duration) as Avg_Latency_sec, sum(gen_ai.usage.total_tokens) as Total_Tokens, sum(event_cost) as Total_Cost_USD by gen_ai.app.name | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | eval Total_Cost_USD=round(coalesce(Total_Cost_USD, 0), 4) | rename gen_ai.app.name as Service | fields Service, Requests, Avg_Latency_ms, Total_Cost_USD, Total_Tokens | sort -Requests",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_session_activity": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Interactions, min(_time) as Session_Start, max(_time) as Session_End, sum(gen_ai.usage.total_tokens) as Session_Tokens, sum(event_cost) as Session_Cost_USD, avg(gen_ai.client.operation.duration) as Avg_Latency_sec by gen_ai.session.id | eval Session_Start=strftime(Session_Start, \"%Y-%m-%d %H:%M:%S\") | eval Session_End=strftime(Session_End, \"%Y-%m-%d %H:%M:%S\") | eval Session_Cost_USD=round(coalesce(Session_Cost_USD, 0), 4) | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | rename gen_ai.session.id as Session_ID | fields Session_ID, Interactions, Session_Start, Session_End, Session_Cost_USD, Session_Tokens, Avg_Latency_ms | sort -Interactions | head 10",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Interactions, min(_time) as Session_Start, max(_time) as Session_End, sum(gen_ai.usage.total_tokens) as Session_Tokens, sum(event_cost) as Session_Cost_USD, avg(gen_ai.client.operation.duration) as Avg_Latency_sec by gen_ai.session.id | eval Session_Start=strftime(Session_Start, \"%Y-%m-%d %H:%M:%S\") | eval Session_End=strftime(Session_End, \"%Y-%m-%d %H:%M:%S\") | eval Session_Cost_USD=round(coalesce(Session_Cost_USD, 0), 4) | eval Avg_Latency_ms=round(Avg_Latency_sec*1000, 0) | rename gen_ai.session.id as Session_ID | fields Session_ID, Interactions, Session_Start, Session_End, Session_Cost_USD, Session_Tokens, Avg_Latency_ms | sort -Interactions | head 10",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_status_distribution": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.safety.violated'=\"true\", 1, 0))) as Safety_Violation, sum(eval(if('gen_ai.policy.blocked'=\"true\", 1, 0))) as Policy_Blocked, sum(eval(if('gen_ai.guardrail.triggered'=\"true\", 1, 0))) as Guardrail_Triggered, sum(eval(if('gen_ai.safety.violated'!=\"true\" AND 'gen_ai.policy.blocked'!=\"true\" AND 'gen_ai.guardrail.triggered'!=\"true\", 1, 0))) as Success | transpose | rename column as status, \"Row 1\" as count",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.safety.violated'=\"true\", 1, 0))) as Safety_Violation, sum(eval(if('gen_ai.policy.blocked'=\"true\", 1, 0))) as Policy_Blocked, sum(eval(if('gen_ai.guardrail.triggered'=\"true\", 1, 0))) as Guardrail_Triggered, sum(eval(if('gen_ai.safety.violated'!=\"true\" AND 'gen_ai.policy.blocked'!=\"true\" AND 'gen_ai.guardrail.triggered'!=\"true\", 1, 0))) as Success | transpose | rename column as status, \"Row 1\" as count",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
@@ -566,35 +566,35 @@
         },
         "ds_token_usage_time": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | timechart span=1h sum(gen_ai.usage.total_tokens) as total_tokens",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | timechart span=1h sum(gen_ai.usage.total_tokens) as total_tokens",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_total_cost": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(event_cost) as total_cost | eval total_cost=round(coalesce(total_cost, 0), 4)",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(event_cost) as total_cost | eval total_cost=round(coalesce(total_cost, 0), 4)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_total_requests": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as total_requests",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as total_requests",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_total_tokens": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(gen_ai.usage.total_tokens) as total_tokens | eval total_tokens=if(isnull(total_tokens) OR total_tokens=\"\", 0, total_tokens)",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(gen_ai.usage.total_tokens) as total_tokens | eval total_tokens=if(isnull(total_tokens) OR total_tokens=\"\", 0, total_tokens)",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_unique_sessions": {
             "options": {
-                "query": "index=gen_ai_log sourcetype!=gen_ai:*:scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats dc(gen_ai.session.id) as unique_sessions",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats dc(gen_ai.session.id) as unique_sessions",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"

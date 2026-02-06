@@ -451,7 +451,7 @@ The `GenAI - Prompt Injection Scoring - Prompt Analysis` saved search runs every
 2. Engineer 11 features
 3. Apply ML model
 4. Classify attack techniques
-5. Write enriched events back to index with `sourcetype="gen_ai:prompt_injection:scoring"`
+5. Write enriched events back to index with `sourcetype="ai_cim:prompt_injection:ml_scoring"`
 
 ---
 
@@ -751,8 +751,7 @@ When challenger outperforms champion:
 
 - [PII_Detection.md](PII_Detection.md) - PII/PHI detection model
 - [TFIDF_Anomaly.md](TFIDF_Anomaly.md) - Anomaly detection for unusual prompts
-- [Feedback_Loop.md](Feedback_Loop.md) - Active learning system
 
 ---
 
-**Last Updated:** 2026-01-27
+**Last Updated:** 2026-02-05

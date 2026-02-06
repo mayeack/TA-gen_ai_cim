@@ -13,8 +13,9 @@ This document provides complete SPL for training and deploying Splunk MLTK TF-ID
 7. [Governance Alerts](#governance-alerts)
 8. [Dashboard Panels](#dashboard-panels)
 9. [Model Maintenance](#model-maintenance)
-10. [Troubleshooting Guide](#troubleshooting-guide)
-11. [Parameter Reference](#parameter-reference)
+10. [Feedback Loop (Unsupervised)](#feedback-loop-unsupervised)
+11. [Troubleshooting Guide](#troubleshooting-guide)
+12. [Parameter Reference](#parameter-reference)
 
 ---
 
@@ -220,14 +221,14 @@ Training now uses **HashingVectorizer** (stateless) instead of TFIDF (which requ
 
 ### Important: Training Data Filter
 
-All training searches use the filter `sourcetype!="gen_ai:*:scoring"` to exclude ML-generated scoring events from the training data. This ensures the model trains only on original telemetry events, not on the enriched events produced by the scoring pipeline.
+All training searches use the filter ``exclude_scoring_sourcetypes`` to exclude ML-generated scoring events from the training data. This ensures the model trains only on original telemetry events, not on the enriched events produced by the scoring pipeline.
 
 ### Step 1: Train PCA Model (Prompts)
 
 Uses HashingVectorizer to create features, then trains PCA for dimensionality reduction.
 
 ```spl
-index=gen_ai_log sourcetype!="gen_ai:*:scoring"
+index=gen_ai_log `exclude_scoring_sourcetypes`
 | eval input_text=coalesce(mvjoin('input_messages{}.content', " "), 'gen_ai.input.messages', 'event.input', input_messages, input)
 | where isnotnull(input_text) AND len(input_text) > 10
 | eval input_text_clean=lower(input_text)
@@ -245,7 +246,7 @@ index=gen_ai_log sourcetype!="gen_ai:*:scoring"
 **Run AFTER Step 1 completes:**
 
 ```spl
-index=gen_ai_log sourcetype!="gen_ai:*:scoring"
+index=gen_ai_log `exclude_scoring_sourcetypes`
 | eval input_text=coalesce(mvjoin('input_messages{}.content', " "), 'gen_ai.input.messages', 'event.input', input_messages, input)
 | where isnotnull(input_text) AND len(input_text) > 10
 | eval input_text_clean=lower(input_text)
@@ -265,7 +266,7 @@ Same pattern as Steps 1-2, but for responses:
 
 **Step 3: Train PCA Model (Responses)**
 ```spl
-index=gen_ai_log sourcetype!="gen_ai:*:scoring"
+index=gen_ai_log `exclude_scoring_sourcetypes`
 | eval output_text=coalesce(mvjoin('output_messages{}.content', " "), 'gen_ai.output.messages', 'event.output', output_messages, output)
 | where isnotnull(output_text) AND len(output_text) > 20
 | eval output_text_clean=lower(output_text)
@@ -280,7 +281,7 @@ index=gen_ai_log sourcetype!="gen_ai:*:scoring"
 
 **Step 4: Train Anomaly Model (Responses)** - Run after Step 3
 ```spl
-index=gen_ai_log sourcetype!="gen_ai:*:scoring"
+index=gen_ai_log `exclude_scoring_sourcetypes`
 | eval output_text=coalesce(mvjoin('output_messages{}.content', " "), 'gen_ai.output.messages', 'event.output', output_messages, output)
 | where isnotnull(output_text) AND len(output_text) > 20
 | eval output_text_clean=lower(output_text)
@@ -313,17 +314,17 @@ After training, verify models exist. Note: HashingVectorizer is stateless and ru
 **CRITICAL:** All scoring searches MUST exclude the scoring sourcetype to prevent re-processing previously scored events. Without this filter, `dedup gen_ai.event.id` may select a scoring event (which lacks the original prompt text) instead of the original telemetry event.
 
 ```spl
-sourcetype!="gen_ai:*:scoring"
+`exclude_scoring_sourcetypes`
 ```
 
 This filter excludes:
-- `gen_ai:tfidf:scoring` - TF-IDF anomaly scoring output
-- `gen_ai:pii:scoring` - PII detection scoring output
+- `ai_cim:tfidf:ml_scoring` - TF-IDF anomaly scoring output
+- `ai_cim:pii:ml_scoring` - PII detection scoring output
 
 ### Score Prompts for Anomalies
 
 ```spl
-index=gen_ai_log sourcetype!="gen_ai:*:scoring" earliest=-1h latest=now
+index=gen_ai_log `exclude_scoring_sourcetypes` earliest=-1h latest=now
 | eval input_text=coalesce(mvjoin('input_messages{}.content', " "), 'gen_ai.input.messages', 'event.input', input_messages, input)
 | where isnotnull(input_text) AND len(input_text) > 10
 | eval input_text_clean=lower(input_text)
@@ -342,7 +343,7 @@ index=gen_ai_log sourcetype!="gen_ai:*:scoring" earliest=-1h latest=now
 ### Score Responses for Anomalies
 
 ```spl
-index=gen_ai_log sourcetype!="gen_ai:*:scoring" earliest=-1h latest=now
+index=gen_ai_log `exclude_scoring_sourcetypes` earliest=-1h latest=now
 | eval output_text=coalesce(mvjoin('output_messages{}.content', " "), 'gen_ai.output.messages', 'event.output', output_messages, output)
 | where isnotnull(output_text) AND len(output_text) > 20
 | eval output_text_clean=lower(output_text)
@@ -361,7 +362,7 @@ index=gen_ai_log sourcetype!="gen_ai:*:scoring" earliest=-1h latest=now
 ### Combined Scoring with Risk Levels
 
 ```spl
-index=gen_ai_log sourcetype!="gen_ai:*:scoring" earliest=-1h latest=now
+index=gen_ai_log `exclude_scoring_sourcetypes` earliest=-1h latest=now
 | eval input_text=coalesce(mvjoin('input_messages{}.content', " "), 'gen_ai.input.messages', 'event.input', input_messages, input)
 | eval output_text=coalesce(mvjoin('output_messages{}.content', " "), 'gen_ai.output.messages', 'event.output', output_messages, output)
 | eval input_text_clean=lower(coalesce(input_text, ""))
@@ -471,6 +472,90 @@ index=gen_ai_log earliest=-7d gen_ai.prompt.is_anomaly=*
 
 ---
 
+## Feedback Loop (Unsupervised)
+
+Unlike the supervised PII Detection and Prompt Injection models, TF-IDF Anomaly Detection uses an **unsupervised learning approach** (OneClassSVM). This means it does not have a traditional active learning feedback loop with human-labeled data.
+
+### Why No Active Learning Feedback Loop?
+
+| Aspect | Supervised (PII, Prompt Injection) | Unsupervised (TF-IDF Anomaly) |
+|--------|-------------------------------------|-------------------------------|
+| **Training Data** | Requires labeled examples (PII/not PII) | Learns from unlabeled "normal" data |
+| **Human Labels** | Essential for model improvement | Not applicable |
+| **Ground Truth** | Human reviewers confirm/reject predictions | No ground truth labels |
+| **Improvement Method** | Retrain with human feedback | Retrain with updated baseline data |
+
+### Model Improvement Approach
+
+Instead of an active learning feedback loop, TF-IDF models are improved through:
+
+#### 1. Baseline Data Quality
+
+Train on representative "normal" data:
+- Include diverse normal prompts/responses from your environment
+- Exclude known attack patterns from training data
+- Update training data when application usage patterns change
+
+#### 2. Scheduled Retraining
+
+| Frequency | Trigger |
+|-----------|---------|
+| **Monthly** | Standard maintenance |
+| **Weekly** | If anomaly rate exceeds 10% |
+| **Immediate** | New applications deployed, major usage pattern changes |
+
+#### 3. Parameter Tuning
+
+Adjust sensitivity based on operational feedback:
+
+| Parameter | Effect | When to Adjust |
+|-----------|--------|----------------|
+| `nu` | Expected anomaly fraction | If too many/few alerts |
+| `k` (PCA) | Feature dimensionality | If model too sensitive to minor variations |
+| `genai_tfidf_anomaly_threshold` | Detection threshold | To adjust false positive rate |
+
+### Indirect Feedback Integration
+
+While not using active learning, TF-IDF models can benefit from insights gathered during human review:
+
+1. **Review Anomalies:** Analysts review flagged events in Event Review dashboard
+2. **Identify False Positives:** Track events incorrectly flagged as anomalies
+3. **Update Training Data:** Add common false positive patterns to training baseline
+4. **Retrain Models:** Periodically retrain with updated baseline data
+
+### Model Registry
+
+TF-IDF models are tracked in the `tfidf_model_registry` KV Store collection:
+
+| Field | Purpose |
+|-------|---------|
+| `model_name` | Model identifier (prompt or response) |
+| `model_version` | Training timestamp |
+| `status` | current or archived |
+| `nu_parameter` | OneClassSVM nu value used |
+| `training_events` | Number of events used in training |
+| `trained_at` | Training timestamp |
+
+### Monitoring Anomaly Rate
+
+Track model performance to determine when retraining is needed:
+
+```spl
+index=gen_ai_log gen_ai.prompt.is_anomaly=* earliest=-7d
+| stats 
+    count(eval('gen_ai.prompt.is_anomaly'="true")) as flagged,
+    count as total
+| eval anomaly_rate = round(flagged/total*100, 2)
+| eval status = case(
+    anomaly_rate > 15, "CRITICAL - Retrain immediately",
+    anomaly_rate > 10, "WARNING - Consider retraining",
+    1=1, "HEALTHY"
+)
+| table total, flagged, anomaly_rate, status
+```
+
+---
+
 ## Troubleshooting Guide
 
 ### Issue: "Model does not exist"
@@ -575,7 +660,7 @@ If any models are missing, run the training saved searches (Step 1 for PCA, then
 
 **Step 2: Verify scoring produces isNormal values**
 ```spl
-index=gen_ai_log sourcetype!="gen_ai:*:scoring" earliest=-1h
+index=gen_ai_log `exclude_scoring_sourcetypes` earliest=-1h
 | head 100
 | eval input_text_clean=lower(coalesce(mvjoin('input_messages{}.content', " "), 'gen_ai.input.messages'))
 | eval input_text_clean=replace(input_text_clean, "[^a-z0-9\s]", " ")
@@ -619,7 +704,7 @@ index=gen_ai_log gen_ai.prompt.is_anomaly=* earliest=-7d
 - One row has the prompt text but empty `gen_ai.prompt.anomaly_score`
 - Another row has a score but empty `input_text`
 
-**Cause:** The scoring search is not excluding previously created scoring events. When `dedup gen_ai.event.id` runs, it may select a scoring event (sourcetype `gen_ai:tfidf:scoring`) instead of the original telemetry event. Scoring events contain the anomaly score but not the original prompt text fields.
+**Cause:** The scoring search is not excluding previously created scoring events. When `dedup gen_ai.event.id` runs, it may select a scoring event (sourcetype `ai_cim:tfidf:ml_scoring`) instead of the original telemetry event. Scoring events contain the anomaly score but not the original prompt text fields.
 
 **Example of the problem:**
 ```
@@ -629,10 +714,10 @@ index=gen_ai_log gen_ai.prompt.is_anomaly=* earliest=-7d
 | 2   | (empty)                        | 1             | false      |  <- Scoring event
 ```
 
-**Solution:** Add `sourcetype!="gen_ai:*:scoring"` to the search filter:
+**Solution:** Add ``exclude_scoring_sourcetypes`` to the search filter:
 
 ```spl
-index=gen_ai_log sourcetype!="gen_ai:*:scoring" earliest=-1h latest=now
+index=gen_ai_log `exclude_scoring_sourcetypes` earliest=-1h latest=now
 | eval input_text=...
 ```
 
@@ -673,14 +758,30 @@ The system uses **hybrid detection** combining ML-based anomaly detection with r
 
 | Macro | Default | Description |
 |-------|---------|-------------|
-| `genai_tfidf_anomaly_threshold` | 0.5 | ML threshold (lower = more sensitive). Original was 0. |
+| `genai_tfidf_anomaly_threshold` | 0.6 | ML threshold on normalized 0-1 scale (higher = less sensitive) |
 | `genai_tfidf_pattern_threshold` | 2 | Pattern score threshold (triggers on 2+ pattern matches) |
+
+**Anomaly Score Normalization:**
+
+The anomaly score is now a **continuous 0-1 value** using sigmoid normalization of the OneClassSVM decision function:
+
+```
+anomaly_score = 1 / (1 + exp(decision_function_score))
+```
+
+| Score Range | Interpretation |
+|-------------|----------------|
+| 0.0 - 0.3 | Normal content (low anomaly likelihood) |
+| 0.3 - 0.6 | Borderline (may warrant review) |
+| 0.6 - 0.8 | Suspicious (likely anomalous) |
+| 0.8 - 1.0 | Highly anomalous (strong deviation from normal) |
 
 **Pattern Scoring Weights (Prompts):**
 | Pattern | Weight | Description |
 |---------|--------|-------------|
 | Injection markers | 3 | "ignore previous", "bypass safety", etc. |
 | Jailbreak terms | 3 | "DAN", "jailbreak", "developer mode", etc. |
+| Gibberish/obfuscation | 3 | Low vowel ratio (<20%) or 6+ consecutive consonants |
 | Roleplay injection | 2 | "pretend you are", "from now on", etc. |
 | Encoding tricks | 2 | base64, hex encoding, URL encoding |
 | Delimiters | 1 | `[INST]`, `<<SYS>>`, `---`, etc. |
@@ -746,4 +847,4 @@ The system uses **hybrid detection** combining ML-based anomaly detection with r
 
 ---
 
-**Last Updated:** 2026-01-27
+**Last Updated:** 2026-02-05

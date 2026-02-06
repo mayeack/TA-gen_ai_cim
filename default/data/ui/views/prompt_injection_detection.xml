@@ -342,7 +342,7 @@
         },
         "ds_total_scanned": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" | stats count as total_scanned | eval total_scanned=coalesce(total_scanned, 0)",
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"ai_cim:prompt_injection:ml_scoring\" | stats count as total_scanned | eval total_scanned=coalesce(total_scanned, 0)",
                 "queryParameters": {
                     "earliest": "$time.earliest$",
                     "latest": "$time.latest$"
@@ -352,7 +352,7 @@
         },
         "ds_injections_detected": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" gen_ai.prompt_injection.ml_detected=\"true\" | stats count as injections_detected | eval injections_detected=coalesce(injections_detected, 0)",
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"ai_cim:prompt_injection:ml_scoring\" gen_ai.prompt_injection.ml_detected=\"true\" | stats count as injections_detected | eval injections_detected=coalesce(injections_detected, 0)",
                 "queryParameters": {
                     "earliest": "$time.earliest$",
                     "latest": "$time.latest$"
@@ -362,7 +362,7 @@
         },
         "ds_critical_severity": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" gen_ai.prompt_injection.severity=\"critical\" | stats count as critical_count | eval critical_count=coalesce(critical_count, 0)",
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"ai_cim:prompt_injection:ml_scoring\" gen_ai.prompt_injection.severity=\"critical\" | stats count as critical_count | eval critical_count=coalesce(critical_count, 0)",
                 "queryParameters": {
                     "earliest": "$time.earliest$",
                     "latest": "$time.latest$"
@@ -372,7 +372,7 @@
         },
         "ds_high_severity": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" gen_ai.prompt_injection.severity=\"high\" | stats count as high_count | eval high_count=coalesce(high_count, 0)",
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"ai_cim:prompt_injection:ml_scoring\" gen_ai.prompt_injection.severity=\"high\" | stats count as high_count | eval high_count=coalesce(high_count, 0)",
                 "queryParameters": {
                     "earliest": "$time.earliest$",
                     "latest": "$time.latest$"
@@ -382,7 +382,7 @@
         },
         "ds_detection_rate": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" | stats count as total, sum(eval(if('gen_ai.prompt_injection.ml_detected'=\"true\", 1, 0))) as detected | eval detection_rate=round(coalesce(detected, 0)/coalesce(total, 1)*100, 1) | fields detection_rate",
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"ai_cim:prompt_injection:ml_scoring\" | stats count as total, sum(eval(if('gen_ai.prompt_injection.ml_detected'=\"true\", 1, 0))) as detected | eval detection_rate=round(coalesce(detected, 0)/coalesce(total, 1)*100, 1) | fields detection_rate",
                 "queryParameters": {
                     "earliest": "$time.earliest$",
                     "latest": "$time.latest$"
@@ -392,7 +392,7 @@
         },
         "ds_detection_trend": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" | timechart span=1h count(eval('gen_ai.prompt_injection.ml_detected'=\"true\")) as injections_detected, count(eval('gen_ai.prompt_injection.ml_detected'=\"false\")) as clean_prompts",
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"ai_cim:prompt_injection:ml_scoring\" | timechart span=1h count(eval('gen_ai.prompt_injection.ml_detected'=\"true\")) as injections_detected, count(eval('gen_ai.prompt_injection.ml_detected'=\"false\")) as clean_prompts",
                 "queryParameters": {
                     "earliest": "$time.earliest$",
                     "latest": "$time.latest$"
@@ -402,7 +402,7 @@
         },
         "ds_technique_distribution": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" gen_ai.prompt_injection.ml_detected=\"true\" | stats count as Count by gen_ai.prompt_injection.technique | rename gen_ai.prompt_injection.technique as Technique | sort -Count",
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"ai_cim:prompt_injection:ml_scoring\" gen_ai.prompt_injection.ml_detected=\"true\" | stats count as Count by gen_ai.prompt_injection.technique | rename gen_ai.prompt_injection.technique as Technique | sort -Count",
                 "queryParameters": {
                     "earliest": "$time.earliest$",
                     "latest": "$time.latest$"
@@ -412,7 +412,7 @@
         },
         "ds_severity_distribution": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" gen_ai.prompt_injection.severity=* | stats count by gen_ai.prompt_injection.severity | rename gen_ai.prompt_injection.severity as Severity",
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"ai_cim:prompt_injection:ml_scoring\" gen_ai.prompt_injection.severity=* | stats count by gen_ai.prompt_injection.severity | rename gen_ai.prompt_injection.severity as Severity",
                 "queryParameters": {
                     "earliest": "$time.earliest$",
                     "latest": "$time.latest$"
@@ -422,7 +422,7 @@
         },
         "ds_confidence_distribution": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" gen_ai.prompt_injection.confidence=* | stats count by gen_ai.prompt_injection.confidence | rename gen_ai.prompt_injection.confidence as Confidence",
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"ai_cim:prompt_injection:ml_scoring\" gen_ai.prompt_injection.confidence=* | stats count by gen_ai.prompt_injection.confidence | rename gen_ai.prompt_injection.confidence as Confidence",
                 "queryParameters": {
                     "earliest": "$time.earliest$",
                     "latest": "$time.latest$"
@@ -432,7 +432,7 @@
         },
         "ds_top_sources": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" gen_ai.prompt_injection.ml_detected=\"true\" | stats count as Injection_Count, dc(gen_ai.session.id) as Sessions, values(gen_ai.prompt_injection.technique) as Techniques, values(gen_ai.app.name) as Services by client.address | rename client.address as Source_IP | sort -Injection_Count | head 10",
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"ai_cim:prompt_injection:ml_scoring\" gen_ai.prompt_injection.ml_detected=\"true\" | stats count as Injection_Count, dc(gen_ai.session.id) as Sessions, values(gen_ai.prompt_injection.technique) as Techniques, values(gen_ai.app.name) as Services by client.address | rename client.address as Source_IP | sort -Injection_Count | head 10",
                 "queryParameters": {
                     "earliest": "$time.earliest$",
                     "latest": "$time.latest$"
@@ -442,7 +442,7 @@
         },
         "ds_recent_detections": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:prompt_injection:scoring\" | eval Timestamp=strftime(_time, \"%Y-%m-%d %H:%M:%S\"), Request_ID='gen_ai.request.id', Service='gen_ai.app.name', Model='gen_ai.request.model', Detected='gen_ai.prompt_injection.ml_detected', Severity='gen_ai.prompt_injection.severity', Technique='gen_ai.prompt_injection.technique', Confidence='gen_ai.prompt_injection.confidence', Risk_Score='gen_ai.prompt_injection.risk_score' | table Request_ID, Timestamp, Service, Model, Detected, Severity, Technique, Confidence, Risk_Score | sort -Timestamp | head 25",
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"ai_cim:prompt_injection:ml_scoring\" | eval Timestamp=strftime(_time, \"%Y-%m-%d %H:%M:%S\"), Request_ID='gen_ai.request.id', Service='gen_ai.app.name', Model='gen_ai.request.model', Detected='gen_ai.prompt_injection.ml_detected', Severity='gen_ai.prompt_injection.severity', Technique='gen_ai.prompt_injection.technique', Confidence='gen_ai.prompt_injection.confidence', Risk_Score='gen_ai.prompt_injection.risk_score' | table Request_ID, Timestamp, Service, Model, Detected, Severity, Technique, Confidence, Risk_Score | sort -Timestamp | head 25",
                 "queryParameters": {
                     "earliest": "$time.earliest$",
                     "latest": "$time.latest$"

@@ -262,7 +262,7 @@
         },
         "ds_tfidf_anomaly_rate": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"gen_ai:tfidf:scoring\" | stats count as total, sum(eval(if('gen_ai.prompt.is_anomaly'=\"true\" OR 'gen_ai.response.is_anomaly'=\"true\", 1, 0))) as anomalous | eval anomaly_rate=round(coalesce(anomalous, 0)/coalesce(total, 1)*100, 1) | fields anomaly_rate",
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" sourcetype=\"ai_cim:tfidf:ml_scoring\" | stats count as total, sum(eval(if('gen_ai.prompt.is_anomaly'=\"true\" OR 'gen_ai.response.is_anomaly'=\"true\", 1, 0))) as anomalous | eval anomaly_rate=round(coalesce(anomalous, 0)/coalesce(total, 1)*100, 1) | fields anomaly_rate",
                 "queryParameters": {
                     "earliest": "$time.earliest$",
                     "latest": "$time.latest$"

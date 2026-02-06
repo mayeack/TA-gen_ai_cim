@@ -15,8 +15,9 @@ Complete guide for implementing machine learning-based PII (Personally Identifia
 9. [Threshold Tuning](#threshold-tuning)
 10. [Healthcare-Specific Patterns](#healthcare-specific-patterns)
 11. [Model Performance](#model-performance)
-12. [Troubleshooting](#troubleshooting)
-13. [Reference](#reference)
+12. [Feedback Loop (Active Learning)](#feedback-loop-active-learning)
+13. [Troubleshooting](#troubleshooting)
+14. [Reference](#reference)
 
 ---
 
@@ -337,7 +338,7 @@ The `GenAI - PII Scoring - Response Analysis` saved search runs every minute to:
 ### Manual Scoring SPL
 
 ```spl
-index=gen_ai_log NOT sourcetype="gen_ai:pii:scoring" earliest=-1h latest=now
+index=gen_ai_log NOT sourcetype="ai_cim:pii:ml_scoring" earliest=-1h latest=now
 | eval response_text='gen_ai.output.messages'
 | where isnotnull(response_text) AND len(response_text) > 20
 | dedup gen_ai.event.id
@@ -530,6 +531,350 @@ index=gen_ai_log gen_ai.pii.risk_score=*
 
 ---
 
+## Feedback Loop (Active Learning)
+
+The PII detection pipeline includes an active learning feedback loop that leverages human reviews to continuously improve the ML model.
+
+### Overview
+
+The feedback loop enables continuous improvement of PII detection by:
+
+1. **Extracting human labels** from completed Event Reviews
+2. **Splitting data** into train/validation/test sets (70/15/15)
+3. **Training challenger models** with accumulated feedback
+4. **Tuning thresholds** to optimize precision/recall trade-off
+5. **Comparing models** (champion vs challenger)
+6. **Promoting improved models** to production
+
+### Why Active Learning?
+
+- **Model drift**: AI applications evolve, new PII patterns emerge
+- **Domain adaptation**: Customize detection for your specific use cases
+- **Quality improvement**: Learn from human expert corrections
+- **False positive reduction**: Train on your real-world data
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Active Learning Loop                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐          │
+│  │   GenAI      │───►│  PII Model   │───►│   Review     │          │
+│  │   Events     │    │  (Champion)  │    │    Queue     │          │
+│  └──────────────┘    └──────────────┘    └──────┬───────┘          │
+│                                                  │                   │
+│                                                  ▼                   │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐          │
+│  │   Model      │◄───│  Challenger  │◄───│   Human      │          │
+│  │   Registry   │    │    Model     │    │   Labels     │          │
+│  └──────────────┘    └──────────────┘    └──────────────┘          │
+│         │                   ▲                   │                   │
+│         │                   │                   │                   │
+│         ▼                   │                   ▼                   │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐          │
+│  │   Promote    │───►│   Compare    │◄───│   Training   │          │
+│  │   Decision   │    │   Metrics    │    │   Feedback   │          │
+│  └──────────────┘    └──────────────┘    └──────────────┘          │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                  index=gen_ai_log                            │
+│                              (Raw Telemetry Events)                          │
+└───────────────────────────────────────┬─────────────────────────────────────┘
+                                        │
+                    ┌───────────────────┴───────────────────┐
+                    │                                       │
+                    ▼                                       ▼
+    ┌───────────────────────────────┐       ┌───────────────────────────────┐
+    │      Scoring Pipeline         │       │     Auto-Escalation           │
+    │   (Every minute)              │       │   (Every minute)              │
+    │                               │       │                               │
+    │  1. Extract response text     │       │  High-risk events ──────────┐ │
+    │  2. Engineer 20 features      │       │  Random sample ─────────────┤ │
+    │  3. Apply champion model      │       │                             │ │
+    │  4. Calculate risk score      │       │                             │ │
+    └───────────────┬───────────────┘       └─────────────────────────────┼─┘
+                    │                                                      │
+                    ▼                                                      │
+    ┌───────────────────────────────┐                                     │
+    │    Enriched Events            │                                     │
+    │  sourcetype=ai_cim:pii:ml_scoring│                                     │
+    └───────────────────────────────┘                                     │
+                                                                           │
+                                                                           ▼
+                                            ┌───────────────────────────────┐
+                                            │   gen_ai_review_findings      │
+                                            │      (KV Store)               │
+                                            └───────────────┬───────────────┘
+                                                            │
+                                                            │ Human Review
+                                                            ▼
+                                            ┌───────────────────────────────┐
+                                            │    Event Review Dashboard     │
+                                            │                               │
+                                            │  Reviewer sets:               │
+                                            │  - pii_confirmed (0/1)        │
+                                            │  - status = "completed"       │
+                                            └───────────────┬───────────────┘
+                                                            │
+                                                            │ Daily 2 AM
+                                                            ▼
+                                            ┌───────────────────────────────┐
+                                            │   pii_training_feedback       │
+                                            │      (KV Store)               │
+                                            └───────────────┬───────────────┘
+                                                            │
+                                                            │ Weekly Sunday 4 AM
+                                                            ▼
+                                            ┌───────────────────────────────┐
+                                            │   Challenger Model Training   │
+                                            └───────────────┬───────────────┘
+                                                            │
+                                                            │ Weekly Sunday 5 AM
+                                                            ▼
+                                            ┌───────────────────────────────┐
+                                            │   Champion vs Challenger      │
+                                            │       Evaluation              │
+                                            └───────────────┬───────────────┘
+                                                            │
+                                                            │ Manual Promotion
+                                                            ▼
+                                            ┌───────────────────────────────┐
+                                            │     pii_model_registry        │
+                                            │       (KV Store)              │
+                                            └───────────────────────────────┘
+```
+
+### Feedback Loop Workflow
+
+#### 1. Data Collection
+
+Human reviewers label events in the Event Review dashboard:
+- **PII Confirmed**: Reviewer confirms PII/PHI is present (`pii_confirmed=1`)
+- **PII Not Confirmed**: Reviewer confirms the event is clean (`pii_confirmed=0`)
+- **PII Types (Reviewed)**: Reviewer selects specific PII types found (SSN, EMAIL, PHONE, etc.)
+
+The `gen_ai_review_pii_types_reviewed` field captures the reviewer-confirmed PII types, which are used as ground truth labels for model retraining.
+
+#### 2. Feedback Extraction (Daily)
+
+The extraction search runs daily at 2 AM:
+
+1. Reads completed reviews from `gen_ai_review_findings`
+2. Extracts `gen_ai_review_pii_types_reviewed` (reviewer-confirmed types) as ground truth
+3. Generates per-type labels from reviewed types (e.g., `has_ssn_label`, `has_email_label`)
+4. Joins with original event data to get full response text and ML predictions
+5. Classifies feedback type by comparing ML predictions with reviewer confirmations:
+
+| Feedback Type | Definition |
+|---------------|------------|
+| `confirmed_pii_exact` | Human confirmed PII, model predicted PII, and types match exactly |
+| `confirmed_pii_type_mismatch` | Human confirmed PII, model predicted PII, but types differ |
+| `confirmed_clean` | Human confirmed clean, model predicted clean (True Negative) |
+| `false_positive` | Human confirmed clean, model predicted PII |
+| `false_negative` | Human confirmed PII, model predicted clean |
+
+6. Assigns random train/valid/test split (70/15/15)
+7. Engineers all 20 features for training
+8. Stores in `pii_training_feedback` collection with per-type ground truth labels
+
+#### 3. Model Training (Weekly)
+
+The training search runs weekly on Sunday at 4 AM:
+
+1. Loads feedback data (train split only)
+2. Appends original training data
+3. Trains RandomForestClassifier
+4. Saves as `pii_detection_model_challenger`
+
+#### 4. Threshold Tuning
+
+Evaluates thresholds 0.3-0.8 on the validation set:
+
+| Threshold | Use Case |
+|-----------|----------|
+| 0.3 | High recall - catch all PII (more false positives) |
+| 0.5 | Balanced - default operating point |
+| 0.7-0.8 | High precision - fewer false alarms |
+
+#### 5. Model Comparison
+
+Evaluates both models on the held-out test set:
+
+- Accuracy, Precision, Recall, F1 Score
+- Generates promotion recommendation
+
+#### 6. Model Promotion (Manual)
+
+When challenger outperforms champion:
+
+1. Review metrics in Model Comparison dashboard
+2. Click "Promote Challenger to Champion"
+3. New version registered in `pii_model_registry`
+
+**Promotion Criteria:**
+- Challenger F1 score > Champion F1 score
+- Challenger recall >= Champion recall (critical for PII)
+- Test set has at least 30 samples
+
+### Scheduled Searches
+
+| Search | Schedule | Purpose |
+|--------|----------|---------|
+| `GenAI - PII Feedback Loop - Extract Training Feedback` | Daily 2:00 AM | Extract completed reviews |
+| `GenAI - PII Feedback Loop - Assign Data Splits` | Daily 2:30 AM | Assign train/valid/test splits |
+| `GenAI - PII Feedback Loop - Train Challenger Model` | Weekly Sun 4:00 AM | Train new challenger |
+| `GenAI - PII Feedback Loop - Threshold Analysis` | Weekly Sun 4:30 AM | Analyze thresholds 0.3-0.8 |
+| `GenAI - PII Feedback Loop - Champion vs Challenger Report` | Weekly Sun 5:00 AM | Compare models |
+| `GenAI - PII Feedback Loop - Promote Model Version` | Manual | Promote challenger |
+| `GenAI - PII Feedback Loop - Model Health Report` | Weekly Mon 9:00 AM | Performance summary |
+
+### KV Store Collections
+
+#### gen_ai_review_findings
+
+**Purpose:** Event review queue and human labels
+
+| Field | Purpose |
+|-------|---------|
+| `gen_ai_event_id` | Primary key (links to original event) |
+| `gen_ai_review_status` | new → in_progress → completed/rejected |
+| `gen_ai_review_pii_confirmed` | Human label: 1 = PII present, 0 = clean |
+| `gen_ai_review_phi_confirmed` | Human label: 1 = PHI present |
+| `gen_ai_review_pii_types` | ML-detected PII types (auto-populated) |
+| `gen_ai_review_pii_types_reviewed` | **Reviewer-confirmed PII types (ground truth)** |
+| `gen_ai_review_reviewer` | Username who completed review |
+
+#### pii_training_feedback
+
+**Purpose:** Human-labeled data with cached features for retraining
+
+| Field | Purpose |
+|-------|---------|
+| `event_id` | Primary key |
+| `response_text` | Original response text |
+| `pii_label` | Human label (0/1) |
+| `pii_types` | ML-detected PII types |
+| `pii_types_reviewed` | **Reviewer-confirmed PII types (ground truth)** |
+| `feedback_type` | confirmed_pii_exact, confirmed_pii_type_mismatch, false_positive, false_negative, confirmed_clean |
+| `split_assignment` | train, valid, or test |
+| `ml_predicted_score` | Original ML prediction |
+| `ml_predicted_types` | ML-detected types for comparison |
+| **Per-Type Labels** | |
+| `has_ssn_label` | Reviewer confirmed SSN (0/1) |
+| `has_email_label` | Reviewer confirmed EMAIL (0/1) |
+| `has_phone_label` | Reviewer confirmed PHONE (0/1) |
+| `has_dob_label` | Reviewer confirmed DOB (0/1) |
+| `has_address_label` | Reviewer confirmed ADDRESS (0/1) |
+| `has_credit_card_label` | Reviewer confirmed CREDIT_CARD (0/1) |
+| `has_name_label` | Reviewer confirmed NAME (0/1) |
+| 20 feature fields | Cached for training (has_ssn, has_email, etc.) |
+
+#### pii_model_registry
+
+**Purpose:** Track model versions, metrics, and promotion history
+
+| Field | Purpose |
+|-------|---------|
+| `model_name` | Model identifier |
+| `model_version` | Version timestamp |
+| `status` | champion or archived |
+| `accuracy`, `precision`, `recall`, `f1_score` | Performance metrics |
+| `promoted_at`, `promoted_by` | Promotion tracking |
+
+### Quick Start Guide
+
+#### Minimum Requirements
+
+- At least **50 completed reviews** with PII labels set
+- Balanced class distribution (aim for 20-40% PII samples)
+- Events must exist in `gen_ai_log` index for feature extraction
+
+#### Step 1: Complete Event Reviews
+
+1. Navigate to **Review Queue** dashboard
+2. Open events and complete reviews
+3. **Critical**: Set the PII confirmation field for each review
+
+#### Step 2: Extract Training Feedback
+
+Run manually or wait for daily schedule:
+```spl
+| savedsearch "GenAI - PII Feedback Loop - Extract Training Feedback"
+```
+
+Verify:
+```spl
+| inputlookup pii_training_feedback_lookup 
+| stats count by feedback_type, split_assignment
+```
+
+#### Step 3: Train Challenger Model
+
+After 50+ feedback samples:
+```spl
+| savedsearch "GenAI - PII Feedback Loop - Train Challenger Model"
+```
+
+#### Step 4: Compare Models
+
+```spl
+| savedsearch "GenAI - PII Feedback Loop - Champion vs Challenger Report"
+```
+
+#### Step 5: Promote (If Improved)
+
+Navigate to Model Comparison dashboard and click "Promote Challenger to Champion".
+
+### Metrics & Monitoring
+
+#### Performance Metrics
+
+| Metric | Definition | Target |
+|--------|------------|--------|
+| **Accuracy** | (TP + TN) / Total | > 90% |
+| **Precision** | TP / (TP + FP) | > 75% |
+| **Recall** | TP / (TP + FN) | > 85% |
+| **F1 Score** | Harmonic mean | > 80% |
+
+#### Feedback Quality Metrics
+
+| Metric | Definition | Warning Threshold |
+|--------|------------|-------------------|
+| **False Positive Rate** | FP / Total | > 30% |
+| **False Negative Rate** | FN / Total | > 10% (critical) |
+| **Type Mismatch Rate** | Type Mismatches / Confirmed PII | > 50% |
+
+#### Model Health Check
+
+```spl
+| inputlookup pii_training_feedback_lookup
+| stats count AS total_feedback,
+    sum(eval(if(feedback_type="confirmed_pii_exact" OR feedback_type="confirmed_pii_type_mismatch", 1, 0))) AS confirmed_pii,
+    sum(eval(if(feedback_type="confirmed_pii_type_mismatch", 1, 0))) AS type_mismatches,
+    sum(eval(if(feedback_type="false_positive", 1, 0))) AS false_positives,
+    sum(eval(if(feedback_type="false_negative", 1, 0))) AS false_negatives
+| eval fp_rate=round(false_positives/total_feedback*100, 2)
+| eval fn_rate=round(false_negatives/total_feedback*100, 2)
+| eval type_mismatch_rate=if(confirmed_pii>0, round(type_mismatches/confirmed_pii*100, 2), 0)
+| eval model_health=case(
+    fn_rate > 20, "CRITICAL - High false negative rate",
+    fp_rate > 30, "WARNING - High false positive rate",
+    type_mismatch_rate > 50, "WARNING - High type mismatch rate",
+    total_feedback < 50, "WARNING - Insufficient feedback data",
+    1=1, "HEALTHY"
+)
+```
+
+---
+
 ## Troubleshooting
 
 ### Model Not Found
@@ -629,10 +974,9 @@ index=gen_ai_log | head 5
 
 ## See Also
 
-- [Feedback_Loop.md](Feedback_Loop.md) - Active learning for continuous improvement
 - [Prompt_Injection.md](Prompt_Injection.md) - Prompt injection detection
 - [TFIDF_Anomaly.md](TFIDF_Anomaly.md) - Anomaly detection
 
 ---
 
-**Last Updated:** 2026-01-22
+**Last Updated:** 2026-02-05
