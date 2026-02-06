@@ -103,22 +103,23 @@
     sum(challenger_tp) AS challenger_tp, sum(challenger_fp) AS challenger_fp, sum(challenger_fn) AS challenger_fn, sum(challenger_tn) AS challenger_tn, 
     count AS test_samples 
 | eval champion_accuracy=round((champion_tp+champion_tn)/test_samples, 4) 
-| eval champion_precision=round(champion_tp/(champion_tp+champion_fp), 4) 
-| eval champion_recall=round(champion_tp/(champion_tp+champion_fn), 4) 
-| eval champion_f1=round(2*champion_precision*champion_recall/(champion_precision+champion_recall), 4) 
+| eval champion_precision=if(champion_tp+champion_fp>0, round(champion_tp/(champion_tp+champion_fp), 4), 0) 
+| eval champion_recall=if(champion_tp+champion_fn>0, round(champion_tp/(champion_tp+champion_fn), 4), 0) 
+| eval champion_f1=if(champion_precision+champion_recall>0, round(2*champion_precision*champion_recall/(champion_precision+champion_recall), 4), 0) 
 | eval challenger_accuracy=round((challenger_tp+challenger_tn)/test_samples, 4) 
-| eval challenger_precision=round(challenger_tp/(challenger_tp+challenger_fp), 4) 
-| eval challenger_recall=round(challenger_tp/(challenger_tp+challenger_fn), 4) 
-| eval challenger_f1=round(2*challenger_precision*challenger_recall/(challenger_precision+challenger_recall), 4) 
+| eval challenger_precision=if(challenger_tp+challenger_fp>0, round(challenger_tp/(challenger_tp+challenger_fp), 4), 0) 
+| eval challenger_recall=if(challenger_tp+challenger_fn>0, round(challenger_tp/(challenger_tp+challenger_fn), 4), 0) 
+| eval challenger_f1=if(challenger_precision+challenger_recall>0, round(2*challenger_precision*challenger_recall/(challenger_precision+challenger_recall), 4), 0) 
 | eval accuracy_delta=round(challenger_accuracy-champion_accuracy, 4) 
 | eval precision_delta=round(challenger_precision-champion_precision, 4) 
 | eval recall_delta=round(challenger_recall-champion_recall, 4) 
 | eval f1_delta=round(challenger_f1-champion_f1, 4) 
 | eval recommendation=if(challenger_f1>champion_f1 AND challenger_recall>=champion_recall, "PROMOTE CHALLENGER", "KEEP CHAMPION")
-| eval Metric="Accuracy" | eval Champion=champion_accuracy | eval Challenger=challenger_accuracy | eval Delta=accuracy_delta
-| append [| makeresults | eval Metric="Precision" | eval Champion=0 | eval Challenger=0 | eval Delta=0]
-| append [| makeresults | eval Metric="Recall" | eval Champion=0 | eval Challenger=0 | eval Delta=0]
-| append [| makeresults | eval Metric="F1 Score" | eval Champion=0 | eval Challenger=0 | eval Delta=0]
+| eval Metric=mvappend("Accuracy", "Precision", "Recall", "F1 Score")
+| mvexpand Metric
+| eval Champion=case(Metric="Accuracy", champion_accuracy, Metric="Precision", champion_precision, Metric="Recall", champion_recall, Metric="F1 Score", champion_f1)
+| eval Challenger=case(Metric="Accuracy", challenger_accuracy, Metric="Precision", challenger_precision, Metric="Recall", challenger_recall, Metric="F1 Score", challenger_f1)
+| eval Delta=case(Metric="Accuracy", accuracy_delta, Metric="Precision", precision_delta, Metric="Recall", recall_delta, Metric="F1 Score", f1_delta)
 | table Metric, Champion, Challenger, Delta</query>
           <earliest>-1m</earliest>
           <latest>now</latest>
