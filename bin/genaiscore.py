@@ -48,6 +48,7 @@ import json
 import re
 import ssl
 import logging
+import time
 
 app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -720,6 +721,28 @@ class GenAIScoreCommand(StreamingCommand):
     )
 
     @staticmethod
+    def _resolve_scalar(val):
+        """Extract the first meaningful scalar from a possibly multi-value field.
+
+        Splunk streaming commands may pass multi-value fields as Python lists.
+        JSON nulls surface as the string ``'none'`` after Splunk's JSON
+        extraction.  This helper walks through list elements and returns the
+        first non-empty, non-null string, or *None* if nothing useful is found.
+        """
+        if val is None:
+            return None
+        if isinstance(val, list):
+            for item in val:
+                resolved = GenAIScoreCommand._resolve_scalar(item)
+                if resolved is not None:
+                    return resolved
+            return None
+        s = str(val).strip()
+        if not s or s.lower() == 'none':
+            return None
+        return s
+
+    @staticmethod
     def _build_output_raw(record, scoring_fields, pipeline_name):
         """Build a slim _raw JSON for the collected scoring event.
 
@@ -730,9 +753,18 @@ class GenAIScoreCommand(StreamingCommand):
         output = {}
 
         for field in GenAIScoreCommand._CONTEXT_FIELDS:
-            val = record.get(field)
-            if val is not None and str(val).strip():
-                output[field] = str(val)
+            val = GenAIScoreCommand._resolve_scalar(record.get(field))
+            if val is not None:
+                output[field] = val
+
+        if 'timestamp' not in output:
+            _time = record.get('_time')
+            if _time is not None:
+                try:
+                    output['timestamp'] = time.strftime(
+                        '%Y-%m-%dT%H:%M:%S', time.localtime(float(_time)))
+                except (ValueError, TypeError, OSError):
+                    pass
 
         output['source'] = '{}_genai_scoring'.format(pipeline_name)
 
