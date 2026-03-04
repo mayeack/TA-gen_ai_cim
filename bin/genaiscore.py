@@ -707,26 +707,41 @@ class GenAIScoreCommand(StreamingCommand):
         except (TypeError, ValueError):
             return json.dumps({k: str(v) for k, v in event_data.items()}, indent=2)
 
-    @staticmethod
-    def _merge_into_raw(record, new_fields):
-        """Merge scoring fields into the event's _raw JSON so they survive
-        ``| collect`` without needing ``| tojson`` (which dumps every Splunk
-        internal field and produces an unreadable blob)."""
-        raw = record.get('_raw', '')
-        try:
-            raw_dict = json.loads(raw)
-        except (json.JSONDecodeError, ValueError, TypeError):
-            raw_dict = None
+    _CONTEXT_FIELDS = (
+        'client.address',
+        'gen_ai.app.name',
+        'gen_ai.event.id',
+        'gen_ai.request.id',
+        'gen_ai.request.model',
+        'gen_ai.session.id',
+        'service.name',
+        'timestamp',
+        'trace_id',
+    )
 
-        if isinstance(raw_dict, dict):
-            raw_dict.update(new_fields)
-            record['_raw'] = json.dumps(raw_dict, ensure_ascii=False)
-        else:
-            kv_pairs = ' '.join(
-                '{}="{}"'.format(k, str(v).replace('"', '\\"'))
-                for k, v in new_fields.items()
-            )
-            record['_raw'] = '{} {}'.format(raw, kv_pairs)
+    @staticmethod
+    def _build_output_raw(record, scoring_fields, pipeline_name):
+        """Build a slim _raw JSON for the collected scoring event.
+
+        Only includes the required context fields from the original event,
+        the dynamic scoring fields, and pipeline metadata.  The full event
+        is sent to the LLM separately via _build_event_json.
+        """
+        output = {}
+
+        for field in GenAIScoreCommand._CONTEXT_FIELDS:
+            val = record.get(field)
+            if val is not None and str(val).strip():
+                output[field] = str(val)
+
+        output['source'] = '{}_genai_scoring'.format(pipeline_name)
+
+        for key, val in scoring_fields.items():
+            if key in ('genai_scoring_status', 'genai_scoring_error'):
+                continue
+            output[key] = val
+
+        record['_raw'] = json.dumps(output, ensure_ascii=False)
 
     def stream(self, records):
         """Process each record through the GenAI scoring pipeline."""
@@ -793,7 +808,7 @@ class GenAIScoreCommand(StreamingCommand):
                     scoring_fields['genai_scoring_error'] = 'LLM returned empty response'
 
             record.update(scoring_fields)
-            self._merge_into_raw(record, scoring_fields)
+            self._build_output_raw(record, scoring_fields, pipeline_name)
 
             yield record
 
