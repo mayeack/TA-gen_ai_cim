@@ -4,7 +4,7 @@ AI-powered event scoring using Splunk AI Toolkit's default LLM connection. Suppo
 
 ## Overview
 
-The GenAI Scoring Pipeline allows you to define custom scoring categories (e.g., PII, toxicity, compliance, brand safety) and use a Large Language Model to analyze GenAI telemetry events. Each pipeline produces structured scoring fields that are written back to `index=gen_ai_log` for correlation with existing ML scoring results and governance dashboards.
+The GenAI Scoring Pipeline allows you to define custom scoring categories (e.g., PII, toxicity, compliance, brand safety) and use a Large Language Model to analyze GenAI application output messages. Each pipeline produces structured scoring fields that are written back to `index=gen_ai_log` for correlation with existing ML scoring results and governance dashboards.
 
 ## Prerequisites
 
@@ -115,10 +115,11 @@ Default schedule: every 1 minute (`* * * * *`).
 4. Custom command reads pipeline config from ta_gen_ai_cim_genai_scoring.conf
 5. Reads LLM connection settings from AI Toolkit's KV store and storage passwords
 6. For each event:
-   a. Builds prompt: system_prompt + pipeline_prompt + event JSON
-   b. Calls the LLM directly via HTTP (OpenAI-compatible, Anthropic, or Gemini API)
-   c. Parses JSON response and validates schema
-   d. Maps to gen_ai.<name>.* fields
+   a. Extracts output_messages from the event (falls back to gen_ai.output.messages)
+   b. Builds prompt: system_prompt + pipeline_prompt + output messages JSON
+   c. Calls the LLM directly via HTTP (OpenAI-compatible, Anthropic, or Gemini API)
+   d. Parses JSON response and validates schema
+   e. Maps to gen_ai.<name>.* fields
 7. Collects enriched events to index=gen_ai_log with appropriate source/sourcetype
 ```
 
@@ -137,7 +138,7 @@ The command:
 - Reads `ta_gen_ai_cim_genai_scoring.conf` via Splunk REST for pipeline config
 - Reads the AI Toolkit's default LLM connection from its KV store (`mltk_ai_commander_collection`)
 - Reads the LLM API key from Splunk storage passwords (realm `mltk_llm_tokens`)
-- Constructs the full prompt (system + pipeline + event data)
+- Extracts only the output messages from the event and constructs the full prompt (system + pipeline + output messages)
 - Calls the LLM provider directly via HTTP (bypasses SPL to avoid string-escaping issues)
 - Parses the JSON response with validation
 - Enriches each event with scoring fields
@@ -168,39 +169,38 @@ Debug output is written to `/tmp/genaiscore_debug.log` and includes:
 
 ```
 Name: pii
-Prompt: Analyze this GenAI event for personally identifiable information (PII) in both
-the user prompt and AI response. Look for: SSNs, email addresses, phone numbers, dates
-of birth, physical addresses, credit card numbers, names, and any other PII. Consider
-both explicit PII and contextual PII that could identify an individual.
+Prompt: Analyze this GenAI output message for personally identifiable information (PII).
+Look for: SSNs, email addresses, phone numbers, dates of birth, physical addresses,
+credit card numbers, names, and any other PII. Consider both explicit PII and contextual
+PII that could identify an individual.
 ```
 
 ### Toxicity Detection
 
 ```
 Name: toxicity
-Prompt: Analyze this GenAI event for toxic, harmful, or inappropriate content in both
-the user prompt and AI response. Look for: hate speech, harassment, threats, sexual
-content, self-harm content, and other harmful material. Consider both explicit toxicity
-and subtle harmful patterns.
+Prompt: Analyze this GenAI output message for toxic, harmful, or inappropriate content.
+Look for: hate speech, harassment, threats, sexual content, self-harm content, and other
+harmful material. Consider both explicit toxicity and subtle harmful patterns.
 ```
 
 ### Compliance Scoring
 
 ```
 Name: compliance
-Prompt: Analyze this GenAI event for regulatory compliance concerns. Look for:
+Prompt: Analyze this GenAI output message for regulatory compliance concerns. Look for:
 unauthorized data sharing, GDPR/CCPA violations, HIPAA concerns, financial data
 exposure, intellectual property leakage, and policy violations. Assess whether the
-AI interaction complies with typical enterprise data handling policies.
+AI output complies with typical enterprise data handling policies.
 ```
 
 ### Brand Safety
 
 ```
 Name: brand_safety
-Prompt: Analyze this GenAI event for brand safety concerns. Look for: reputational
-risks, inappropriate AI responses, misinformation, controversial content, and any
-output that could damage organizational reputation if made public.
+Prompt: Analyze this GenAI output message for brand safety concerns. Look for:
+reputational risks, inappropriate AI responses, misinformation, controversial content,
+and any output that could damage organizational reputation if made public.
 ```
 
 ## Searching GenAI Scoring Results
@@ -252,6 +252,6 @@ index=gen_ai_log sourcetype="ai_cim:*:gen_ai_scoring" genai_scoring_status="succ
 - **Per-event LLM calls**: Each event is sent individually to the LLM, which provides accuracy but incurs token costs and latency per event.
 - **Direct HTTP**: The command calls the LLM provider directly via HTTP rather than spawning sub-searches, reducing overhead per event.
 - **Schedule**: Default is every 1 minute. For high-volume environments, consider adjusting the schedule or adding additional filters in the saved search.
-- **Token usage**: Each call includes the system prompt (~200 tokens), pipeline prompt (variable), and the full event JSON. Response tokens are typically 50-200.
+- **Token usage**: Each call includes the system prompt (~200 tokens), pipeline prompt (variable), and the output messages only. Response tokens are typically 50-200.
 - **Timeout**: Configured per the AI Toolkit Connection Management settings (default 120s). Events that exceed this are marked as errors.
 - **Deduplication**: Events are deduplicated by `gen_ai.event.id` to prevent double-scoring.

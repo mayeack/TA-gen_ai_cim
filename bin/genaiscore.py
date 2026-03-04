@@ -386,6 +386,7 @@ class GenAIScoreCommand(StreamingCommand):
                 provider_name))
 
     def _send_llm_request(self, provider, model, endpoint, api_key, prompt,
+                          system_prompt="You are a helpful assistant",
                           max_tokens=1000, temperature=0.1, timeout=120):
         """Make a direct HTTP call to the LLM provider and return the text response."""
         import urllib.request
@@ -395,7 +396,7 @@ class GenAIScoreCommand(StreamingCommand):
         provider_lower = provider_upper.lower()
 
         messages = [
-            {"role": "system", "content": "You are a helpful assistant"},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt}
         ]
 
@@ -442,7 +443,7 @@ class GenAIScoreCommand(StreamingCommand):
                 "model": model,
                 "max_tokens": max_tokens,
                 "messages": [{"role": "user", "content": prompt}],
-                "system": "You are a helpful assistant",
+                "system": system_prompt,
                 "temperature": temperature,
             }
 
@@ -453,6 +454,9 @@ class GenAIScoreCommand(StreamingCommand):
                 "contents": [
                     {"role": "user", "parts": [{"text": prompt}]}
                 ],
+                "systemInstruction": {
+                    "parts": [{"text": system_prompt}]
+                },
                 "generationConfig": {
                     "temperature": temperature,
                     "maxOutputTokens": max_tokens,
@@ -519,7 +523,7 @@ class GenAIScoreCommand(StreamingCommand):
         raise ValueError(
             "Empty LLM response: keys={}".format(list(result.keys())))
 
-    def _call_ai_toolkit(self, prompt_text, event_id):
+    def _call_ai_toolkit(self, system_prompt, prompt_text, event_id):
         """Call the default LLM configured in AI Toolkit Connection Management.
 
         Returns tuple: (response_text, error_detail)
@@ -545,6 +549,7 @@ class GenAIScoreCommand(StreamingCommand):
                 endpoint=config['endpoint'],
                 api_key=api_key,
                 prompt=prompt_text,
+                system_prompt=system_prompt,
                 max_tokens=config.get('max_tokens', 1000),
                 temperature=config.get('temperature', 0.1),
                 timeout=config.get('timeout', 120),
@@ -676,37 +681,81 @@ class GenAIScoreCommand(StreamingCommand):
             'types': types_list
         }
 
-    def _build_event_json(self, record):
-        """Build a sanitized JSON representation of the event for the LLM prompt.
+    _OUTPUT_MSG_FIELDS = (
+        'output_messages',
+        'gen_ai.output.messages_raw',
+    )
 
-        Excludes internal Splunk fields (underscore-prefixed) to keep the
-        prompt compact.  Fields whose values look like JSON are parsed so the
-        LLM sees clean structured data instead of double-encoded strings.
+    def _build_event_json(self, record):
+        """Build a JSON payload containing only the output messages for LLM scoring.
+
+        Splunk can deliver ``output_messages`` in several shapes depending on
+        ``KV_MODE`` and the streaming-command SDK transport:
+
+        1. **String** -- raw JSON array straight from ``_raw``.
+        2. **List** -- multi-value field where each element is a JSON object
+           string (Splunk auto-expanded the array).
+        3. **Sub-field** -- ``output_messages{}.content`` with just the text
+           values extracted by Splunk's JSON path expansion.
+        4. **EVAL scalar** -- ``gen_ai.output.messages``, always a single
+           space-joined string computed at search time.
+
+        The method walks these in priority order and returns the first
+        non-empty result wrapped as ``{"output_messages": ...}``.
         """
-        skip_prefixes = ('_', 'date_', 'punct', 'splunk_server', 'index',
-                         'linecount', 'timeendpos', 'timestartpos')
-        event_data = {}
-        for key, value in record.items():
-            if any(key.startswith(p) for p in skip_prefixes):
-                continue
-            if key in ('source', 'sourcetype', 'host', 'splunk_server'):
-                continue
+        for field in self._OUTPUT_MSG_FIELDS:
+            value = record.get(field)
             if value is None:
                 continue
+            if isinstance(value, list):
+                items = []
+                for item in value:
+                    s = str(item).strip()
+                    if not s or s.lower() == 'none':
+                        continue
+                    try:
+                        items.append(json.loads(s))
+                    except (json.JSONDecodeError, ValueError):
+                        items.append(s)
+                if items:
+                    return json.dumps(
+                        {"output_messages": items}, indent=2, ensure_ascii=False)
+                continue
             s = str(value).strip()
-            if not s:
+            if not s or s.lower() == 'none':
                 continue
             if s.startswith(('[', '{')):
                 try:
-                    event_data[key] = json.loads(s)
-                    continue
+                    parsed = json.loads(s)
+                    return json.dumps(
+                        {"output_messages": parsed}, indent=2, ensure_ascii=False)
                 except (json.JSONDecodeError, ValueError):
                     pass
-            event_data[key] = s
-        try:
-            return json.dumps(event_data, indent=2, ensure_ascii=False)
-        except (TypeError, ValueError):
-            return json.dumps({k: str(v) for k, v in event_data.items()}, indent=2)
+            return json.dumps(
+                {"output_messages": s}, indent=2, ensure_ascii=False)
+
+        content = record.get('output_messages{}.content')
+        if content is not None:
+            if isinstance(content, list):
+                texts = [str(c).strip() for c in content
+                         if c is not None and str(c).strip()
+                         and str(c).strip().lower() != 'none']
+            else:
+                t = str(content).strip()
+                texts = [t] if t and t.lower() != 'none' else []
+            if texts:
+                return json.dumps(
+                    {"output_messages": " ".join(texts)}, indent=2, ensure_ascii=False)
+
+        value = record.get('gen_ai.output.messages')
+        if value is not None:
+            s = str(value).strip()
+            if s and s.lower() != 'none':
+                return json.dumps(
+                    {"output_messages": s}, indent=2, ensure_ascii=False)
+
+        return json.dumps(
+            {"output_messages": ""}, indent=2, ensure_ascii=False)
 
     _CONTEXT_FIELDS = (
         'client.address',
@@ -802,13 +851,17 @@ class GenAIScoreCommand(StreamingCommand):
 
             event_json = self._build_event_json(record)
 
-            full_prompt = "{}\n\nSCORING TASK: {}\n\nEVENT DATA:\n{}".format(
-                self._system_prompt,
+            debug_logger.info(
+                "Event JSON built: event_id=%s len=%d first500=%s",
+                event_id, len(event_json), event_json[:500])
+
+            user_prompt = "SCORING TASK: {}\n\nEVENT DATA:\n{}".format(
                 pipeline_prompt,
                 event_json
             )
 
-            llm_response, call_error = self._call_ai_toolkit(full_prompt, event_id)
+            llm_response, call_error = self._call_ai_toolkit(
+                self._system_prompt, user_prompt, event_id)
 
             if llm_response:
                 scoring = self._parse_llm_response(llm_response)
