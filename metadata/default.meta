@@ -147,3 +147,26 @@ export = system
 [authorize]
 access = read : [ * ], write : [ admin ]
 export = system
+
+###############################################################################
+# GENAI SCORING PIPELINE PERMISSIONS
+###############################################################################
+
+# GenAI scoring configuration (conf file)
+[conf/ta_gen_ai_cim_genai_scoring]
+access = read : [ admin ], write : [ admin ]
+export = none
+
+[configs/conf-ta_gen_ai_cim_genai_scoring]
+access = read : [ admin ], write : [ admin ]
+export = none
+
+# GenAI scoring configuration view
+[views/genai_scoring_config]
+access = read : [ admin ], write : [ admin ]
+export = system
+
+# GenAI scoring custom search command
+[commands/genaiscore]
+access = read : [ * ], write : [ admin ]
+export = system

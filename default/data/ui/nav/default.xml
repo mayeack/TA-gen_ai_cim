@@ -17,6 +17,7 @@
     <view name="tfidf_feedback_loop_model_registry" label="TF-IDF - Model Registry" />
   </collection>
   <view name="configuration" label="Configuration" />
+  <view name="genai_scoring_config" label="GenAI Scoring" />
   <view name="datasets" />
   <view name="reports" />
   <view name="alerts" />

@@ -1,0 +1,45 @@
+<dashboard version="1.1" theme="light" script="genai_scoring_config.js" stylesheet="genai_scoring_config.css">
+  <label>GenAI Scoring Configuration</label>
+  <description>Configure AI-powered scoring pipelines using Splunk AI Toolkit</description>
+
+  <row>
+    <panel>
+      <html encoded="1"><![CDATA[
+        <div class="scoring-config-container">
+          <!-- Prerequisites Banner -->
+          <div class="prereq-banner">
+            <strong>Prerequisites:</strong> Splunk AI Toolkit must be installed with an LLM connection configured via Connection Management.
+          </div>
+
+          <!-- Global System Prompt Section -->
+          <div class="config-section" id="section-system-prompt">
+            <div class="section-header">
+              <h3>Global System Prompt</h3>
+              <p class="section-description">This prompt is prepended to every scoring pipeline's prompt. It establishes the LLM's role and enforces the JSON output schema. Edit carefully - changes affect all enabled pipelines.</p>
+            </div>
+            <div class="form-group">
+              <textarea id="system-prompt" rows="8" placeholder="Enter the global system prompt..."></textarea>
+            </div>
+            <div class="settings-actions">
+              <button class="btn btn-primary" id="btn-save-system-prompt">Save System Prompt</button>
+              <span class="save-status" id="system-prompt-status"></span>
+            </div>
+          </div>
+
+          <!-- Pipelines Section -->
+          <div class="config-section" id="section-pipelines">
+            <div class="section-header">
+              <h3>Scoring Pipelines</h3>
+              <p class="section-description">Configure up to 10 scoring pipelines. Each pipeline sends events to the default LLM with the global system prompt plus a pipeline-specific prompt. Results are written back to <code>index=gen_ai_log</code> with fields <code>gen_ai.&lt;name&gt;.risk_score</code>, <code>gen_ai.&lt;name&gt;.genai_detected</code>, <code>gen_ai.&lt;name&gt;.confidence</code>, <code>gen_ai.&lt;name&gt;.explanation</code>, and <code>gen_ai.&lt;name&gt;.types</code>.</p>
+            </div>
+
+            <div id="pipelines-container">
+              <!-- Pipeline cards are rendered by JavaScript -->
+              <div class="loading-message">Loading pipeline configuration...</div>
+            </div>
+          </div>
+        </div>
+      ]]></html>
+    </panel>
+  </row>
+</dashboard>
