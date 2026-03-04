@@ -707,6 +707,27 @@ class GenAIScoreCommand(StreamingCommand):
         except (TypeError, ValueError):
             return json.dumps({k: str(v) for k, v in event_data.items()}, indent=2)
 
+    @staticmethod
+    def _merge_into_raw(record, new_fields):
+        """Merge scoring fields into the event's _raw JSON so they survive
+        ``| collect`` without needing ``| tojson`` (which dumps every Splunk
+        internal field and produces an unreadable blob)."""
+        raw = record.get('_raw', '')
+        try:
+            raw_dict = json.loads(raw)
+        except (json.JSONDecodeError, ValueError, TypeError):
+            raw_dict = None
+
+        if isinstance(raw_dict, dict):
+            raw_dict.update(new_fields)
+            record['_raw'] = json.dumps(raw_dict, ensure_ascii=False)
+        else:
+            kv_pairs = ' '.join(
+                '{}="{}"'.format(k, str(v).replace('"', '\\"'))
+                for k, v in new_fields.items()
+            )
+            record['_raw'] = '{} {}'.format(raw, kv_pairs)
+
     def stream(self, records):
         """Process each record through the GenAI scoring pipeline."""
         try:
@@ -772,6 +793,7 @@ class GenAIScoreCommand(StreamingCommand):
                     scoring_fields['genai_scoring_error'] = 'LLM returned empty response'
 
             record.update(scoring_fields)
+            self._merge_into_raw(record, scoring_fields)
 
             yield record
 
