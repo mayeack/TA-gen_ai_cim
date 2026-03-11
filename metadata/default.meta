@@ -170,3 +170,19 @@ export = system
 [commands/genaiscore]
 access = read : [ * ], write : [ admin ]
 export = system
+
+###############################################################################
+# EVENTTYPE AND TAG PERMISSIONS
+###############################################################################
+
+[eventtypes]
+access = read : [ * ], write : [ admin ]
+export = system
+
+[tags]
+access = read : [ * ], write : [ admin ]
+export = system
+
+[datamodels]
+access = read : [ * ], write : [ admin ]
+export = system
