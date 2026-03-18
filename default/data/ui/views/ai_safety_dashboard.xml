@@ -1,0 +1,197 @@
+<form version="1.1">
+  <label>AI Safety &amp; Governance Dashboard</label>
+  <description>Monitor GenAI safety violations, guardrails, and compliance</description>
+
+  <fieldset submitButton="true" autoRun="true">
+    <input type="time" token="time_picker">
+      <label>Time Range</label>
+      <default>
+        <earliest>-7d@d</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+    <input type="dropdown" token="provider_filter">
+      <label>Provider</label>
+      <choice value="*">All Providers</choice>
+      <choice value="anthropic">Anthropic</choice>
+      <choice value="openai">OpenAI</choice>
+      <choice value="bedrock">AWS Bedrock</choice>
+      <choice value="internal">Internal</choice>
+      <default>*</default>
+    </input>
+  </fieldset>
+
+  <row>
+    <panel>
+      <title>Safety Violations</title>
+      <single>
+        <search>
+          <query>`gen_ai_safety_violations` gen_ai.provider.name=$provider_filter$ | stats count</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">all</option>
+        <option name="numberPrecision">0</option>
+        <option name="underLabel">Total Violations</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[10,50]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Guardrail Triggers</title>
+      <single>
+        <search>
+          <query>`gen_ai_guardrail_triggers` gen_ai.provider.name=$provider_filter$ | stats count</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">all</option>
+        <option name="numberPrecision">0</option>
+        <option name="underLabel">Guardrail Events</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[20,100]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <title>PII Detections</title>
+      <single>
+        <search>
+          <query>`gen_ai_pii_detections` gen_ai.provider.name=$provider_filter$ | stats count</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">all</option>
+        <option name="numberPrecision">0</option>
+        <option name="underLabel">PII Events</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[5,25]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Policy Blocks</title>
+      <single>
+        <search>
+          <query>`gen_ai_policy_blocks` gen_ai.provider.name=$provider_filter$ | stats count</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">all</option>
+        <option name="numberPrecision">0</option>
+        <option name="underLabel">Blocked Requests</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[10,50]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Safety Events Over Time</title>
+      <chart>
+        <search>
+          <query>`gen_ai_safety_events` gen_ai.provider.name=$provider_filter$ | timechart count by gen_ai.provider.name</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.axisTitleX.text">Time</option>
+        <option name="charting.axisTitleY.text">Safety Events</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Safety Violations by Category</title>
+      <chart>
+        <search>
+          <query>`gen_ai_safety_violations` gen_ai.provider.name=$provider_filter$ | stats count by gen_ai.safety.categories | sort - count</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.axisTitleX.text">Count</option>
+        <option name="charting.axisTitleY.text">Safety Category</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>PII Types Detected</title>
+      <chart>
+        <search>
+          <query>`gen_ai_pii_detections` gen_ai.provider.name=$provider_filter$ | stats count by gen_ai.pii.types | sort - count</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.axisTitleX.text">Count</option>
+        <option name="charting.axisTitleY.text">PII Type</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Top Users by Safety Violations</title>
+      <table>
+        <search>
+          <query>`gen_ai_safety_violations` gen_ai.provider.name=$provider_filter$
+| stats count as violations,
+    values(gen_ai.safety.categories) as categories,
+    values(gen_ai.request.model) as models
+    by gen_ai.user.id, gen_ai.app.name
+| sort - violations</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">row</option>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Compliance Summary by Provider</title>
+      <table>
+        <search>
+          <query>(`gen_ai_base` OR `gen_ai_safety_events`) gen_ai.provider.name=$provider_filter$
+| stats count as total_requests,
+    count(eval('gen_ai.safety.violated'="true")) as safety_violations,
+    count(eval('gen_ai.guardrail.triggered'="true")) as guardrail_triggers,
+    count(eval('gen_ai.pii.detected'="true")) as pii_detections
+    by gen_ai.provider.name, gen_ai.request.model
+| eval violation_rate=round((safety_violations/total_requests)*100, 2)."%",
+    guardrail_rate=round((guardrail_triggers/total_requests)*100, 2)."%",
+    pii_rate=round((pii_detections/total_requests)*100, 2)."%"
+| sort - safety_violations</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">row</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Recent Safety Violations (Last 100)</title>
+      <table>
+        <search>
+          <query>`gen_ai_safety_violations` gen_ai.provider.name=$provider_filter$
+| eval timestamp=strftime(_time, "%Y-%m-%d %H:%M:%S")
+| table timestamp, gen_ai.provider.name, gen_ai.request.model, gen_ai.user.id, gen_ai.app.name, gen_ai.safety.categories, gen_ai.request.id
+| head 100</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">row</option>
+        <option name="count">20</option>
+      </table>
+    </panel>
+  </row>
+</form>

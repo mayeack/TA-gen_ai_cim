@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  tfidf_feedback_loop_model_registry.xml - Model Version Registry
+  TA-gen_ai_cim - TF-IDF Anomaly Feedback Loop
+  
+  Tracks OneClassSVM anomaly model versions, training data statistics, and promotion history.
+-->
+<form version="1.1" theme="dark">
+  <label>TF-IDF Feedback Loop - Model Registry</label>
+  <description>Track TF-IDF anomaly detection model versions, training data statistics, and promotion history.</description>
+
+  <fieldset submitButton="false">
+    <input type="dropdown" token="model_type_filter">
+      <label>Model Type</label>
+      <choice value="*">All Types</choice>
+      <choice value="prompt">Prompt Models</choice>
+      <choice value="response">Response Models</choice>
+      <default>*</default>
+    </input>
+    <input type="dropdown" token="status_filter">
+      <label>Status</label>
+      <choice value="*">All Statuses</choice>
+      <choice value="champion">Champion</choice>
+      <choice value="challenger">Challenger</choice>
+      <choice value="retired">Retired</choice>
+      <default>*</default>
+    </input>
+  </fieldset>
+
+  <!-- Current Champion Stats -->
+  <row>
+    <panel>
+      <title>Prompt Champion Model</title>
+      <single>
+        <search>
+          <query>| inputlookup tfidf_model_registry_lookup 
+| search status="champion" model_type="prompt"
+| sort -promoted_at 
+| head 1 
+| eval display=model_name." v".model_version
+| table display</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x53A051","0x53A051"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Response Champion Model</title>
+      <single>
+        <search>
+          <query>| inputlookup tfidf_model_registry_lookup 
+| search status="champion" model_type="response"
+| sort -promoted_at 
+| head 1 
+| eval display=model_name." v".model_version
+| table display</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x5A9BD5","0x5A9BD5"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Total Model Versions</title>
+      <single>
+        <search>
+          <query>| inputlookup tfidf_model_registry_lookup | stats count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0xED8440","0xED8440"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Total Feedback Samples</title>
+      <single>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup | stats count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0xF8BE34","0xF8BE34"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+  </row>
+
+  <!-- Model Version History -->
+  <row>
+    <panel>
+      <title>Model Version History</title>
+      <table>
+        <search>
+          <query>| inputlookup tfidf_model_registry_lookup 
+| search model_type="$model_type_filter$" status="$status_filter$"
+| eval promoted_date=if(isnotnull(promoted_at), strftime(promoted_at, "%Y-%m-%d %H:%M"), "N/A")
+| eval created_date=strftime(created_at, "%Y-%m-%d %H:%M")
+| eval status_icon=case(
+    status="champion", "Champion",
+    status="challenger", "Challenger",
+    status="retired", "Retired",
+    1=1, status
+)
+| eval type_icon=case(
+    model_type="prompt", "Prompt",
+    model_type="response", "Response",
+    1=1, model_type
+)
+| sort -created_at
+| table model_version, type_icon, status_icon, algorithm, training_samples, original_samples, feedback_samples, promoted_date, promoted_by, notes
+| rename model_version AS "Version", type_icon AS "Type", status_icon AS "Status", algorithm AS "Algorithm", training_samples AS "Total Samples", original_samples AS "Original", feedback_samples AS "Feedback", promoted_date AS "Promoted", promoted_by AS "Promoted By", notes AS "Notes"</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">none</option>
+        <option name="wrap">true</option>
+        <format type="color" field="Status">
+          <colorPalette type="map">{"Champion": 0x53A051, "Challenger": 0xF8BE34, "Retired": 0x888888}</colorPalette>
+        </format>
+        <format type="color" field="Type">
+          <colorPalette type="map">{"Prompt": 0x5A9BD5, "Response": 0xED8440}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+
+  <!-- Training Data Growth -->
+  <row>
+    <panel>
+      <title>Training Data Growth Over Model Versions</title>
+      <chart>
+        <search>
+          <query>| inputlookup tfidf_model_registry_lookup 
+| sort created_at
+| streamstats count AS version_num
+| table version_num, training_samples, feedback_samples, model_type
+| rename version_num AS "Version #", training_samples AS "Total Samples", feedback_samples AS "Feedback Samples"</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">bottom</option>
+        <option name="charting.chart.nullValueMode">connect</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Feedback vs Original Data Ratio</title>
+      <chart>
+        <search>
+          <query>| inputlookup tfidf_model_registry_lookup 
+| search status="champion"
+| eval original_pct=round(original_samples/(original_samples+feedback_samples)*100, 1)
+| eval feedback_pct=round(feedback_samples/(original_samples+feedback_samples)*100, 1)
+| table model_type, original_pct, feedback_pct
+| rename model_type AS "Model Type", original_pct AS "Original %", feedback_pct AS "Feedback %"</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- Feedback Data Statistics -->
+  <row>
+    <panel>
+      <title>Feedback Data Statistics</title>
+      <table>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup 
+| stats count AS total_samples,
+    sum(has_prompt_feedback) AS prompt_feedback,
+    sum(has_response_feedback) AS response_feedback,
+    sum(eval(if(split_assignment="train", 1, 0))) AS train_samples,
+    sum(eval(if(split_assignment="valid", 1, 0))) AS valid_samples,
+    sum(eval(if(split_assignment="test", 1, 0))) AS test_samples,
+    dc(app_name) AS unique_apps,
+    dc(reviewer) AS unique_reviewers,
+    max(feedback_timestamp) AS last_feedback
+| eval train_ratio=round(train_samples/total_samples*100, 1)."%"
+| eval valid_ratio=round(valid_samples/total_samples*100, 1)."%"
+| eval test_ratio=round(test_samples/total_samples*100, 1)."%"
+| eval last_feedback_date=strftime(last_feedback, "%Y-%m-%d %H:%M")
+| table total_samples, prompt_feedback, response_feedback, train_samples, train_ratio, valid_samples, valid_ratio, test_samples, test_ratio, unique_apps, unique_reviewers, last_feedback_date
+| rename total_samples AS "Total", prompt_feedback AS "Prompt", response_feedback AS "Response", train_samples AS "Train", train_ratio AS "Train %", valid_samples AS "Valid", valid_ratio AS "Valid %", test_samples AS "Test", test_ratio AS "Test %", unique_apps AS "Apps", unique_reviewers AS "Reviewers", last_feedback_date AS "Last Feedback"</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- Feedback Source Analysis -->
+  <row>
+    <panel>
+      <title>Feedback by Application</title>
+      <chart>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup 
+| eval app_name=coalesce(app_name, "Unknown")
+| stats sum(has_prompt_feedback) AS prompt_count, sum(has_response_feedback) AS response_count by app_name
+| sort -prompt_count
+| head 10</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Feedback by Reviewer</title>
+      <chart>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup 
+| eval reviewer=coalesce(reviewer, "Unknown")
+| stats count by reviewer
+| sort -count
+| head 10</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.drilldown">none</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- Threshold Analysis History -->
+  <row>
+    <panel>
+      <title>Threshold Analysis History</title>
+      <table>
+        <search>
+          <query>| inputlookup tfidf_threshold_results_lookup 
+| eval analysis_date_str=strftime(analysis_date, "%Y-%m-%d %H:%M")
+| sort -analysis_date
+| head 20
+| table model_type, model_version, analysis_date_str, threshold, total_samples, avg_score, std_score, p10_score, p50_score, p90_score, is_optimal, notes
+| rename model_type AS "Type", model_version AS "Version", analysis_date_str AS "Analysis Date", threshold AS "Threshold", total_samples AS "Samples", avg_score AS "Avg Score", std_score AS "Std Dev", p10_score AS "P10", p50_score AS "P50", p90_score AS "P90", is_optimal AS "Optimal", notes AS "Notes"</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="drilldown">none</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+
+  <!-- Navigation -->
+  <row>
+    <panel>
+      <html>
+        <div style="text-align: center; padding: 12px;">
+          <a href="/app/TA-gen_ai_cim/tfidf_feedback_loop_model_comparison" style="color: #5dade2; margin-right: 20px;">Model Comparison</a>
+          <a href="/app/TA-gen_ai_cim/review_queue" style="color: #5dade2; margin-right: 20px;">Review Queue</a>
+          <a href="/app/TA-gen_ai_cim/event_review" style="color: #5dade2; margin-right: 20px;">Event Review</a>
+          <a href="/app/TA-gen_ai_cim/governance_safety" style="color: #5dade2;">TF-IDF Anomaly Detection</a>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+</form>

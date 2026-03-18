@@ -1,0 +1,163 @@
+/* Event Review Form Styling */
+
+/* ============================================
+   Save Button - matches Detection Settings style
+   ============================================ */
+
+#saveReviewBtn {
+    background: #5CC05C !important;
+    background-image: none !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 4px !important;
+    padding: 8px 20px !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s !important;
+    text-shadow: none !important;
+}
+
+#saveReviewBtn:hover {
+    background: #4da64d !important;
+}
+
+#saveReviewBtn:disabled {
+    opacity: 0.6 !important;
+    cursor: not-allowed !important;
+}
+
+/* ============================================
+   Detection Field Visibility Classes
+   Used to hide/show fields based on detection settings
+   ============================================ */
+
+/* Hidden state for detection-related inputs */
+.detection-hidden {
+    display: none !important;
+}
+
+/* Visible state for detection-related inputs */
+.detection-visible {
+    display: block !important;
+}
+
+/* Make the Submit button green and prominent */
+.form-submit button,
+.fieldset .btn-primary,
+button.btn-primary {
+    background: linear-gradient(to bottom, #5cb85c 0%, #449d44 100%) !important;
+    background-color: #5cb85c !important;
+    border-color: #4cae4c !important;
+    color: white !important;
+    font-weight: bold !important;
+    font-size: 14px !important;
+    padding: 10px 30px !important;
+    text-shadow: 0 -1px 0 rgba(0,0,0,0.2) !important;
+}
+
+.form-submit button:hover,
+.fieldset .btn-primary:hover,
+button.btn-primary:hover {
+    background: linear-gradient(to bottom, #449d44 0%, #398439 100%) !important;
+    background-color: #449d44 !important;
+    border-color: #398439 !important;
+}
+
+/* Style the save status panel */
+.panel-title {
+    font-weight: bold;
+}
+
+/* ============================================
+   Conditional Yes/No dropdown styling 
+   Green = No (safe), Red = Yes (issue found)
+   ============================================ */
+
+/* Green styling for "No" selections */
+.dropdown-green .splunk-dropdown .btn,
+.dropdown-green .splunk-dropdown button,
+.dropdown-green .splunk-dropdown .dropdown-toggle,
+.dropdown-green .btn-dropdown,
+.dropdown-green .select2-choice,
+.dropdown-green .splunk-select .select2-container .select2-choice,
+.dropdown-green .splunk-view > .btn,
+.dropdown-green > div > .btn,
+.dropdown-green .splunk-choice-input > .btn {
+    background-color: #27ae60 !important;
+    background-image: none !important;
+    background: #27ae60 !important;
+    border-color: #1e8449 !important;
+    color: white !important;
+}
+
+/* Red styling for "Yes" selections */
+.dropdown-red .splunk-dropdown .btn,
+.dropdown-red .splunk-dropdown button,
+.dropdown-red .splunk-dropdown .dropdown-toggle,
+.dropdown-red .btn-dropdown,
+.dropdown-red .select2-choice,
+.dropdown-red .splunk-select .select2-container .select2-choice,
+.dropdown-red .splunk-view > .btn,
+.dropdown-red > div > .btn,
+.dropdown-red .splunk-choice-input > .btn {
+    background-color: #c0392b !important;
+    background-image: none !important;
+    background: #c0392b !important;
+    border-color: #922b21 !important;
+    color: white !important;
+}
+
+/* Ensure caret/arrow is visible */
+.dropdown-green .caret,
+.dropdown-green .icon-triangle-down-small,
+.dropdown-red .caret,
+.dropdown-red .icon-triangle-down-small {
+    color: white !important;
+    border-top-color: white !important;
+}
+
+/* ============================================
+   Notes textarea styling - large and wide
+   ============================================ */
+.notes-container {
+    width: 100%;
+    padding: 10px 0;
+}
+
+#notesTextarea {
+    width: 100% !important;
+    min-width: 600px;
+    max-width: 100%;
+    min-height: 80px;
+    padding: 12px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #fff !important;
+    color: #333 !important;
+    resize: vertical;
+    font-family: inherit;
+    box-sizing: border-box;
+}
+
+#notesTextarea:focus {
+    border-color: #5dade2;
+    outline: none;
+    box-shadow: 0 0 5px rgba(93, 173, 226, 0.5);
+}
+
+/* Notes label styling */
+.notes-label {
+    font-weight: bold;
+    font-size: 14px;
+    margin-bottom: 8px;
+    display: block;
+    color: #333;
+}
+
+/* Make notes panel full width */
+.notes-panel,
+.notes-panel .panel-body {
+    width: 100% !important;
+}

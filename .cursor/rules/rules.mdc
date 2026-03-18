@@ -1,0 +1,151 @@
+---
+description: Splunk TA development best practices and conventions for TA-gen_ai_cim
+alwaysApply: true
+---
+
+# Splunk TA Development Best Practices
+
+## General TA Principles
+
+### Search-Time Only
+This TA provides **search-time extractions only**. Never add index-time settings (`INDEXED_EXTRACTIONS`, `TIMESTAMP_FIELDS`, `TIME_FORMAT`, `LINE_BREAKER`, `SHOULD_LINEMERGE`, `TRUNCATE`) to `props.conf`. Index-time configs belong on forwarders/indexers, not in a search-time TA. This ensures Splunk Cloud compatibility.
+
+### Configuration File Headers
+Every `.conf` file must include a header comment block identifying the file, the app, and its purpose:
+
+```
+#
+# <filename>.conf - <Brief description>
+# TA-gen_ai_cim
+#
+# <Detailed purpose>
+#
+# Compatible with: Splunk Enterprise 9.0+, Splunk Cloud
+#
+```
+
+### Section Separators
+Use banner-style separators to organize logical sections within conf files:
+
+```
+###############################################################################
+# SECTION NAME
+# Brief description of what this section contains
+###############################################################################
+```
+
+Use lighter separators for individual stanzas within a section:
+
+```
+# ============================================================================
+# stanza_name
+# ============================================================================
+```
+
+## TA-gen_ai_cim Specific Conventions
+
+### Field Namespace
+All normalized fields use the `gen_ai.*` dotted namespace (e.g. `gen_ai.provider.name`, `gen_ai.usage.input_tokens`). Never create top-level fields for CIM-normalized data. The namespace follows OTel GenAI semantic conventions.
+
+### Primary Index
+The primary index is `gen_ai_log`. All eventtypes, saved searches, and macros should reference this index unless there is a specific reason not to.
+
+### Normalization Strategy
+- **Index-based stanza** `[index::gen_ai_log]` is the primary normalization layer applying to all events in the index.
+- **Sourcetype stanzas** (`[medadvice3:json]`, `[medadvice:json]`) handle format-specific normalization for known sourcetypes.
+- Use `FIELDALIAS` for simple 1:1 field renames. Use `EVAL` for computed fields, coalescing fallbacks, or boolean normalization.
+
+### Boolean Normalization
+Source data sends booleans in varying formats (`true`/`false`, `1`/`0`, `True`/`False`). Always normalize to lowercase string `"true"` or `"false"`:
+
+```
+EVAL-gen_ai.safety.violated = case( \
+    safety_violated=="true" OR safety_violated==1, "true", \
+    safety_violated=="false" OR safety_violated==0, "false", \
+    isnotnull(safety_violated), lower(safety_violated), \
+    1=1, null())
+```
+
+### FIELDALIAS Naming
+Use a descriptive prefix per stanza to avoid collisions:
+- Index stanza: `FIELDALIAS-idx_<short_name>`
+- Sourcetype stanzas: `FIELDALIAS-genai_<short_name>`
+
+### Multi-Value Field Extraction
+JSON arrays are extracted as multi-value fields via `REPORT` transforms using `MV_ADD = true`:
+
+```
+[extract_safety_categories]
+SOURCE_KEY = safety_categories
+REGEX = "([^"]+)"
+FORMAT = gen_ai.safety.categories::$1
+MV_ADD = true
+```
+
+### Eventtype Design
+- Base eventtype (`gen_ai_inference`) uses `priority = 5` and filters out scoring sourcetypes via `sourcetype!=ai_cim:*:ml_scoring ...`
+- Provider-specific eventtypes chain from the base: `search = eventtype=gen_ai_inference gen_ai.provider.name=<provider>` with `priority = 4`
+- Safety/governance eventtypes match on normalized boolean fields: `gen_ai.safety.violated="true"`
+- Tags flow **one direction only**: from eventtypes via `tags.conf`. No circular references.
+
+### Scoring Sourcetype Exclusion
+ML scoring results are written back to `gen_ai_log`. Always exclude them from operational queries using the `exclude_scoring_sourcetypes` macro or equivalent filter:
+
+```
+sourcetype!=ai_cim:*:ml_scoring sourcetype!=gen_ai:*:scoring sourcetype!=ai_cim:*:gen_ai_scoring sourcetype!=genai_scoring
+```
+
+### KV Store Collections
+- Use underscore field names in KV store collections (`gen_ai_event_id`, not `gen_ai.event.id`) because dotted names break the REST API.
+- Always set `replicate = true` for search head cluster compatibility.
+- Define `accelerated_fields` for commonly queried fields.
+- Include `field.<name> = <type>` declarations for all fields with proper types (`string`, `number`, `bool`).
+
+### KV Store Lookup Definitions
+In `transforms.conf`, KV store lookups use:
+
+```
+[my_lookup]
+external_type = kvstore
+collection = my_collection
+fields_list = _key, field1, field2, ...
+case_sensitive_match = false
+```
+
+### Macro Conventions
+- **Naming**: `genai_*` for token cost and analytics macros; `gen_ai_*` for review/workflow macros.
+- **Documentation**: Every macro must have a comment block with description, field outputs, and usage example.
+- **Arguments**: Use `(N)` suffix for parameterized macros. Document `args =` clearly.
+- **iseval**: Always include `iseval = 0` (or `1` when the definition is a single eval expression).
+
+### Saved Search Naming
+Follow the pattern: `GenAI - <Category> - <Action>`:
+- `GenAI - Safety Violation Alert`
+- `GenAI - PII Detection Alert`
+- `GenAI - PII Train Step 1 - Extract Feedback`
+
+### Data Models
+Three data models: `AI_Inference`, `AI_Safety`, `AI_Evaluation`. When adding new fields, ensure they map to the appropriate data model constraint.
+
+### Scoring Sourcetype Patterns
+ML scoring results use the sourcetype pattern `ai_cim:<model_type>:ml_scoring` or `ai_cim:<name>:gen_ai_scoring`. Use `| collect` with explicit `source` and `sourcetype` to write results back.
+
+### Computed Fields
+Use `coalesce()` for fallback chains when fields may come from different event formats:
+
+```
+EVAL-gen_ai.user.id = coalesce(enduser_id, user_id, user)
+EVAL-gen_ai.app.name = coalesce(service_name, app_name, app)
+```
+
+### Python Scripts
+- Bundle `splunklib` in `lib/` for SDK access.
+- Custom commands go in `bin/` with corresponding entries in `commands.conf`.
+- Alert actions go in `bin/` with matching `alert_actions.conf` stanzas.
+
+### Testing Changes
+After modifying `.conf` files, always verify:
+1. `btool check` passes with no errors for the affected conf files
+2. Field extractions resolve correctly on sample data
+3. Eventtypes and tags populate as expected
+4. No field name collisions between stanzas

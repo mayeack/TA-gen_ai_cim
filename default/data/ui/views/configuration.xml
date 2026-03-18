@@ -1,0 +1,242 @@
+<dashboard version="1.1" theme="light" script="config_config.js" stylesheet="config_config.css">
+  <label>Configuration</label>
+  <description>Configure your ServiceNow credentials, GenAI summary, and detection settings</description>
+
+  <row>
+    <panel>
+      <html encoded="1"><![CDATA[
+        <div class="config-container">
+          <!-- Tab Navigation -->
+          <div class="config-tabs">
+            <button class="config-tab active" data-tab="accounts">ServiceNow Account</button>
+            <button class="config-tab" data-tab="genai">GenAI Summary</button>
+            <button class="config-tab" data-tab="detection">Detection Settings</button>
+          </div>
+
+          <!-- Accounts Tab Content -->
+          <div class="config-tab-content active" id="tab-accounts">
+            <div class="config-header">
+              <div class="item-count"><span id="account-count">0</span> Item</div>
+              <div class="config-actions">
+                <input type="text" class="search-input" id="account-search" placeholder="Search..." />
+                <button class="btn btn-primary" id="btn-add-account">Add</button>
+              </div>
+            </div>
+            
+            <table class="config-table" id="accounts-table">
+              <thead>
+                <tr>
+                  <th class="sortable" data-sort="name">Account Name <span class="sort-icon">↕</span></th>
+                  <th class="sortable" data-sort="auth_type">Authentication Type <span class="sort-icon">↕</span></th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="accounts-tbody">
+                <tr class="no-records">
+                  <td colspan="3">No records found</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- GenAI Summary Tab Content -->
+          <div class="config-tab-content" id="tab-genai">
+            <div class="genai-settings">
+              <div class="settings-section">
+                <h3>GenAI Summary Settings</h3>
+                <p class="section-description">Configure AI-powered summary generation for ServiceNow cases. When enabled, event details are analyzed to generate concise summaries highlighting anomalies and notable findings.</p>
+                
+                <!-- Enable/Disable Toggle -->
+                <div class="form-group toggle-group">
+                  <label>Enable GenAI Summary</label>
+                  <div class="toggle-container">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="genai-enabled" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label" id="toggle-status">Disabled</span>
+                  </div>
+                  <div class="help-text">When enabled, AI-generated summaries will be included in ServiceNow cases.</div>
+                </div>
+              </div>
+              
+              <div class="settings-actions">
+                <button class="btn btn-primary" id="btn-save-genai">Save Settings</button>
+                <span class="save-status" id="genai-save-status"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Detection Settings Tab Content -->
+          <div class="config-tab-content" id="tab-detection">
+            <div class="detection-settings">
+              <div class="settings-section">
+                <h3>Detection Settings</h3>
+                <p class="section-description">Configure which types of content detection are enabled for AI governance monitoring. When enabled, the corresponding detection alerts will automatically analyze GenAI events and escalate findings to the Review Queue.</p>
+                
+                <!-- Detect PII Toggle -->
+                <div class="form-group toggle-group">
+                  <label>Detect PII</label>
+                  <div class="toggle-container">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="detect-pii" checked="checked" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label enabled" id="detect-pii-status">Enabled</span>
+                  </div>
+                  <div class="help-text">Detect Personally Identifiable Information (PII) such as names, email addresses, phone numbers, SSNs, and credit card numbers in AI prompts and responses.</div>
+                </div>
+                
+                <!-- Detect PHI Toggle -->
+                <div class="form-group toggle-group">
+                  <label>Detect PHI</label>
+                  <div class="toggle-container">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="detect-phi" checked="checked" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label enabled" id="detect-phi-status">Enabled</span>
+                  </div>
+                  <div class="help-text">Detect Protected Health Information (PHI) such as medical records, diagnoses, treatment information, and health insurance details in AI interactions.</div>
+                </div>
+                
+                <!-- Detect Prompt Injection Toggle -->
+                <div class="form-group toggle-group">
+                  <label>Detect Prompt Injection</label>
+                  <div class="toggle-container">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="detect-prompt-injection" checked="checked" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label enabled" id="detect-prompt-injection-status">Enabled</span>
+                  </div>
+                  <div class="help-text">Detect prompt injection attacks that attempt to manipulate AI model behavior through malicious input patterns.</div>
+                </div>
+                
+                <!-- Detect Anomalies Toggle -->
+                <div class="form-group toggle-group">
+                  <label>Detect Anomalies</label>
+                  <div class="toggle-container">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="detect-anomalies" checked="checked" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label enabled" id="detect-anomalies-status">Enabled</span>
+                  </div>
+                  <div class="help-text">Detect anomalous patterns in AI usage such as unusual request volumes, atypical response times, or unexpected model behaviors.</div>
+                </div>
+                
+                <!-- Random Escalation Toggle -->
+                <div class="form-group toggle-group">
+                  <label>Random Escalation</label>
+                  <div class="toggle-container">
+                    <label class="toggle-switch">
+                      <input type="checkbox" id="random-escalation" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-label" id="random-escalation-status">Disabled</span>
+                  </div>
+                  <div class="help-text">Randomly escalate events to the Review Queue if the last alphanumeric characters of the gen_ai.event.id match the RNG seed pattern.</div>
+                </div>
+                
+                <!-- RNG Seed Text Field -->
+                <div class="form-group" id="rng-seed-group">
+                  <label>RNG Seed</label>
+                  <input type="text" id="rng-seed" placeholder="Enter alphanumeric seed (e.g., a1b2)" />
+                  <div class="help-text">Alphanumeric characters to match against the end of gen_ai.event.id for random escalation. Events with IDs ending in these characters will be escalated.</div>
+                </div>
+              </div>
+              
+              <div class="settings-actions">
+                <button class="btn btn-primary" id="btn-save-detection">Save Settings</button>
+                <span class="save-status" id="detection-save-status"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Add/Edit Account Modal -->
+        <div class="modal-overlay" id="account-modal">
+          <div class="modal-dialog">
+            <div class="modal-header">
+              <h3 id="modal-title">Add ServiceNow Account</h3>
+              <button class="modal-close" id="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+              <form id="account-form">
+                <input type="hidden" id="edit-account-name" />
+                
+                <div class="form-group">
+                  <label><span class="required">*</span>Account Name</label>
+                  <input type="text" id="account-name" placeholder="Enter a unique name for this account" />
+                  <div class="help-text">Enter a unique name for this account.</div>
+                </div>
+                
+                <div class="form-group">
+                  <label><span class="required">*</span>URL</label>
+                  <input type="text" id="account-url" placeholder="https://instance.service-now.com" />
+                  <div class="help-text">Enter the URL, for example, https://myaccount.service-now.com.</div>
+                </div>
+                
+                <div class="form-group">
+                  <label>Auth Type</label>
+                  <select id="account-auth-type" style="color: #333 !important;">
+                    <option value="basic" selected="selected">Basic Authentication</option>
+                    <option value="oauth_client_creds">OAuth 2.0 (Client Credentials)</option>
+                  </select>
+                </div>
+                
+                <!-- Basic Auth Fields -->
+                <div class="auth-fields" id="fields-basic">
+                  <div class="form-group">
+                    <label><span class="required">*</span>Username</label>
+                    <input type="text" id="basic-username" placeholder="Enter username" />
+                  </div>
+                  <div class="form-group">
+                    <label><span class="required">*</span>Password</label>
+                    <input type="password" id="basic-password" placeholder="Enter password" />
+                  </div>
+                </div>
+                
+                <!-- OAuth Client Credentials Fields -->
+                <div class="auth-fields" id="fields-oauth-client-creds" style="display:none;">
+                  <div class="form-group">
+                    <label><span class="required">*</span>Client ID</label>
+                    <input type="text" id="oauth-cc-client-id" placeholder="Enter Client ID" />
+                  </div>
+                  <div class="form-group">
+                    <label><span class="required">*</span>Client Secret</label>
+                    <input type="password" id="oauth-cc-client-secret" placeholder="Enter Client Secret" />
+                  </div>
+                </div>
+                
+                <div class="form-error" id="form-error"></div>
+              </form>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
+              <button class="btn btn-primary" id="btn-save">Add</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Delete Confirmation Modal -->
+        <div class="modal-overlay" id="delete-modal">
+          <div class="modal-dialog modal-sm">
+            <div class="modal-header">
+              <h3>Delete Account</h3>
+              <button class="modal-close" id="delete-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+              <p>Are you sure you want to delete account "<strong id="delete-account-name"></strong>"?</p>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" id="btn-delete-cancel">Cancel</button>
+              <button class="btn btn-danger" id="btn-delete-confirm">Delete</button>
+            </div>
+          </div>
+        </div>
+      ]]></html>
+    </panel>
+  </row>
+</dashboard>

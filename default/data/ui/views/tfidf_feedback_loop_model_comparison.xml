@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  tfidf_feedback_loop_model_comparison.xml - Champion vs Challenger Model Comparison
+  TA-gen_ai_cim - TF-IDF Anomaly Feedback Loop
+  
+  Compares OneClassSVM anomaly detection models trained on original data vs feedback-augmented data.
+  Since OneClassSVM is unsupervised, comparison is based on score distribution on validation data.
+-->
+<form version="1.1" theme="dark" script="tfidf_feedback_loop_promote.js">
+  <label>TF-IDF Feedback Loop - Model Comparison</label>
+  <description>Compare champion and challenger anomaly models. Review score distributions and promote when ready. Feedback includes only TRUE NEGATIVES (reviewer marked FALSE).</description>
+
+  <fieldset submitButton="false">
+    <input type="dropdown" token="model_type">
+      <label>Model Type</label>
+      <choice value="prompt">Prompt Anomaly Model</choice>
+      <choice value="response">Response Anomaly Model</choice>
+      <default>prompt</default>
+    </input>
+  </fieldset>
+
+  <!-- Summary Stats Row -->
+  <row>
+    <panel>
+      <single>
+        <title>Total Feedback Samples</title>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup | stats count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x5A9BD5","0x5A9BD5"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>Prompt Feedback</title>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup | where has_prompt_feedback=1 | stats count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x53A051","0x53A051"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>Response Feedback</title>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup | where has_response_feedback=1 | stats count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0xF8BE34","0xF8BE34"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>Training Set</title>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup | where split_assignment="train" | stats count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0xED8440","0xED8440"]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+  </row>
+
+  <!-- Validation/Test Split -->
+  <row>
+    <panel>
+      <single>
+        <title>Validation Set</title>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup | where split_assignment="valid" | stats count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>Test Set</title>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup | where split_assignment="test" | stats count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>Unique Apps</title>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup | stats dc(app_name)</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+    <panel>
+      <single>
+        <title>Unique Reviewers</title>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup | stats dc(reviewer)</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+  </row>
+
+  <!-- Score Distribution Comparison - Prompt -->
+  <row depends="$model_type$">
+    <panel>
+      <title>Prompt Model - Champion Score Distribution on Validation Data</title>
+      <chart>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup 
+| where has_prompt_feedback=1 AND split_assignment="valid"
+| rename prompt_text AS input_text 
+| where isnotnull(input_text) AND len(input_text) > 10 
+| eval input_text_clean=lower(input_text) 
+| eval input_text_clean=replace(input_text_clean, "[^a-z0-9\s]", " ") 
+| eval input_text_clean=replace(input_text_clean, "\s+", " ") 
+| fit HashingVectorizer input_text_clean max_features=1000 ngram_range=1-2 stop_words=english reduce=false 
+| apply tfidf_prompt_pca 
+| apply prompt_anomaly_model 
+| eval anomaly_score=round('predicted(score)', 2)
+| bin anomaly_score span=0.1
+| stats count by anomaly_score
+| sort anomaly_score</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+          <risky_command_check_bypass>1</risky_command_check_bypass>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.chart.showDataLabels">all</option>
+        <option name="charting.legend.placement">none</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Prompt Model - Challenger Score Distribution on Validation Data</title>
+      <chart>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup 
+| where has_prompt_feedback=1 AND split_assignment="valid"
+| rename prompt_text AS input_text 
+| where isnotnull(input_text) AND len(input_text) > 10 
+| eval input_text_clean=lower(input_text) 
+| eval input_text_clean=replace(input_text_clean, "[^a-z0-9\s]", " ") 
+| eval input_text_clean=replace(input_text_clean, "\s+", " ") 
+| fit HashingVectorizer input_text_clean max_features=1000 ngram_range=1-2 stop_words=english reduce=false 
+| apply tfidf_prompt_pca_challenger 
+| apply prompt_anomaly_model_challenger 
+| eval anomaly_score=round('predicted(score)', 2)
+| bin anomaly_score span=0.1
+| stats count by anomaly_score
+| sort anomaly_score</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+          <risky_command_check_bypass>1</risky_command_check_bypass>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.chart.showDataLabels">all</option>
+        <option name="charting.legend.placement">none</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- Score Statistics Comparison -->
+  <row>
+    <panel>
+      <title>Score Statistics Comparison - Validation Set</title>
+      <table>
+        <search>
+          <query>| makeresults 
+| eval model="Champion", model_type="$model_type$"
+| append [| makeresults | eval model="Challenger", model_type="$model_type$"]
+| eval text_field=if(model_type="prompt", "prompt_text", "response_text")
+| eval has_feedback_field=if(model_type="prompt", "has_prompt_feedback", "has_response_feedback")
+| eval pca_model=if(model_type="prompt", if(model="Champion", "tfidf_prompt_pca", "tfidf_prompt_pca_challenger"), if(model="Champion", "tfidf_response_pca", "tfidf_response_pca_challenger"))
+| eval anomaly_model=if(model_type="prompt", if(model="Champion", "prompt_anomaly_model", "prompt_anomaly_model_challenger"), if(model="Champion", "response_anomaly_model", "response_anomaly_model_challenger"))
+| join type=left model
+    [| inputlookup tfidf_training_feedback_lookup 
+    | where split_assignment="valid"
+    | eval has_feedback=if("$model_type$"="prompt", has_prompt_feedback, has_response_feedback)
+    | where has_feedback=1
+    | stats count AS sample_count]
+| fillnull value=0 sample_count
+| eval avg_score="N/A", std_score="N/A", min_score="N/A", max_score="N/A"
+| eval notes=if(sample_count &lt; 30, "Insufficient data", "Review distributions above")
+| table model, sample_count, avg_score, std_score, min_score, max_score, notes</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+    <panel>
+      <title>Recommendation</title>
+      <single>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup 
+| eval has_feedback=if("$model_type$"="prompt", has_prompt_feedback, has_response_feedback)
+| where has_feedback=1 AND split_assignment="valid"
+| stats count AS sample_count
+| eval recommendation=case(
+    sample_count &lt; 30, "INSUFFICIENT_DATA",
+    sample_count &lt; 100, "MANUAL_REVIEW",
+    1=1, "READY_FOR_REVIEW"
+)
+| table recommendation</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0xDC4E41","0xF8BE34","0x53A051"]</option>
+        <option name="rangeValues">[0,1]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+  </row>
+
+  <!-- Feedback Over Time -->
+  <row>
+    <panel>
+      <title>Feedback Accumulation Over Time</title>
+      <chart>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup 
+| eval date=strftime(feedback_timestamp, "%Y-%m-%d")
+| eval feedback_type=case(
+    has_prompt_feedback=1 AND has_response_feedback=1, "Both",
+    has_prompt_feedback=1, "Prompt Only",
+    has_response_feedback=1, "Response Only",
+    1=1, "Unknown"
+)
+| stats count by date, feedback_type
+| xyseries date feedback_type count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Feedback by Application</title>
+      <chart>
+        <search>
+          <query>| inputlookup tfidf_training_feedback_lookup 
+| stats sum(has_prompt_feedback) AS prompt_count, sum(has_response_feedback) AS response_count by app_name
+| eval app_name=coalesce(app_name, "Unknown")
+| sort -prompt_count</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">bottom</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- Model Promotion Button -->
+  <row>
+    <panel>
+      <html>
+        <div style="text-align: center; padding: 20px;">
+          <h3>Model Promotion</h3>
+          <p>After reviewing the score distributions above, promote the challenger model to champion if it shows improved performance on human-confirmed normal data.</p>
+          <p style="margin-top: 10px; color: #888;">
+            <strong>Note:</strong> Since TF-IDF uses OneClassSVM (unsupervised), the challenger model should show a tighter score distribution on validation data (known-normal samples from human review).
+          </p>
+          <button id="promotePromptModelBtn" type="button" style="background: #5cb85c; color: white; border: none; padding: 15px 30px; font-size: 14px; font-weight: bold; border-radius: 4px; cursor: pointer; margin: 10px;">
+            Promote Prompt Challenger
+          </button>
+          <button id="promoteResponseModelBtn" type="button" style="background: #5cb85c; color: white; border: none; padding: 15px 30px; font-size: 14px; font-weight: bold; border-radius: 4px; cursor: pointer; margin: 10px;">
+            Promote Response Challenger
+          </button>
+          <span id="promoteStatusMsg" style="display: block; margin-top: 15px; font-size: 14px;"></span>
+          <p style="margin-top: 15px; color: #888; font-size: 12px;">
+            This will save the current challenger model as the new production champion and register it in the model registry.
+          </p>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- Navigation -->
+  <row>
+    <panel>
+      <html>
+        <div style="text-align: center; padding: 12px;">
+          <a href="/app/TA-gen_ai_cim/tfidf_feedback_loop_model_registry" style="color: #5dade2; margin-right: 20px;">View Model Registry</a>
+          <a href="/app/TA-gen_ai_cim/review_queue" style="color: #5dade2; margin-right: 20px;">Review Queue</a>
+          <a href="/app/TA-gen_ai_cim/governance_safety" style="color: #5dade2;">TF-IDF Anomaly Detection</a>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+</form>

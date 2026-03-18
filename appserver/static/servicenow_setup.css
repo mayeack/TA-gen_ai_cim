@@ -1,0 +1,85 @@
+/**
+ * servicenow_setup.css
+ * Styles for the ServiceNow configuration page
+ */
+
+/* Override Splunk's default panel styling for cleaner look */
+.dashboard-body .dashboard-panel {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.dashboard-body .panel-body {
+    padding: 0;
+}
+
+/* Form input focus states */
+.snow-setup-container .form-group input:focus {
+    border-color: #5CC05C;
+    outline: 0;
+    box-shadow: 0 0 0 3px rgba(92, 192, 92, 0.25);
+}
+
+/* Button transitions */
+.snow-setup-container .btn {
+    transition: all 0.2s ease-in-out;
+}
+
+.snow-setup-container .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.snow-setup-container .btn:active {
+    transform: translateY(0);
+}
+
+/* Spinner animation */
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.snow-setup-container .spinner {
+    animation: spin 0.8s linear infinite;
+}
+
+/* Status message animations */
+.snow-setup-container .status-message {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Code block styling */
+.snow-setup-container code {
+    background: #f1f3f4;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+    font-size: 12px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .snow-setup-container {
+        padding: 15px;
+    }
+    
+    .snow-setup-container .button-group {
+        flex-direction: column;
+    }
+    
+    .snow-setup-container .btn {
+        width: 100%;
+    }
+}

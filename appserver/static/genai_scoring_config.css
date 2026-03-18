@@ -1,0 +1,329 @@
+/**
+ * GenAI Scoring Configuration Page Styles
+ * Consistent with existing config_config.css patterns
+ */
+
+.scoring-config-container {
+    font-family: "Splunk Platform Sans", "Proxima Nova", Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    padding: 0;
+}
+
+/* Hide default Splunk panel styling */
+.dashboard-body .dashboard-panel {
+    background: white;
+    border: 1px solid #c3cbd4;
+    border-radius: 4px;
+}
+
+.dashboard-body .panel-body {
+    padding: 0;
+}
+
+.dashboard-body .panel-head {
+    display: none;
+}
+
+/* Prerequisites Banner */
+.prereq-banner {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 4px;
+    padding: 12px 20px;
+    margin: 20px 20px 0 20px;
+    font-size: 13px;
+    color: #856404;
+    line-height: 1.5;
+}
+
+/* Config Sections */
+.config-section {
+    padding: 20px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.config-section:last-child {
+    border-bottom: none;
+}
+
+.section-header h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
+    margin: 0 0 8px 0;
+}
+
+.section-description {
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 20px;
+    line-height: 1.5;
+}
+
+.section-description code {
+    background: #f0f0f0;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+/* System Prompt Textarea */
+#system-prompt {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #c3cbd4;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    line-height: 1.5;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+#system-prompt:focus {
+    border-color: #5CC05C;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(92, 192, 92, 0.2);
+}
+
+/* Pipeline Cards */
+.pipeline-card {
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    background: #fafafa;
+    transition: all 0.2s;
+}
+
+.pipeline-card.enabled {
+    border-color: #5CC05C;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(92, 192, 92, 0.1);
+}
+
+.pipeline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    border-bottom: 1px solid #e0e0e0;
+    background: #f8f9fa;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+}
+
+.pipeline-card.enabled .pipeline-header {
+    background: #f0faf0;
+}
+
+.pipeline-title {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.pipeline-number {
+    font-weight: 600;
+    font-size: 14px;
+    color: #333;
+}
+
+.pipeline-name-display {
+    font-size: 14px;
+    color: #666;
+}
+
+.pipeline-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Toggle Switch (matches config_config.css) */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 26px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 26px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: #5CC05C;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(24px);
+}
+
+.toggle-label {
+    font-size: 13px;
+    color: #999;
+    font-weight: 500;
+    min-width: 55px;
+}
+
+.toggle-label.enabled {
+    color: #5CC05C;
+}
+
+/* Pipeline Body */
+.pipeline-body {
+    padding: 18px;
+}
+
+/* Form Elements */
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: #333;
+    font-size: 13px;
+}
+
+.form-group input[type="text"],
+.form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #c3cbd4;
+    border-radius: 4px;
+    font-size: 13px;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.form-group textarea {
+    resize: vertical;
+    line-height: 1.5;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+    border-color: #5CC05C;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(92, 192, 92, 0.2);
+}
+
+.help-text {
+    font-size: 12px;
+    color: #999;
+    margin-top: 4px;
+    line-height: 1.4;
+}
+
+/* Pipeline Metadata */
+.pipeline-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    padding: 12px 0;
+    margin-bottom: 12px;
+    border-top: 1px solid #f0f0f0;
+}
+
+.meta-item {
+    font-size: 12px;
+    color: #666;
+}
+
+.meta-item code {
+    background: #f0f0f0;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+}
+
+/* Pipeline Actions */
+.pipeline-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Buttons (matches config_config.css) */
+.btn {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: #5CC05C;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #4da64d;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Settings Actions */
+.settings-actions {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding-top: 10px;
+}
+
+/* Status Messages */
+.save-status {
+    font-size: 13px;
+    color: #666;
+}
+
+.save-status.success {
+    color: #5CC05C;
+}
+
+.save-status.error {
+    color: #dc3545;
+}
+
+/* Loading */
+.loading-message {
+    text-align: center;
+    padding: 40px;
+    color: #999;
+    font-size: 14px;
+}

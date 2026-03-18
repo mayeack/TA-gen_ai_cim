@@ -1,0 +1,191 @@
+<form version="1.1">
+  <label>AI Cost Analysis Dashboard</label>
+  <description>Track and analyze GenAI inference costs across providers</description>
+
+  <fieldset submitButton="true" autoRun="true">
+    <input type="time" token="time_picker">
+      <label>Time Range</label>
+      <default>
+        <earliest>-30d@d</earliest>
+        <latest>now</latest>
+      </default>
+    </input>
+    <input type="dropdown" token="provider_filter">
+      <label>Provider</label>
+      <choice value="*">All Providers</choice>
+      <choice value="anthropic">Anthropic</choice>
+      <choice value="openai">OpenAI</choice>
+      <choice value="bedrock">AWS Bedrock</choice>
+      <default>*</default>
+    </input>
+  </fieldset>
+
+  <row>
+    <panel>
+      <title>Total Cost (USD)</title>
+      <single>
+        <search>
+          <query>`gen_ai_base` gen_ai.provider.name=$provider_filter$ `gen_ai_calculate_cost` | stats sum(gen_ai.cost.calculated_total) as total_cost | eval total_cost="$"+tostring(round(total_cost, 2), "commas")</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="underLabel">Total Spend</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Avg Cost Per Request</title>
+      <single>
+        <search>
+          <query>`gen_ai_base` gen_ai.provider.name=$provider_filter$ `gen_ai_calculate_cost` | stats avg(gen_ai.cost.calculated_total) as avg_cost | eval avg_cost="$"+tostring(round(avg_cost, 4), "commas")</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="underLabel">Per Request</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Daily Average Cost</title>
+      <single>
+        <search>
+          <query>`gen_ai_base` gen_ai.provider.name=$provider_filter$ `gen_ai_calculate_cost` | bucket _time span=1d | stats sum(gen_ai.cost.calculated_total) as daily_cost by _time | stats avg(daily_cost) as avg_daily | eval avg_daily="$"+tostring(round(avg_daily, 2), "commas")</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="underLabel">Per Day</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Projected Monthly Cost</title>
+      <single>
+        <search>
+          <query>`gen_ai_base` gen_ai.provider.name=$provider_filter$ `gen_ai_calculate_cost` earliest=-7d | stats sum(gen_ai.cost.calculated_total) as week_cost | eval monthly_projection=(week_cost/7)*30 | eval monthly_projection="$"+tostring(round(monthly_projection, 2), "commas")</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="underLabel">30-Day Projection</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Cost Trends Over Time</title>
+      <chart>
+        <search>
+          <query>`gen_ai_base` gen_ai.provider.name=$provider_filter$ `gen_ai_calculate_cost` | timechart sum(gen_ai.cost.calculated_total) as total_cost by gen_ai.provider.name</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="charting.chart">area</option>
+        <option name="charting.axisTitleX.text">Time</option>
+        <option name="charting.axisTitleY.text">Cost (USD)</option>
+        <option name="charting.legend.placement">right</option>
+        <option name="charting.chart.stackMode">stacked</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Cost by Provider and Model</title>
+      <table>
+        <search>
+          <query>`gen_ai_base` gen_ai.provider.name=$provider_filter$ `gen_ai_enrich_metadata`
+| stats count as requests,
+    sum(gen_ai.usage.total_tokens) as total_tokens,
+    sum(gen_ai.cost.calculated_total) as total_cost,
+    avg(gen_ai.cost.calculated_total) as avg_cost_per_request
+    by gen_ai.provider.name, gen_ai.request.model
+| eval total_cost=round(total_cost, 2),
+    avg_cost_per_request=round(avg_cost_per_request, 4),
+    cost_per_1k_tokens=round((total_cost/total_tokens)*1000, 4)
+| sort - total_cost</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">row</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Top Users by Cost</title>
+      <table>
+        <search>
+          <query>`gen_ai_base` gen_ai.provider.name=$provider_filter$ `gen_ai_calculate_cost`
+| stats count as requests,
+    sum(gen_ai.usage.total_tokens) as total_tokens,
+    sum(gen_ai.cost.calculated_total) as total_cost
+    by gen_ai.user.id, gen_ai.app.name
+| eval total_cost=round(total_cost, 2)
+| sort - total_cost
+| head 20</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">row</option>
+      </table>
+    </panel>
+    <panel>
+      <title>Cost Distribution by Application</title>
+      <chart>
+        <search>
+          <query>`gen_ai_base` gen_ai.provider.name=$provider_filter$ `gen_ai_calculate_cost` | stats sum(gen_ai.cost.calculated_total) as total_cost by gen_ai.app.name | eval total_cost=round(total_cost, 2) | sort - total_cost | head 10</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Cost Efficiency Analysis</title>
+      <table>
+        <search>
+          <query>`gen_ai_base` gen_ai.provider.name=$provider_filter$ `gen_ai_enrich_metadata`
+| stats count as requests,
+    sum(gen_ai.usage.total_tokens) as total_tokens,
+    sum(gen_ai.cost.calculated_total) as total_cost,
+    avg(gen_ai.client.operation.duration) as avg_latency_sec
+    by gen_ai.provider.name, gen_ai.request.model
+| eval cost_per_request=round(total_cost/requests, 4),
+    tokens_per_request=round(total_tokens/requests, 0),
+    cost_per_1k_tokens=round((total_cost/total_tokens)*1000, 4),
+    cost_efficiency_score=round((requests*1000)/(total_cost*avg_latency_sec), 2)
+| sort - cost_efficiency_score</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">row</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>High Cost Transactions (Top 50)</title>
+      <table>
+        <search>
+          <query>`gen_ai_base` gen_ai.provider.name=$provider_filter$ `gen_ai_calculate_cost`
+| eval timestamp=strftime(_time, "%Y-%m-%d %H:%M:%S"),
+    cost_display="$"+tostring(round(gen_ai.cost.calculated_total, 4), "commas")
+| sort - gen_ai.cost.calculated_total
+| table timestamp, gen_ai.provider.name, gen_ai.request.model, gen_ai.user.id, gen_ai.app.name, gen_ai.usage.total_tokens, cost_display, gen_ai.client.operation.duration
+| head 50</query>
+          <earliest>$time_picker.earliest$</earliest>
+          <latest>$time_picker.latest$</latest>
+        </search>
+        <option name="drilldown">row</option>
+        <option name="count">20</option>
+      </table>
+    </panel>
+  </row>
+</form>
