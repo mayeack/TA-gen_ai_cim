@@ -60,11 +60,13 @@
             "dataSources": { "primary": "ds_pii_ml_category" },
             "options": {
                 "seriesColors": ["#dc4e41", "#f8be34", "#6ab7c7", "#f1813f", "#a2cc3e", "#5cc05c", "#9b59b6", "#3498db"],
-                "xAxisTitleText": "Count",
-                "yAxisTitleText": "PII Category"
+                "xAxisTitleText": "PII Category",
+                "yAxisTitleText": "Count",
+                "xAxisLabelRotation": -45,
+                "dataValuesDisplay": "all"
             },
             "title": "PII by Category",
-            "type": "splunk.bar"
+            "type": "splunk.column"
         },
         "viz_pii_ml_rate": {
             "dataSources": { "primary": "ds_pii_ml_rate" },
@@ -220,7 +222,7 @@
         },
         "ds_pii_ml_category": {
             "options": {
-                "query": "index=gen_ai_log (source=pii_ml_scoring OR source=pii_genai_scoring) (gen_ai.pii.ml_detected=\"true\" OR gen_ai.pii.genai_detected=\"true\") gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval pii_types=split('gen_ai.pii.types', \",\") | mvexpand pii_types | eval pii_types=trim(pii_types) | stats count as Count by pii_types | rename pii_types as PII_Category | sort -Count",
+                "query": "index=gen_ai_log (source=pii_ml_scoring OR source=pii_genai_scoring) (gen_ai.pii.ml_detected=\"true\" OR gen_ai.pii.genai_detected=\"true\") gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval pii_types=coalesce('gen_ai.pii.types{}', split('gen_ai.pii.types', \",\")) | mvexpand pii_types | eval pii_types=upper(trim(pii_types)) | eval pii_types=case(match(pii_types, \"^(FULL[_ ]?NAME|NAME|NAME[_ ]?IDENTIFIER)$\"), \"NAME\", match(pii_types, \"^(DATE[_ ]?OF[_ ]?BIRTH([_ ]?INDICATOR)?|DOB)$\"), \"DOB\", match(pii_types, \"^(HOME[_ ]?ADDRESS|ADDRESS)$\"), \"ADDRESS\", match(pii_types, \"^(PHONE[_ ]?NUMBER|PHONE)$\"), \"PHONE\", match(pii_types, \"^EMAIL([_ ]?ADDRESS)?$\"), \"EMAIL\", match(pii_types, \"^(SSN|SOCIAL[_ ]?SECURITY)\"), \"SSN\", match(pii_types, \"^CREDIT[_ ]?CARD\"), \"CREDIT_CARD\", 1=1, replace(pii_types, \"_\", \" \")) | where isnotnull(pii_types) AND len(pii_types)>0 | stats count as Count by pii_types | rename pii_types as PII_Category | sort -Count",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
@@ -285,7 +287,7 @@
             { "item": "viz_pii_ml_rate", "position": { "h": 120, "w": 360, "x": 720, "y": 70 }, "type": "block" },
             { "item": "viz_review_queue_link", "position": { "h": 120, "w": 360, "x": 1080, "y": 70 }, "type": "block" },
             { "item": "viz_pii_ml_trend", "position": { "h": 280, "w": 720, "x": 0, "y": 190 }, "type": "block" },
-            { "item": "viz_pii_ml_category", "position": { "h": 280, "w": 720, "x": 720, "y": 190 }, "type": "block" },
+            { "item": "viz_pii_ml_category", "position": { "h": 320, "w": 720, "x": 720, "y": 190 }, "type": "block" },
             { "item": "viz_pii_ml_risk_distribution", "position": { "h": 280, "w": 720, "x": 0, "y": 470 }, "type": "block" },
             { "item": "viz_pii_ml_by_service", "position": { "h": 280, "w": 720, "x": 720, "y": 470 }, "type": "block" },
             { "item": "viz_pii_ml_recent", "position": { "h": 350, "w": 1440, "x": 0, "y": 750 }, "type": "block" }
