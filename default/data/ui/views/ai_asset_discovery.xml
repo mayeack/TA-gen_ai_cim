@@ -1,0 +1,403 @@
+<!--
+  ai_asset_discovery.xml - AI Asset Discovery Dashboard
+  TA-gen_ai_cim - Asset Management
+
+  Displays AI Systems (gen_ai.app.name) and AI Models (gen_ai.response.model)
+  with ServiceNow inventory/approval status and actionable links.
+-->
+<dashboard version="2" theme="dark">
+    <label>AI Asset Discovery</label>
+    <description>Map AI assets from Splunk to ServiceNow. Track inventory and approval status for AI Systems and AI Models.</description>
+    <definition><![CDATA[
+{
+    "title": "AI Asset Discovery",
+    "description": "Map AI assets from Splunk to ServiceNow. Track inventory and approval status for AI Systems and AI Models.",
+    "inputs": {
+        "input_time": {
+            "options": { "defaultValue": "-7d@d,now", "token": "time" },
+            "title": "Time Range",
+            "type": "input.timerange"
+        }
+    },
+    "defaults": {
+        "dataSources": {
+            "ds.search": {
+                "options": {
+                    "queryParameters": { "earliest": "-7d@d", "latest": "now" }
+                }
+            }
+        }
+    },
+    "visualizations": {
+        "viz_total_systems": {
+            "dataSources": { "primary": "ds_total_systems" },
+            "options": { "backgroundColor": "transparent", "majorColor": "#6ab7c7", "sparklineDisplay": "off", "trendDisplay": "off" },
+            "title": "AI Systems",
+            "type": "splunk.singlevalue"
+        },
+        "viz_total_models": {
+            "dataSources": { "primary": "ds_total_models" },
+            "options": { "backgroundColor": "transparent", "majorColor": "#6ab7c7", "sparklineDisplay": "off", "trendDisplay": "off" },
+            "title": "AI Models",
+            "type": "splunk.singlevalue"
+        },
+        "viz_kpi_approved": {
+            "dataSources": { "primary": "ds_kpi_approved" },
+            "options": { "backgroundColor": "transparent", "majorColor": "#53a051", "sparklineDisplay": "off", "trendDisplay": "off" },
+            "title": "Inventoried Approved",
+            "type": "splunk.singlevalue"
+        },
+        "viz_kpi_unapproved": {
+            "dataSources": { "primary": "ds_kpi_unapproved" },
+            "options": { "backgroundColor": "transparent", "majorColor": "#f8be34", "sparklineDisplay": "off", "trendDisplay": "off" },
+            "title": "Inventoried Unapproved",
+            "type": "splunk.singlevalue"
+        },
+        "viz_kpi_uninventoried": {
+            "dataSources": { "primary": "ds_kpi_uninventoried" },
+            "options": { "backgroundColor": "transparent", "majorColor": "#dc4e41", "sparklineDisplay": "off", "trendDisplay": "off" },
+            "title": "Uninventoried Unapproved",
+            "type": "splunk.singlevalue"
+        },
+        "viz_sys_volume": {
+            "dataSources": { "primary": "ds_sys_volume" },
+            "options": { "legendDisplay": "bottom", "xAxisTitleText": "Time", "yAxisTitleText": "Transactions" },
+            "title": "Transaction Volume by AI System",
+            "type": "splunk.line"
+        },
+        "viz_mdl_volume": {
+            "dataSources": { "primary": "ds_mdl_volume" },
+            "options": { "legendDisplay": "bottom", "xAxisTitleText": "Time", "yAxisTitleText": "Transactions" },
+            "title": "Transaction Volume by AI Model",
+            "type": "splunk.line"
+        },
+        "viz_sys_approved": {
+            "dataSources": { "primary": "ds_sys_approved" },
+            "options": { "count": 20 },
+            "title": "AI Systems - Inventoried Approved",
+            "type": "splunk.table"
+        },
+        "viz_mdl_approved": {
+            "dataSources": { "primary": "ds_mdl_approved" },
+            "options": { "count": 20 },
+            "title": "AI Models - Inventoried Approved",
+            "type": "splunk.table"
+        },
+        "viz_sys_unapproved": {
+            "dataSources": { "primary": "ds_sys_unapproved" },
+            "options": { "count": 20 },
+            "title": "AI Systems - Inventoried Unapproved",
+            "type": "splunk.table"
+        },
+        "viz_mdl_unapproved": {
+            "dataSources": { "primary": "ds_mdl_unapproved" },
+            "options": { "count": 20 },
+            "title": "AI Models - Inventoried Unapproved",
+            "type": "splunk.table"
+        },
+        "viz_sys_uninventoried": {
+            "dataSources": { "primary": "ds_sys_uninventoried" },
+            "options": { "count": 20 },
+            "title": "AI Systems - Uninventoried Unapproved",
+            "type": "splunk.table"
+        },
+        "viz_mdl_uninventoried": {
+            "dataSources": { "primary": "ds_mdl_uninventoried" },
+            "options": { "count": 20 },
+            "title": "AI Models - Uninventoried Unapproved",
+            "type": "splunk.table"
+        },
+        "viz_sys_inv_not_detected": {
+            "dataSources": { "primary": "ds_sys_inv_not_detected" },
+            "options": { "count": 20 },
+            "title": "AI Systems - Inventoried Not Detected",
+            "type": "splunk.table"
+        },
+        "viz_mdl_inv_not_detected": {
+            "dataSources": { "primary": "ds_mdl_inv_not_detected" },
+            "options": { "count": 20 },
+            "title": "AI Models - Inventoried Not Detected",
+            "type": "splunk.table"
+        },
+        "viz_action_approved": {
+            "options": {
+                "fontSize": "large",
+                "markdown": "**All listed assets are inventoried and approved in ServiceNow.**\n\n### \u2713 No action required"
+            },
+            "title": "Action",
+            "type": "splunk.markdown"
+        },
+        "viz_action_unapproved_btn": {
+            "dataSources": { "primary": "ds_action_unapproved_btn" },
+            "eventHandlers": [
+                {
+                    "options": {
+                        "url": "https://ciscoaidfsir.service-now.com/now/ai-control-tower/assets",
+                        "newTab": true
+                    },
+                    "type": "drilldown.customUrl"
+                }
+            ],
+            "options": {
+                "backgroundColor": "transparent",
+                "majorFontSize": 18,
+                "majorValue": "> primary | seriesByIndex(0) | lastPoint()",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "",
+                "unitPosition": "after"
+            },
+            "type": "splunk.singlevalue"
+        },
+        "viz_action_add_system": {
+            "dataSources": { "primary": "ds_action_add_system" },
+            "eventHandlers": [
+                {
+                    "options": {
+                        "url": "https://ciscoaidfsir.service-now.com/now/ai-control-tower/intake-form/alm_ai_system_digital_asset/-1",
+                        "newTab": true
+                    },
+                    "type": "drilldown.customUrl"
+                }
+            ],
+            "options": {
+                "backgroundColor": "transparent",
+                "majorFontSize": 18,
+                "majorValue": "> primary | seriesByIndex(0) | lastPoint()",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "",
+                "unitPosition": "after"
+            },
+            "type": "splunk.singlevalue"
+        },
+        "viz_action_add_model": {
+            "dataSources": { "primary": "ds_action_add_model" },
+            "eventHandlers": [
+                {
+                    "options": {
+                        "url": "https://ciscoaidfsir.service-now.com/now/ai-control-tower/intake-form/alm_ai_model_digital_asset/-1",
+                        "newTab": true
+                    },
+                    "type": "drilldown.customUrl"
+                }
+            ],
+            "options": {
+                "backgroundColor": "transparent",
+                "majorFontSize": 18,
+                "majorValue": "> primary | seriesByIndex(0) | lastPoint()",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "",
+                "unitPosition": "after"
+            },
+            "type": "splunk.singlevalue"
+        },
+        "viz_action_not_detected_btn": {
+            "dataSources": { "primary": "ds_action_not_detected_btn" },
+            "eventHandlers": [
+                {
+                    "options": {
+                        "url": "https://ciscoaidfsir.service-now.com/now/ai-control-tower/assets",
+                        "newTab": true
+                    },
+                    "type": "drilldown.customUrl"
+                }
+            ],
+            "options": {
+                "backgroundColor": "transparent",
+                "majorFontSize": 18,
+                "majorValue": "> primary | seriesByIndex(0) | lastPoint()",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "",
+                "unitPosition": "after"
+            },
+            "type": "splunk.singlevalue"
+        },
+        "viz_status_pie": {
+            "dataSources": { "primary": "ds_status_distribution" },
+            "options": {
+                "labelDisplay": "valuesAndPercentage",
+                "seriesColorsByValue": {
+                    "Inventoried Approved": "#53a051",
+                    "Inventoried Unapproved": "#f8be34",
+                    "Uninventoried Unapproved": "#dc4e41"
+                },
+                "showDonutHole": true
+            },
+            "title": "Asset Status Distribution",
+            "type": "splunk.pie"
+        }
+    },
+    "dataSources": {
+        "ds_total_systems": {
+            "options": {
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats dc(gen_ai.app.name) as total_systems",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_total_models": {
+            "options": {
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats dc(gen_ai.response.model) as total_models",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_kpi_approved": {
+            "options": {
+                "query": "| inputlookup gen_ai_app_asset_map_lookup | where sync_status=\"found\" AND approval_status=\"approved\" | stats count as sys_approved | appendcols [| inputlookup gen_ai_model_asset_map_lookup | where sync_status=\"found\" AND approval_status=\"approved\" | stats count as mdl_approved] | eval total=coalesce(sys_approved,0)+coalesce(mdl_approved,0) | fields total"
+            },
+            "type": "ds.search"
+        },
+        "ds_kpi_unapproved": {
+            "options": {
+                "query": "| inputlookup gen_ai_app_asset_map_lookup | where sync_status=\"found\" AND (approval_status!=\"approved\" OR isnull(approval_status)) | stats count as sys_unapp | appendcols [| inputlookup gen_ai_model_asset_map_lookup | where sync_status=\"found\" AND (approval_status!=\"approved\" OR isnull(approval_status)) | stats count as mdl_unapp] | eval total=coalesce(sys_unapp,0)+coalesce(mdl_unapp,0) | fields total"
+            },
+            "type": "ds.search"
+        },
+        "ds_kpi_uninventoried": {
+            "options": {
+                "query": "| inputlookup gen_ai_app_asset_map_lookup | where sync_status=\"not_found\" OR sync_status=\"lost\" OR isnull(sync_status) | stats count as sys_uninv | appendcols [| inputlookup gen_ai_model_asset_map_lookup | where sync_status=\"not_found\" OR sync_status=\"lost\" OR isnull(sync_status) | stats count as mdl_uninv] | eval total=coalesce(sys_uninv,0)+coalesce(mdl_uninv,0) | fields total"
+            },
+            "type": "ds.search"
+        },
+        "ds_sys_volume": {
+            "options": {
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | timechart span=1d count by gen_ai.app.name limit=10",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_mdl_volume": {
+            "options": {
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | timechart span=1d count by gen_ai.response.model limit=10",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_sys_approved": {
+            "options": {
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.app.name | lookup gen_ai_app_asset_map_lookup gen_ai_app_name AS gen_ai.app.name OUTPUT sync_status, approval_status | where sync_status=\"found\" AND approval_status=\"approved\" | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai.app.name as \"AI System\", Total_Events as \"Total Events\" | table \"AI System\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_mdl_approved": {
+            "options": {
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.response.model | lookup gen_ai_model_asset_map_lookup gen_ai_response_model AS gen_ai.response.model OUTPUT sync_status, approval_status | where sync_status=\"found\" AND approval_status=\"approved\" | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai.response.model as \"AI Model\", Total_Events as \"Total Events\" | table \"AI Model\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_sys_unapproved": {
+            "options": {
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.app.name | lookup gen_ai_app_asset_map_lookup gen_ai_app_name AS gen_ai.app.name OUTPUT sync_status, approval_status | where sync_status=\"found\" AND (approval_status!=\"approved\" OR isnull(approval_status)) | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai.app.name as \"AI System\", Total_Events as \"Total Events\" | table \"AI System\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_mdl_unapproved": {
+            "options": {
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.response.model | lookup gen_ai_model_asset_map_lookup gen_ai_response_model AS gen_ai.response.model OUTPUT sync_status, approval_status | where sync_status=\"found\" AND (approval_status!=\"approved\" OR isnull(approval_status)) | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai.response.model as \"AI Model\", Total_Events as \"Total Events\" | table \"AI Model\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_sys_uninventoried": {
+            "options": {
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.app.name | lookup gen_ai_app_asset_map_lookup gen_ai_app_name AS gen_ai.app.name OUTPUT sync_status, approval_status | where sync_status!=\"found\" OR isnull(sync_status) | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai.app.name as \"AI System\", Total_Events as \"Total Events\" | table \"AI System\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_mdl_uninventoried": {
+            "options": {
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.response.model | lookup gen_ai_model_asset_map_lookup gen_ai_response_model AS gen_ai.response.model OUTPUT sync_status, approval_status | where sync_status!=\"found\" OR isnull(sync_status) | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai.response.model as \"AI Model\", Total_Events as \"Total Events\" | table \"AI Model\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_sys_inv_not_detected": {
+            "options": {
+                "query": "| inputlookup gen_ai_app_asset_map_lookup | where sync_status=\"found\" | join type=left gen_ai_app_name [| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats count as Total_Events by gen_ai.app.name | rename gen_ai.app.name as gen_ai_app_name] | where isnull(Total_Events) OR Total_Events=0 | eval Approval=if(approval_status=\"approved\", \"Approved\", \"Unapproved\") | rename gen_ai_app_name as \"AI System\" | table \"AI System\", Approval | sort \"AI System\"",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_mdl_inv_not_detected": {
+            "options": {
+                "query": "| inputlookup gen_ai_model_asset_map_lookup | where sync_status=\"found\" | join type=left gen_ai_response_model [| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats count as Total_Events by gen_ai.response.model | rename gen_ai.response.model as gen_ai_response_model] | where isnull(Total_Events) OR Total_Events=0 | eval Approval=if(approval_status=\"approved\", \"Approved\", \"Unapproved\") | rename gen_ai_response_model as \"AI Model\" | table \"AI Model\", Approval | sort \"AI Model\"",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_status_distribution": {
+            "options": {
+                "query": "| inputlookup gen_ai_app_asset_map_lookup | append [| inputlookup gen_ai_model_asset_map_lookup] | eval Status=case(sync_status=\"found\" AND approval_status=\"approved\", \"Inventoried Approved\", sync_status=\"found\", \"Inventoried Unapproved\", 1==1, \"Uninventoried Unapproved\") | stats count by Status"
+            },
+            "type": "ds.search"
+        },
+        "ds_action_unapproved_btn": {
+            "options": {
+                "query": "| makeresults | eval label=\"AI Asset Inventory \u2192\" | table label"
+            },
+            "type": "ds.search"
+        },
+        "ds_action_add_system": {
+            "options": {
+                "query": "| makeresults | eval label=\"Add AI System \u2192\" | table label"
+            },
+            "type": "ds.search"
+        },
+        "ds_action_add_model": {
+            "options": {
+                "query": "| makeresults | eval label=\"Add AI Model \u2192\" | table label"
+            },
+            "type": "ds.search"
+        },
+        "ds_action_not_detected_btn": {
+            "options": {
+                "query": "| makeresults | eval label=\"AI Asset Inventory \u2192\" | table label"
+            },
+            "type": "ds.search"
+        }
+    },
+    "layout": {
+        "globalInputs": ["input_time"],
+        "options": { "showTitleAndDescription": true, "width": 1440, "height": 1640 },
+        "type": "absolute",
+        "structure": [
+            { "item": "viz_total_systems", "position": { "h": 120, "w": 480, "x": 0, "y": 0 }, "type": "block" },
+            { "item": "viz_total_models", "position": { "h": 120, "w": 480, "x": 480, "y": 0 }, "type": "block" },
+            { "item": "viz_status_pie", "position": { "h": 240, "w": 480, "x": 960, "y": 0 }, "type": "block" },
+
+            { "item": "viz_kpi_approved", "position": { "h": 120, "w": 320, "x": 0, "y": 120 }, "type": "block" },
+            { "item": "viz_kpi_unapproved", "position": { "h": 120, "w": 320, "x": 320, "y": 120 }, "type": "block" },
+            { "item": "viz_kpi_uninventoried", "position": { "h": 120, "w": 320, "x": 640, "y": 120 }, "type": "block" },
+
+            { "item": "viz_sys_volume", "position": { "h": 280, "w": 720, "x": 0, "y": 260 }, "type": "block" },
+            { "item": "viz_mdl_volume", "position": { "h": 280, "w": 720, "x": 720, "y": 260 }, "type": "block" },
+
+            { "item": "viz_sys_approved", "position": { "h": 250, "w": 540, "x": 0, "y": 560 }, "type": "block" },
+            { "item": "viz_mdl_approved", "position": { "h": 250, "w": 540, "x": 540, "y": 560 }, "type": "block" },
+            { "item": "viz_action_approved", "position": { "h": 250, "w": 360, "x": 1080, "y": 560 }, "type": "block" },
+
+            { "item": "viz_sys_unapproved", "position": { "h": 250, "w": 540, "x": 0, "y": 830 }, "type": "block" },
+            { "item": "viz_mdl_unapproved", "position": { "h": 250, "w": 540, "x": 540, "y": 830 }, "type": "block" },
+            { "item": "viz_action_unapproved_btn", "position": { "h": 250, "w": 360, "x": 1080, "y": 830 }, "type": "block" },
+
+            { "item": "viz_sys_uninventoried", "position": { "h": 250, "w": 540, "x": 0, "y": 1100 }, "type": "block" },
+            { "item": "viz_mdl_uninventoried", "position": { "h": 250, "w": 540, "x": 540, "y": 1100 }, "type": "block" },
+            { "item": "viz_action_add_system", "position": { "h": 125, "w": 360, "x": 1080, "y": 1100 }, "type": "block" },
+            { "item": "viz_action_add_model", "position": { "h": 125, "w": 360, "x": 1080, "y": 1225 }, "type": "block" },
+
+            { "item": "viz_sys_inv_not_detected", "position": { "h": 250, "w": 540, "x": 0, "y": 1370 }, "type": "block" },
+            { "item": "viz_mdl_inv_not_detected", "position": { "h": 250, "w": 540, "x": 540, "y": 1370 }, "type": "block" },
+            { "item": "viz_action_not_detected_btn", "position": { "h": 250, "w": 360, "x": 1080, "y": 1370 }, "type": "block" }
+        ]
+    }
+}
+]]></definition>
+</dashboard>
