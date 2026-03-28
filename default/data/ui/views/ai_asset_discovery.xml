@@ -127,6 +127,13 @@
             "title": "Action",
             "type": "splunk.markdown"
         },
+        "viz_action_unapproved_text": {
+            "options": {
+                "fontSize": "large",
+                "markdown": "**Unapproved assets must complete the full review and approval process!**"
+            },
+            "type": "splunk.markdown"
+        },
         "viz_action_unapproved_btn": {
             "dataSources": { "primary": "ds_action_unapproved_btn" },
             "eventHandlers": [
@@ -148,6 +155,13 @@
                 "unitPosition": "after"
             },
             "type": "splunk.singlevalue"
+        },
+        "viz_action_uninventoried_text": {
+            "options": {
+                "fontSize": "large",
+                "markdown": "**Uninventoried assets must be added to the asset inventory!**"
+            },
+            "type": "splunk.markdown"
         },
         "viz_action_add_system": {
             "dataSources": { "primary": "ds_action_add_system" },
@@ -192,6 +206,13 @@
                 "unitPosition": "after"
             },
             "type": "splunk.singlevalue"
+        },
+        "viz_action_not_detected_text": {
+            "options": {
+                "fontSize": "large",
+                "markdown": "**Undetected assets must have appropriate logging and instrumentation configured!**"
+            },
+            "type": "splunk.markdown"
         },
         "viz_action_not_detected_btn": {
             "dataSources": { "primary": "ds_action_not_detected_btn" },
@@ -386,16 +407,19 @@
 
             { "item": "viz_sys_unapproved", "position": { "h": 250, "w": 540, "x": 0, "y": 830 }, "type": "block" },
             { "item": "viz_mdl_unapproved", "position": { "h": 250, "w": 540, "x": 540, "y": 830 }, "type": "block" },
-            { "item": "viz_action_unapproved_btn", "position": { "h": 250, "w": 360, "x": 1080, "y": 830 }, "type": "block" },
+            { "item": "viz_action_unapproved_text", "position": { "h": 100, "w": 360, "x": 1080, "y": 830 }, "type": "block" },
+            { "item": "viz_action_unapproved_btn", "position": { "h": 150, "w": 360, "x": 1080, "y": 930 }, "type": "block" },
 
             { "item": "viz_sys_uninventoried", "position": { "h": 250, "w": 540, "x": 0, "y": 1100 }, "type": "block" },
             { "item": "viz_mdl_uninventoried", "position": { "h": 250, "w": 540, "x": 540, "y": 1100 }, "type": "block" },
-            { "item": "viz_action_add_system", "position": { "h": 125, "w": 360, "x": 1080, "y": 1100 }, "type": "block" },
-            { "item": "viz_action_add_model", "position": { "h": 125, "w": 360, "x": 1080, "y": 1225 }, "type": "block" },
+            { "item": "viz_action_uninventoried_text", "position": { "h": 70, "w": 360, "x": 1080, "y": 1100 }, "type": "block" },
+            { "item": "viz_action_add_system", "position": { "h": 90, "w": 360, "x": 1080, "y": 1170 }, "type": "block" },
+            { "item": "viz_action_add_model", "position": { "h": 90, "w": 360, "x": 1080, "y": 1260 }, "type": "block" },
 
             { "item": "viz_sys_inv_not_detected", "position": { "h": 250, "w": 540, "x": 0, "y": 1370 }, "type": "block" },
             { "item": "viz_mdl_inv_not_detected", "position": { "h": 250, "w": 540, "x": 540, "y": 1370 }, "type": "block" },
-            { "item": "viz_action_not_detected_btn", "position": { "h": 250, "w": 360, "x": 1080, "y": 1370 }, "type": "block" }
+            { "item": "viz_action_not_detected_text", "position": { "h": 100, "w": 360, "x": 1080, "y": 1370 }, "type": "block" },
+            { "item": "viz_action_not_detected_btn", "position": { "h": 150, "w": 360, "x": 1080, "y": 1470 }, "type": "block" }
         ]
     }
 }

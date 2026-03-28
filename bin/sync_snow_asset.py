@@ -1,22 +1,23 @@
 #!/usr/bin/env python
 # encoding=utf-8
 """
-sync_snow_asset.py - Alert Action for ServiceNow AI System Digital Asset Sync
+sync_snow_asset.py - Alert Action for ServiceNow AI Asset Sync
 
-This script syncs gen_ai.app.name values to ServiceNow's alm_ai_system_digital_asset
-table. It queries ServiceNow to check if a record exists for the app name and stores
-the sys_id mapping in the KV store.
+This script syncs gen_ai.app.name (AI System) and gen_ai.response.model (AI Model)
+values to their respective ServiceNow tables. It queries ServiceNow to check if
+records exist, stores sys_id mappings in KV stores, and fetches approval status.
 
 Usage:
-    Called as an alert action from a scheduled saved search that identifies
-    gen_ai.app.name values not yet mapped in the KV store.
+    Called as an alert action from scheduled saved searches that identify
+    gen_ai.app.name or gen_ai.response.model values not yet mapped in KV stores.
 
 Workflow:
-    1. Receive app_name from alert action payload
-    2. Check KV store for existing mapping (defensive check)
-    3. Query ServiceNow alm_ai_system_digital_asset for matching record
-    4. If found: store sys_id with sync_status="found"
-    5. If not found: store with sync_status="not_found" (no record creation)
+    1. Receive asset name from alert action payload (app_name or model_name)
+    2. Read asset discovery config (table, match field, approval field, approved values)
+    3. Check KV store for existing mapping (defensive check)
+    4. Query ServiceNow for matching record and approval status
+    5. If found: store sys_id with sync_status="found" and approval_status
+    6. If not found: store with sync_status="not_found" (no record creation)
 
 Copyright 2026 Splunk Inc.
 Licensed under Apache License 2.0
@@ -86,8 +87,8 @@ def get_snow_config(session_key):
         try:
             accounts = service.confs['ta_gen_ai_cim_account']
             for stanza in accounts:
-                # Skip default and internal stanzas
-                if stanza.name == 'default' or stanza.name.startswith('_'):
+                # Skip default, asset_discovery config, and internal stanzas
+                if stanza.name in ('default', 'asset_discovery') or stanza.name.startswith('_'):
                     continue
                 account_conf = stanza
                 account_name = stanza.name
@@ -185,6 +186,87 @@ def get_snow_config(session_key):
             'configured': False,
             'error': 'Failed to retrieve ServiceNow config: {}'.format(str(e))
         }
+
+
+def get_asset_discovery_config(session_key):
+    """Retrieve AI Asset Discovery configuration from account conf.
+
+    Returns a dict with keys for ai_system and ai_model settings.
+    Falls back to defaults if fields are not set.
+    """
+    defaults = {
+        'ai_system_table': 'alm_ai_system_digital_asset',
+        'ai_system_match_field': 'display_name',
+        'ai_system_approval_field': 'approval',
+        'ai_system_approved_values': 'approved',
+        'ai_model_table': '',
+        'ai_model_match_field': 'display_name',
+        'ai_model_approval_field': 'approval',
+        'ai_model_approved_values': 'approved',
+    }
+    try:
+        service = client.connect(
+            token=session_key,
+            owner='nobody',
+            app='TA-gen_ai_cim'
+        )
+        accounts = service.confs['ta_gen_ai_cim_account']
+        if 'asset_discovery' in accounts:
+            content = accounts['asset_discovery'].content
+            for key in defaults:
+                val = content.get(key, '')
+                if val:
+                    defaults[key] = val
+    except Exception as e:
+        logger.warning("Could not read asset discovery config, using defaults: {}".format(str(e)))
+
+    # Parse comma-separated approved values into lists
+    defaults['ai_system_approved_values_list'] = [
+        v.strip() for v in defaults['ai_system_approved_values'].split(',') if v.strip()
+    ]
+    defaults['ai_model_approved_values_list'] = [
+        v.strip() for v in defaults['ai_model_approved_values'].split(',') if v.strip()
+    ]
+
+    logger.info("Asset discovery config: system_table={}, model_table={}".format(
+        defaults['ai_system_table'], defaults['ai_model_table']))
+    return defaults
+
+
+def determine_approval_status(snow_record, approval_field, approved_values_list):
+    """Determine approval status from a ServiceNow record.
+
+    Args:
+        snow_record: dict from ServiceNow API response
+        approval_field: field name to check (e.g., 'approval')
+        approved_values_list: list of values that mean approved
+
+    Returns:
+        'approved', 'unapproved', or 'unknown'
+    """
+    if not snow_record or not approval_field:
+        return 'unknown'
+
+    raw_value = snow_record.get(approval_field, '')
+    if not raw_value:
+        return 'unknown'
+
+    if raw_value in approved_values_list:
+        return 'approved'
+    return 'unapproved'
+
+
+def derive_inventory_status(sync_status, approval_status):
+    """Derive a human-readable inventory status from sync and approval states.
+
+    Returns:
+        'Inventoried Approved', 'Inventoried Unapproved', or 'Uninventoried Unapproved'
+    """
+    if sync_status == 'found' and approval_status == 'approved':
+        return 'Inventoried Approved'
+    if sync_status == 'found':
+        return 'Inventoried Unapproved'
+    return 'Uninventoried Unapproved'
 
 
 def get_oauth_token(config):
@@ -315,280 +397,388 @@ def make_snow_request(method, url, data=None, config=None):
         raise Exception('ServiceNow connection error: {}'.format(str(e.reason)))
 
 
-def get_kv_store_record(session_key, app_name):
-    """Check KV Store for existing mapping"""
+def get_kv_store_record(session_key, asset_name, collection_name='gen_ai_app_asset_map',
+                        key_field='gen_ai_app_name'):
+    """Check KV Store for existing mapping.
+
+    Args:
+        session_key: Splunk session key
+        asset_name: value to look up
+        collection_name: KV store collection
+        key_field: field name used as the unique key
+    """
     try:
         service = client.connect(
             token=session_key,
             owner='nobody',
             app='TA-gen_ai_cim'
         )
-        collection = service.kvstore['gen_ai_app_asset_map']
-        
-        # Query by gen_ai_app_name
-        query = json.dumps({'gen_ai_app_name': app_name})
+        collection = service.kvstore[collection_name]
+
+        query = json.dumps({key_field: asset_name})
         results = collection.data.query(query=query)
-        
+
         if results and len(results) > 0:
             return results[0]
         return None
-        
+
     except Exception as e:
-        logger.error("KV Store lookup failed: {}".format(str(e)))
+        logger.error("KV Store lookup failed ({}): {}".format(collection_name, str(e)))
         return None
 
 
-def save_kv_store_record(session_key, app_name, sys_id, sync_status, username):
-    """Save mapping to KV Store"""
+def save_kv_store_record(session_key, asset_name, sys_id, sync_status, username,
+                         approval_status='unknown',
+                         collection_name='gen_ai_app_asset_map',
+                         key_field='gen_ai_app_name'):
+    """Save mapping to KV Store."""
     try:
         service = client.connect(
             token=session_key,
             owner='nobody',
             app='TA-gen_ai_cim'
         )
-        collection = service.kvstore['gen_ai_app_asset_map']
-        
+        collection = service.kvstore[collection_name]
+
         now_epoch = int(time.time())
+        inventory_status = derive_inventory_status(sync_status, approval_status)
         record = {
-            'gen_ai_app_name': app_name,
+            key_field: asset_name,
             'service_now_sys_id': sys_id,
             'sync_status': sync_status,
+            'approval_status': approval_status,
+            'inventory_status': inventory_status,
             'created_at': now_epoch,
             'updated_at': now_epoch,
             'created_by': username
         }
-        
+
         collection.data.insert(json.dumps(record))
-        logger.info("Saved KV Store record: app_name={}, sys_id={}, status={}".format(
-            app_name, sys_id, sync_status))
+        logger.info("Saved KV Store record ({}): {}={}, sys_id={}, status={}, approval={}, inventory={}".format(
+            collection_name, key_field, asset_name, sys_id, sync_status, approval_status, inventory_status))
         return True
-        
+
     except Exception as e:
-        logger.error("KV Store save failed: {}".format(str(e)))
+        logger.error("KV Store save failed ({}): {}".format(collection_name, str(e)))
         return False
 
 
-def update_kv_store_record(session_key, key, sys_id, sync_status, username):
-    """Update existing mapping in KV Store"""
+def update_kv_store_record(session_key, key, sys_id, sync_status, username,
+                           approval_status=None,
+                           collection_name='gen_ai_app_asset_map',
+                           key_field=None, asset_name=None,
+                           existing_record=None):
+    """Update existing mapping in KV Store.
+
+    collection.data.update() replaces the full record, so all fields that
+    should be preserved must be included in the payload.  We start from the
+    existing record (if provided) and overlay the changed fields so that
+    original creation metadata and the asset key field are never lost.
+    """
     try:
         service = client.connect(
             token=session_key,
             owner='nobody',
             app='TA-gen_ai_cim'
         )
-        collection = service.kvstore['gen_ai_app_asset_map']
-        
+        collection = service.kvstore[collection_name]
+
         now_epoch = int(time.time())
-        update_data = {
-            'service_now_sys_id': sys_id,
-            'sync_status': sync_status,
-            'updated_at': now_epoch,
-            'updated_by': username
-        }
-        
+
+        if existing_record:
+            update_data = dict(existing_record)
+            update_data.pop('_key', None)
+        else:
+            update_data = {}
+
+        update_data['service_now_sys_id'] = sys_id
+        update_data['sync_status'] = sync_status
+        update_data['updated_at'] = now_epoch
+        update_data['updated_by'] = username
+        if approval_status is not None:
+            update_data['approval_status'] = approval_status
+        if key_field and asset_name is not None:
+            update_data[key_field] = asset_name
+
+        final_approval = approval_status if approval_status is not None else update_data.get('approval_status', 'unknown')
+        update_data['inventory_status'] = derive_inventory_status(sync_status, final_approval)
+
         collection.data.update(key, json.dumps(update_data))
-        logger.info("Updated KV Store record: _key={}, sys_id={}, status={}".format(
-            key, sys_id, sync_status))
+        logger.info("Updated KV Store record ({}): _key={}, sys_id={}, status={}, approval={}, inventory={}".format(
+            collection_name, key, sys_id, sync_status, approval_status, update_data['inventory_status']))
         return True
-        
+
     except Exception as e:
-        logger.error("KV Store update failed: {}".format(str(e)))
+        logger.error("KV Store update failed ({}): {}".format(collection_name, str(e)))
         return False
 
 
-def query_snow_asset(app_name, config):
-    """Query ServiceNow for existing alm_ai_system_digital_asset record.
-    
+def query_snow_asset(asset_name, config, table_name='alm_ai_system_digital_asset',
+                     match_field='display_name', approval_field=''):
+    """Query ServiceNow for an existing record on the specified table.
+
     Args:
-        app_name: The gen_ai.app.name to search for
+        asset_name: The value to search for
         config: ServiceNow configuration dict
-        
+        table_name: ServiceNow table to query
+        match_field: Field to match asset_name against
+        approval_field: Optional field to include in response for approval checking
+
     Returns:
-        dict with sys_id if found, None otherwise
+        dict with sys_id (and approval field) if found, None otherwise
     """
-    # First, try exact match query (faster but case-sensitive)
-    encoded_name = quote(app_name, safe='')
-    url_with_query = '/api/now/table/alm_ai_system_digital_asset?sysparm_query=display_name={}&sysparm_limit=1&sysparm_fields=sys_id,display_name'.format(encoded_name)
-    
+    fields = 'sys_id,{},name'.format(match_field)
+    if approval_field and approval_field not in (match_field, 'name', 'sys_id'):
+        fields += ',{}'.format(approval_field)
+
+    encoded_name = quote(asset_name, safe='')
+    url_with_query = '/api/now/table/{}?sysparm_query={}={}&sysparm_limit=1&sysparm_fields={}'.format(
+        table_name, match_field, encoded_name, fields)
+
     try:
         result = make_snow_request('GET', url_with_query, config=config)
-        
+
         if result and 'result' in result and len(result['result']) > 0:
             record = result['result'][0]
-            logger.info("Found existing ServiceNow asset for '{}': sys_id={}".format(
-                app_name, record.get('sys_id')))
+            logger.info("Found existing ServiceNow record for '{}' in {}: sys_id={}".format(
+                asset_name, table_name, record.get('sys_id')))
             return record
-        
-        # Exact match not found - try case-insensitive fallback
-        logger.info("Exact match not found for '{}', trying case-insensitive search...".format(app_name))
-        return query_snow_asset_fallback(app_name, config)
-        
+
+        logger.info("Exact match not found for '{}' in {}, trying fallback...".format(
+            asset_name, table_name))
+        return query_snow_asset_fallback(asset_name, config, table_name, match_field,
+                                         approval_field)
+
     except Exception as e:
-        # If query fails (403 or other error), fall back to fetching all and filtering locally
-        logger.warning("Query-based search failed for '{}': {}, trying fetch-all approach...".format(app_name, str(e)))
-        return query_snow_asset_fallback(app_name, config)
+        logger.warning("Query-based search failed for '{}' in {}: {}, trying fallback...".format(
+            asset_name, table_name, str(e)))
+        return query_snow_asset_fallback(asset_name, config, table_name, match_field,
+                                         approval_field)
 
 
-def query_snow_asset_fallback(app_name, config):
-    """Fallback: Fetch all assets and filter locally when query permissions are restricted.
-    
+def query_snow_asset_fallback(asset_name, config, table_name='alm_ai_system_digital_asset',
+                              match_field='display_name', approval_field=''):
+    """Fallback: Fetch all records and filter locally when query permissions are restricted.
+
     Args:
-        app_name: The gen_ai.app.name to search for
+        asset_name: The value to search for
         config: ServiceNow configuration dict
-        
+        table_name: ServiceNow table to query
+        match_field: Field to match asset_name against
+        approval_field: Optional field to include in response for approval checking
+
     Returns:
-        dict with sys_id if found, None otherwise
+        dict with sys_id (and approval field) if found, None otherwise
     """
-    # Fetch records without query filter, only get sys_id and display_name fields
-    url = '/api/now/table/alm_ai_system_digital_asset?sysparm_fields=sys_id,display_name,name&sysparm_limit=1000'
-    
+    fields = 'sys_id,{},name'.format(match_field)
+    if approval_field and approval_field not in (match_field, 'name', 'sys_id'):
+        fields += ',{}'.format(approval_field)
+
+    url = '/api/now/table/{}?sysparm_fields={}&sysparm_limit=1000'.format(table_name, fields)
+
     try:
         result = make_snow_request('GET', url, config=config)
-        
+
         if result and 'result' in result:
             records = result['result']
-            logger.info("ServiceNow returned {} records from alm_ai_system_digital_asset".format(len(records)))
-            
-            # Log first few records for debugging
+            logger.info("ServiceNow returned {} records from {}".format(len(records), table_name))
+
             for i, record in enumerate(records[:5]):
-                logger.info("  Record {}: display_name='{}', name='{}', sys_id={}".format(
-                    i, record.get('display_name', ''), record.get('name', ''), record.get('sys_id', '')))
-            
-            # Search locally for matching display_name (case-insensitive)
-            app_name_lower = app_name.lower().strip()
+                logger.info("  Record {}: {}='{}', name='{}', sys_id={}".format(
+                    i, match_field, record.get(match_field, ''),
+                    record.get('name', ''), record.get('sys_id', '')))
+
+            asset_name_lower = asset_name.lower().strip()
             for record in records:
-                record_display_name = record.get('display_name', '').lower().strip()
+                record_match = record.get(match_field, '').lower().strip()
                 record_name = record.get('name', '').lower().strip()
-                
-                # Match on either display_name or name field
-                if record_display_name == app_name_lower or record_name == app_name_lower:
-                    logger.info("Found existing ServiceNow asset for '{}' (fallback): sys_id={}, display_name='{}', name='{}'".format(
-                        app_name, record.get('sys_id'), record.get('display_name', ''), record.get('name', '')))
+
+                if record_match == asset_name_lower or record_name == asset_name_lower:
+                    logger.info("Found ServiceNow record for '{}' (fallback) in {}: sys_id={}".format(
+                        asset_name, table_name, record.get('sys_id')))
                     return record
-        
-        logger.info("No existing ServiceNow asset found for '{}' (fallback search, checked {} records)".format(
-            app_name, len(records) if result and 'result' in result else 0))
+
+        logger.info("No ServiceNow record found for '{}' in {} (checked {} records)".format(
+            asset_name, table_name,
+            len(records) if result and 'result' in result else 0))
         return None
-        
+
     except Exception as e:
-        logger.error("Error in fallback query for '{}': {}".format(app_name, str(e)))
+        logger.error("Error in fallback query for '{}' in {}: {}".format(
+            asset_name, table_name, str(e)))
         raise
 
 
-def process_app_name(app_name, session_key, snow_config):
-    """Process a single app_name: query ServiceNow and save mapping to KV store.
-    
-    This function queries ServiceNow for existing records. The result is saved 
-    to the KV store with the appropriate sync_status.
-    
-    Workflow:
-        1. Check KV store for existing mapping
-        2. Query ServiceNow alm_ai_system_digital_asset for matching record
-        3. If found: store sys_id with sync_status="found"
-        4. If not found: store with sync_status="not_found" (no record creation)
-        5. If previously found but now missing: update sync_status="lost"
-    
+def _process_asset(asset_name, session_key, snow_config, asset_config):
+    """Generic asset processor for both AI Systems and AI Models.
+
     Args:
-        app_name: The gen_ai.app.name to process
+        asset_name: The asset value to process
         session_key: Splunk session key
-        snow_config: ServiceNow configuration dict
-        
+        snow_config: ServiceNow connection config
+        asset_config: dict with keys: table_name, match_field, approval_field,
+                      approved_values_list, collection_name, key_field, asset_label
+
     Returns:
         dict with result status and details
     """
+    table_name = asset_config['table_name']
+    match_field = asset_config['match_field']
+    approval_field = asset_config['approval_field']
+    approved_values_list = asset_config['approved_values_list']
+    collection_name = asset_config['collection_name']
+    key_field = asset_config['key_field']
+    label = asset_config.get('asset_label', 'asset')
+
     result = {
-        'app_name': app_name,
+        'asset_name': asset_name,
         'status': 'error',
         'sys_id': None,
         'sync_status': None,
+        'approval_status': None,
         'message': ''
     }
-    
+
     try:
-        # Check if already in KV store
-        existing = get_kv_store_record(session_key, app_name)
+        existing = get_kv_store_record(session_key, asset_name,
+                                       collection_name=collection_name,
+                                       key_field=key_field)
         username = snow_config.get('username', 'system')
-        
+
         if existing:
             existing_sys_id = existing.get('service_now_sys_id', '')
             existing_status = existing.get('sync_status', '')
             existing_key = existing.get('_key')
-            
-            # If previously found with a sys_id, re-verify it still exists
+
             if existing_sys_id and existing_status == 'found':
-                logger.info("Re-verifying '{}' in ServiceNow (existing sys_id={})".format(
-                    app_name, existing_sys_id))
-                
-                snow_record = query_snow_asset(app_name, snow_config)
-                
+                logger.info("Re-verifying {} '{}' in ServiceNow (sys_id={})".format(
+                    label, asset_name, existing_sys_id))
+
+                snow_record = query_snow_asset(
+                    asset_name, snow_config, table_name=table_name,
+                    match_field=match_field, approval_field=approval_field)
+
                 if snow_record:
-                    # Still exists in ServiceNow
+                    approval = determine_approval_status(
+                        snow_record, approval_field, approved_values_list)
+                    update_kv_store_record(
+                        session_key, existing_key, snow_record.get('sys_id'),
+                        'found', username, approval_status=approval,
+                        collection_name=collection_name,
+                        key_field=key_field, asset_name=asset_name,
+                        existing_record=existing)
                     result['status'] = 'success'
                     result['sys_id'] = snow_record.get('sys_id')
                     result['sync_status'] = 'found'
-                    result['message'] = 'Asset still exists in ServiceNow'
-                    logger.info("'{}' still exists in ServiceNow".format(app_name))
+                    result['approval_status'] = approval
+                    result['message'] = '{} still exists in ServiceNow'.format(label)
                 else:
-                    # No longer exists in ServiceNow - mark as lost
-                    logger.warning("'{}' no longer found in ServiceNow, marking as lost".format(app_name))
+                    logger.warning("{} '{}' no longer found, marking as lost".format(
+                        label, asset_name))
                     update_success = update_kv_store_record(
-                        session_key, existing_key, '', 'lost', username)
-                    
+                        session_key, existing_key, '', 'lost', username,
+                        approval_status='unknown', collection_name=collection_name,
+                        key_field=key_field, asset_name=asset_name,
+                        existing_record=existing)
                     if update_success:
                         result['status'] = 'success'
                         result['sys_id'] = ''
                         result['sync_status'] = 'lost'
-                        result['message'] = 'Asset no longer exists in ServiceNow, marked as lost'
+                        result['approval_status'] = 'unknown'
+                        result['message'] = '{} no longer in ServiceNow, marked as lost'.format(label)
                     else:
-                        result['status'] = 'error'
                         result['message'] = 'Failed to update KV store with lost status'
-                
+
                 return result
             else:
-                # Already in KV store with not_found or lost status, skip
                 result['status'] = 'skipped'
                 result['sys_id'] = existing_sys_id
                 result['sync_status'] = existing_status
-                result['message'] = 'Already mapped in KV store with status: {}'.format(existing_status)
-                logger.info("Skipping '{}': already in KV store with status={}".format(
-                    app_name, existing_status))
+                result['approval_status'] = existing.get('approval_status', 'unknown')
+                result['message'] = 'Already in KV store with status: {}'.format(existing_status)
+                logger.info("Skipping {} '{}': status={}".format(label, asset_name, existing_status))
                 return result
-        
-        # New record - Query ServiceNow for existing record
-        snow_record = query_snow_asset(app_name, snow_config)
-        
+
+        snow_record = query_snow_asset(
+            asset_name, snow_config, table_name=table_name,
+            match_field=match_field, approval_field=approval_field)
+
         if snow_record:
-            # Found existing record in ServiceNow
             sys_id = snow_record.get('sys_id')
             sync_status = 'found'
-            logger.info("Found '{}' in ServiceNow with sys_id={}".format(app_name, sys_id))
+            approval = determine_approval_status(
+                snow_record, approval_field, approved_values_list)
+            logger.info("Found {} '{}' in ServiceNow: sys_id={}, approval={}".format(
+                label, asset_name, sys_id, approval))
         else:
-            # Not found in ServiceNow - mark as not_found (no record creation)
-            logger.info("'{}' not found in ServiceNow, marking as not_found".format(app_name))
-            sys_id = ''  # No sys_id since record doesn't exist
+            logger.info("{} '{}' not found in ServiceNow".format(label, asset_name))
+            sys_id = ''
             sync_status = 'not_found'
-        
-        # Save to KV store
-        save_success = save_kv_store_record(session_key, app_name, sys_id, sync_status, username)
-        
+            approval = 'unknown'
+
+        save_success = save_kv_store_record(
+            session_key, asset_name, sys_id, sync_status, username,
+            approval_status=approval, collection_name=collection_name,
+            key_field=key_field)
+
         if save_success:
             result['status'] = 'success'
             result['sys_id'] = sys_id
             result['sync_status'] = sync_status
-            if sync_status == 'found':
-                result['message'] = 'Asset found in ServiceNow and mapped'
-            else:
-                result['message'] = 'Asset not found in ServiceNow, marked for alert'
+            result['approval_status'] = approval
+            result['message'] = '{} {} in ServiceNow'.format(
+                label, 'found and mapped' if sync_status == 'found' else 'not found')
         else:
-            result['status'] = 'error'
             result['message'] = 'Failed to save to KV store'
-        
+
         return result
-        
+
     except Exception as e:
         result['message'] = str(e)
-        logger.error("Error processing '{}': {}".format(app_name, str(e)))
+        logger.error("Error processing {} '{}': {}".format(label, asset_name, str(e)))
         return result
+
+
+def process_app_name(app_name, session_key, snow_config, discovery_config=None):
+    """Process a single gen_ai.app.name: query ServiceNow and save to KV store."""
+    if discovery_config is None:
+        discovery_config = {}
+    asset_config = {
+        'table_name': discovery_config.get('ai_system_table', 'alm_ai_system_digital_asset'),
+        'match_field': discovery_config.get('ai_system_match_field', 'display_name'),
+        'approval_field': discovery_config.get('ai_system_approval_field', 'approval'),
+        'approved_values_list': discovery_config.get('ai_system_approved_values_list', ['approved']),
+        'collection_name': 'gen_ai_app_asset_map',
+        'key_field': 'gen_ai_app_name',
+        'asset_label': 'AI System',
+    }
+    return _process_asset(app_name, session_key, snow_config, asset_config)
+
+
+def process_model_name(model_name, session_key, snow_config, discovery_config=None):
+    """Process a single gen_ai.response.model: query ServiceNow and save to KV store."""
+    if discovery_config is None:
+        discovery_config = {}
+    asset_config = {
+        'table_name': discovery_config.get('ai_model_table', ''),
+        'match_field': discovery_config.get('ai_model_match_field', 'display_name'),
+        'approval_field': discovery_config.get('ai_model_approval_field', 'approval'),
+        'approved_values_list': discovery_config.get('ai_model_approved_values_list', ['approved']),
+        'collection_name': 'gen_ai_model_asset_map',
+        'key_field': 'gen_ai_response_model',
+        'asset_label': 'AI Model',
+    }
+    if not asset_config['table_name']:
+        logger.warning("AI Model table not configured, skipping model sync for '{}'".format(model_name))
+        return {
+            'asset_name': model_name,
+            'status': 'skipped',
+            'sys_id': None,
+            'sync_status': None,
+            'approval_status': None,
+            'message': 'AI Model table not configured'
+        }
+    return _process_asset(model_name, session_key, snow_config, asset_config)
 
 
 def main():
@@ -631,74 +821,84 @@ def main():
     if not snow_config.get('configured'):
         logger.error("ServiceNow not configured: {}".format(snow_config.get('error')))
         sys.exit(1)
-    
+
+    # Load asset discovery configuration
+    discovery_config = get_asset_discovery_config(session_key)
+
     # Process results from the search
     results_file = payload.get('results_file')
     results = payload.get('result', {})
-    
-    # Debug: Log what we received
+
     logger.info("results_file: {}".format(results_file))
     logger.info("result keys: {}".format(list(results.keys()) if results else 'None'))
     if results:
         logger.info("result contents: {}".format(results))
-    
+
     processed_count = 0
     success_count = 0
     error_count = 0
-    
-    # Handle single result (from payload.result)
-    if results:
-        # Log all keys for debugging
-        logger.info("Result keys: {}".format(list(results.keys())))
-        # Try multiple possible field names (with and without quotes, dots, underscores)
-        app_name = (results.get('gen_ai.app.name') or 
-                    results.get('app_name') or 
-                    results.get('gen_ai_app_name') or
-                    results.get('"gen_ai.app.name"'))
-        logger.info("Single result app_name: {}".format(app_name))
-        if app_name:
-            result = process_app_name(app_name, session_key, snow_config)
+    processed_assets = set()
+
+    def _extract_app_name(row):
+        return (row.get('gen_ai.app.name') or row.get('app_name') or
+                row.get('gen_ai_app_name') or row.get('"gen_ai.app.name"'))
+
+    def _extract_model_name(row):
+        return (row.get('gen_ai.response.model') or row.get('response_model') or
+                row.get('gen_ai_response_model') or row.get('"gen_ai.response.model"'))
+
+    def _process_row(row):
+        nonlocal processed_count, success_count, error_count
+        app_name = _extract_app_name(row)
+        model_name = _extract_model_name(row)
+
+        if app_name and ('app', app_name) not in processed_assets:
+            res = process_app_name(app_name, session_key, snow_config, discovery_config)
+            processed_assets.add(('app', app_name))
             processed_count += 1
-            if result['status'] in ['success', 'skipped']:
+            if res['status'] in ('success', 'skipped'):
                 success_count += 1
             else:
                 error_count += 1
-    
+        elif app_name:
+            logger.info("Skipping duplicate app_name '{}' (already processed)".format(app_name))
+
+        if model_name and ('model', model_name) not in processed_assets:
+            res = process_model_name(model_name, session_key, snow_config, discovery_config)
+            processed_assets.add(('model', model_name))
+            processed_count += 1
+            if res['status'] in ('success', 'skipped'):
+                success_count += 1
+            else:
+                error_count += 1
+        elif model_name:
+            logger.info("Skipping duplicate model_name '{}' (already processed)".format(model_name))
+
+    # Handle single result (from payload.result)
+    if results:
+        logger.info("Result keys: {}".format(list(results.keys())))
+        _process_row(results)
+
     # Handle multiple results from results_file (CSV or gzip)
     if results_file:
         logger.info("Checking results_file: {}".format(results_file))
         if os.path.exists(results_file):
             logger.info("Results file exists, reading...")
             try:
-                # Check if gzipped
                 if results_file.endswith('.gz'):
                     f = gzip.open(results_file, 'rt')
                 else:
                     f = open(results_file, 'r')
-                
+
                 reader = csv.DictReader(f)
-                # Log the CSV field names
                 logger.info("CSV fieldnames: {}".format(reader.fieldnames))
-                
+
                 for row in reader:
-                    # Log all keys for debugging
                     logger.info("Row keys: {}".format(list(row.keys())))
-                    # Try multiple possible field names (with and without quotes, dots, underscores)
-                    app_name = (row.get('gen_ai.app.name') or 
-                                row.get('app_name') or 
-                                row.get('gen_ai_app_name') or
-                                row.get('"gen_ai.app.name"'))
-                    logger.info("Processing row: app_name={}".format(app_name))
-                    if app_name:
-                        result = process_app_name(app_name, session_key, snow_config)
-                        processed_count += 1
-                        if result['status'] in ['success', 'skipped']:
-                            success_count += 1
-                        else:
-                            error_count += 1
-                
+                    _process_row(row)
+
                 f.close()
-                
+
             except Exception as e:
                 logger.error("Error reading results file: {}".format(str(e)))
                 import traceback

@@ -70,7 +70,7 @@ require([
                 if (response.entry) {
                     response.entry.forEach(function(entry) {
                         // Skip default stanza
-                        if (entry.name !== 'default' && !entry.name.startsWith('_')) {
+                        if (entry.name !== 'default' && entry.name !== 'asset_discovery' && !entry.name.startsWith('_')) {
                             var content = entry.content || {};
                             accounts.push({
                                 name: entry.name,
@@ -108,7 +108,7 @@ require([
                 
                 if (response.entry) {
                     response.entry.forEach(function(entry) {
-                        if (entry.name !== 'default' && !entry.name.startsWith('_')) {
+                        if (entry.name !== 'default' && entry.name !== 'asset_discovery' && !entry.name.startsWith('_')) {
                             stanzaNames.push(entry.name);
                         }
                     });
@@ -581,6 +581,80 @@ require([
         }
     }
     
+    // ==================== AI Asset Discovery Settings Functions ====================
+
+    function loadAssetDiscoverySettings() {
+        console.log('Loading AI Asset Discovery settings from:', CONF_ENDPOINT);
+
+        $.ajax({
+            url: CONF_ENDPOINT + '/asset_discovery',
+            type: 'GET',
+            data: { output_mode: 'json' },
+            success: function(response) {
+                console.log('Asset discovery settings response:', response);
+                var content = (response.entry && response.entry[0] && response.entry[0].content) || {};
+                $('#ai-system-table').val(content.ai_system_table || '');
+                $('#ai-system-match-field').val(content.ai_system_match_field || '');
+                $('#ai-system-approval-field').val(content.ai_system_approval_field || '');
+                $('#ai-system-approved-values').val(content.ai_system_approved_values || '');
+                $('#ai-model-table').val(content.ai_model_table || '');
+                $('#ai-model-match-field').val(content.ai_model_match_field || '');
+                $('#ai-model-approval-field').val(content.ai_model_approval_field || '');
+                $('#ai-model-approved-values').val(content.ai_model_approved_values || '');
+            },
+            error: function(xhr) {
+                console.log('Asset discovery settings load error:', xhr.status);
+            }
+        });
+    }
+
+    function saveAssetDiscoverySettings() {
+        $('#btn-save-asset-discovery').prop('disabled', true).text('Saving...');
+
+        var csrfToken = getCSRFToken();
+        var confData = {
+            ai_system_table: $('#ai-system-table').val().trim(),
+            ai_system_match_field: $('#ai-system-match-field').val().trim(),
+            ai_system_approval_field: $('#ai-system-approval-field').val().trim(),
+            ai_system_approved_values: $('#ai-system-approved-values').val().trim(),
+            ai_model_table: $('#ai-model-table').val().trim(),
+            ai_model_match_field: $('#ai-model-match-field').val().trim(),
+            ai_model_approval_field: $('#ai-model-approval-field').val().trim(),
+            ai_model_approved_values: $('#ai-model-approved-values').val().trim(),
+            output_mode: 'json'
+        };
+
+        $.ajax({
+            url: CONF_ENDPOINT + '/asset_discovery',
+            type: 'POST',
+            data: confData,
+            headers: { 'X-Splunk-Form-Key': csrfToken },
+            success: function() {
+                console.log('Asset discovery settings saved');
+                $('#btn-save-asset-discovery').prop('disabled', false).text('Save Settings');
+                showAssetDiscoveryStatus('Settings saved successfully', 'success');
+            },
+            error: function(xhr) {
+                console.log('Asset discovery save error:', xhr.status, xhr.responseText);
+                $('#btn-save-asset-discovery').prop('disabled', false).text('Save Settings');
+                showAssetDiscoveryStatus('Failed to save settings: ' + xhr.status, 'error');
+            }
+        });
+    }
+
+    function showAssetDiscoveryStatus(message, type) {
+        var $status = $('#asset-discovery-save-status');
+        $status.text(message).removeClass('success error');
+        if (type) {
+            $status.addClass(type);
+        }
+        if (type === 'success') {
+            setTimeout(function() {
+                $status.text('');
+            }, 3000);
+        }
+    }
+
     // ==================== Detection Settings Functions ====================
     
     // Load Detection settings from conf file
@@ -791,6 +865,7 @@ require([
 
         // Load initial data
         loadAccounts();
+        loadAssetDiscoverySettings();
         loadGenAISettings();
         loadDetectionSettings();
 
@@ -941,5 +1016,8 @@ require([
         
         // Save Detection settings
         $('#btn-save-detection').on('click', saveDetectionSettings);
+        
+        // Save AI Asset Discovery settings
+        $('#btn-save-asset-discovery').on('click', saveAssetDiscoverySettings);
     });
 });

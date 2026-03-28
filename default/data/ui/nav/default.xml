@@ -2,6 +2,7 @@
   <a href="/app/search/search?q=search%20index%3Dgen_ai_log">Search</a>
   <collection label="Dashboards">
     <view name="ai_governance_overview" default='true' label="AI Governance Overview" />
+    <view name="ai_asset_discovery" label="AI Asset Discovery" />
     <view name="governance_safety" label="TF-IDF Anomaly Detection" />
     <view name="pii_detection" label="PII Detection" />
     <view name="prompt_injection_detection" label="Prompt Injection Detection" />

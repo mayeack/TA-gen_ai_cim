@@ -815,6 +815,8 @@ class GenAIScoreCommand(StreamingCommand):
                 except (ValueError, TypeError, OSError):
                     pass
 
+        output['source'] = '{}_genai_scoring'.format(pipeline_name)
+
         for key, val in scoring_fields.items():
             if key in ('genai_scoring_status', 'genai_scoring_error'):
                 continue

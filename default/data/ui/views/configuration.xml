@@ -8,7 +8,7 @@
         <div class="config-container">
           <!-- Tab Navigation -->
           <div class="config-tabs">
-            <button class="config-tab active" data-tab="accounts">ServiceNow Account</button>
+            <button class="config-tab active" data-tab="accounts">ServiceNow Settings</button>
             <button class="config-tab" data-tab="genai">GenAI Summary</button>
             <button class="config-tab" data-tab="detection">Detection Settings</button>
           </div>
@@ -37,6 +37,71 @@
                 </tr>
               </tbody>
             </table>
+
+            <!-- AI Asset Discovery Settings (standalone section) -->
+            <div class="asset-discovery-settings">
+              <div class="settings-section">
+                <h3>AI Asset Discovery Settings</h3>
+                <p class="section-description">Configure ServiceNow table mappings for AI asset inventory and approval tracking. These settings control how the AI Asset Discovery dashboard maps Splunk AI assets to ServiceNow CI records.</p>
+
+                <div class="subsection-header">AI System</div>
+
+                <div class="form-group">
+                  <label>AI System Table</label>
+                  <input type="text" id="ai-system-table" placeholder="alm_ai_system_digital_asset" />
+                  <div class="help-text">ServiceNow table name for AI System records.</div>
+                </div>
+
+                <div class="form-group">
+                  <label>AI System Match Field</label>
+                  <input type="text" id="ai-system-match-field" placeholder="display_name" />
+                  <div class="help-text">Field on the AI System table to match gen_ai.app.name against.</div>
+                </div>
+
+                <div class="form-group">
+                  <label>AI System Approval Field</label>
+                  <input type="text" id="ai-system-approval-field" placeholder="approval" />
+                  <div class="help-text">Field on the AI System table that indicates approval status.</div>
+                </div>
+
+                <div class="form-group">
+                  <label>AI System Approved Value(s)</label>
+                  <input type="text" id="ai-system-approved-values" placeholder="approved" />
+                  <div class="help-text">Comma-separated list of values that indicate approval (e.g., approved,Approved,Active). The asset is considered approved if the approval field matches any of these values. Matching is case-sensitive.</div>
+                </div>
+
+                <div class="subsection-header">AI Model</div>
+
+                <div class="form-group">
+                  <label>AI Model Table</label>
+                  <input type="text" id="ai-model-table" placeholder="e.g., cmdb_ci_ai_model" />
+                  <div class="help-text">ServiceNow table name for AI Model records.</div>
+                </div>
+
+                <div class="form-group">
+                  <label>AI Model Match Field</label>
+                  <input type="text" id="ai-model-match-field" placeholder="display_name" />
+                  <div class="help-text">Field on the AI Model table to match gen_ai.response.model against.</div>
+                </div>
+
+                <div class="form-group">
+                  <label>AI Model Approval Field</label>
+                  <input type="text" id="ai-model-approval-field" placeholder="approval" />
+                  <div class="help-text">Field on the AI Model table that indicates approval status.</div>
+                </div>
+
+                <div class="form-group">
+                  <label>AI Model Approved Value(s)</label>
+                  <input type="text" id="ai-model-approved-values" placeholder="approved" />
+                  <div class="help-text">Comma-separated list of values that indicate approval (e.g., approved,Approved,Active). The model is considered approved if the approval field matches any of these values. Matching is case-sensitive.</div>
+                </div>
+              </div>
+
+              <div class="settings-actions">
+                <button class="btn btn-primary" id="btn-save-asset-discovery">Save Settings</button>
+                <span class="save-status" id="asset-discovery-save-status"></span>
+              </div>
+            </div>
           </div>
 
           <!-- GenAI Summary Tab Content -->
