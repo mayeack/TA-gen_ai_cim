@@ -67,6 +67,8 @@ In ServiceNow, create a dedicated service account with these roles:
 | Table | Access |
 |-------|--------|
 | `sn_ai_case_mgmt_ai_case` | Create, Read |
+| `alm_ai_system_digital_asset` | Create, Read (AI System inventory) |
+| `alm_ai_model_digital_asset` | Create, Read (AI Model inventory) |
 | `sys_user` | Read (for connection testing) |
 
 ### Step 2: Configure ServiceNow Credentials in Splunk

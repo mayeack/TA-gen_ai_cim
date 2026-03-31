@@ -32,13 +32,13 @@
         "viz_total_systems": {
             "dataSources": { "primary": "ds_total_systems" },
             "options": { "backgroundColor": "transparent", "majorColor": "#6ab7c7", "sparklineDisplay": "off", "trendDisplay": "off" },
-            "title": "AI Systems",
+            "title": "AI Systems (Detected)",
             "type": "splunk.singlevalue"
         },
         "viz_total_models": {
             "dataSources": { "primary": "ds_total_models" },
             "options": { "backgroundColor": "transparent", "majorColor": "#6ab7c7", "sparklineDisplay": "off", "trendDisplay": "off" },
-            "title": "AI Models",
+            "title": "AI Models (Detected)",
             "type": "splunk.singlevalue"
         },
         "viz_kpi_approved": {
@@ -243,7 +243,8 @@
                 "seriesColorsByValue": {
                     "Inventoried Approved": "#53a051",
                     "Inventoried Unapproved": "#f8be34",
-                    "Uninventoried Unapproved": "#dc4e41"
+                    "Uninventoried Unapproved": "#dc4e41",
+                    "Inventoried Not Detected": "#708794"
                 },
                 "showDonutHole": true
             },
@@ -268,13 +269,15 @@
         },
         "ds_kpi_approved": {
             "options": {
-                "query": "| inputlookup gen_ai_app_asset_map_lookup | where sync_status=\"found\" AND approval_status=\"approved\" | stats count as sys_approved | appendcols [| inputlookup gen_ai_model_asset_map_lookup | where sync_status=\"found\" AND approval_status=\"approved\" | stats count as mdl_approved] | eval total=coalesce(sys_approved,0)+coalesce(mdl_approved,0) | fields total"
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats count by gen_ai.app.name | rename gen_ai.app.name AS gen_ai_app_name | join type=left gen_ai_app_name [| inputlookup gen_ai_app_asset_map_lookup | fields gen_ai_app_name, sync_status, approval_status] | where sync_status=\"found\" AND approval_status=\"approved\" | stats count as sys_count | appendcols [| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats count by gen_ai.response.model | rename gen_ai.response.model AS gen_ai_response_model | join type=left gen_ai_response_model [| inputlookup gen_ai_model_asset_map_lookup | fields gen_ai_response_model, sync_status, approval_status] | where sync_status=\"found\" AND approval_status=\"approved\" | stats count as mdl_count] | eval total=coalesce(sys_count,0)+coalesce(mdl_count,0) | fields total",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_kpi_unapproved": {
             "options": {
-                "query": "| inputlookup gen_ai_app_asset_map_lookup | where sync_status=\"found\" AND (approval_status!=\"approved\" OR isnull(approval_status)) | stats count as sys_unapp | appendcols [| inputlookup gen_ai_model_asset_map_lookup | where sync_status=\"found\" AND (approval_status!=\"approved\" OR isnull(approval_status)) | stats count as mdl_unapp] | eval total=coalesce(sys_unapp,0)+coalesce(mdl_unapp,0) | fields total"
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats count by gen_ai.app.name | rename gen_ai.app.name AS gen_ai_app_name | join type=left gen_ai_app_name [| inputlookup gen_ai_app_asset_map_lookup | fields gen_ai_app_name, sync_status, approval_status] | where sync_status=\"found\" AND (approval_status!=\"approved\" OR isnull(approval_status)) | stats count as sys_count | appendcols [| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats count by gen_ai.response.model | rename gen_ai.response.model AS gen_ai_response_model | join type=left gen_ai_response_model [| inputlookup gen_ai_model_asset_map_lookup | fields gen_ai_response_model, sync_status, approval_status] | where sync_status=\"found\" AND (approval_status!=\"approved\" OR isnull(approval_status)) | stats count as mdl_count] | eval total=coalesce(sys_count,0)+coalesce(mdl_count,0) | fields total",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
@@ -300,42 +303,42 @@
         },
         "ds_sys_approved": {
             "options": {
-                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.app.name | lookup gen_ai_app_asset_map_lookup gen_ai_app_name AS gen_ai.app.name OUTPUT sync_status, approval_status | where sync_status=\"found\" AND approval_status=\"approved\" | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai.app.name as \"AI System\", Total_Events as \"Total Events\" | table \"AI System\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.app.name | rename gen_ai.app.name AS gen_ai_app_name | join type=left gen_ai_app_name [| inputlookup gen_ai_app_asset_map_lookup | fields gen_ai_app_name, sync_status, approval_status] | where sync_status=\"found\" AND approval_status=\"approved\" | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai_app_name as \"AI System\", Total_Events as \"Total Events\" | table \"AI System\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_mdl_approved": {
             "options": {
-                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.response.model | lookup gen_ai_model_asset_map_lookup gen_ai_response_model AS gen_ai.response.model OUTPUT sync_status, approval_status | where sync_status=\"found\" AND approval_status=\"approved\" | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai.response.model as \"AI Model\", Total_Events as \"Total Events\" | table \"AI Model\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.response.model | rename gen_ai.response.model AS gen_ai_response_model | join type=left gen_ai_response_model [| inputlookup gen_ai_model_asset_map_lookup | fields gen_ai_response_model, sync_status, approval_status] | where sync_status=\"found\" AND approval_status=\"approved\" | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai_response_model as \"AI Model\", Total_Events as \"Total Events\" | table \"AI Model\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_sys_unapproved": {
             "options": {
-                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.app.name | lookup gen_ai_app_asset_map_lookup gen_ai_app_name AS gen_ai.app.name OUTPUT sync_status, approval_status | where sync_status=\"found\" AND (approval_status!=\"approved\" OR isnull(approval_status)) | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai.app.name as \"AI System\", Total_Events as \"Total Events\" | table \"AI System\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.app.name | rename gen_ai.app.name AS gen_ai_app_name | join type=left gen_ai_app_name [| inputlookup gen_ai_app_asset_map_lookup | fields gen_ai_app_name, sync_status, approval_status] | where sync_status=\"found\" AND (approval_status!=\"approved\" OR isnull(approval_status)) | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai_app_name as \"AI System\", Total_Events as \"Total Events\" | table \"AI System\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_mdl_unapproved": {
             "options": {
-                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.response.model | lookup gen_ai_model_asset_map_lookup gen_ai_response_model AS gen_ai.response.model OUTPUT sync_status, approval_status | where sync_status=\"found\" AND (approval_status!=\"approved\" OR isnull(approval_status)) | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai.response.model as \"AI Model\", Total_Events as \"Total Events\" | table \"AI Model\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.response.model | rename gen_ai.response.model AS gen_ai_response_model | join type=left gen_ai_response_model [| inputlookup gen_ai_model_asset_map_lookup | fields gen_ai_response_model, sync_status, approval_status] | where sync_status=\"found\" AND (approval_status!=\"approved\" OR isnull(approval_status)) | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai_response_model as \"AI Model\", Total_Events as \"Total Events\" | table \"AI Model\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_sys_uninventoried": {
             "options": {
-                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.app.name | lookup gen_ai_app_asset_map_lookup gen_ai_app_name AS gen_ai.app.name OUTPUT sync_status, approval_status | where sync_status!=\"found\" OR isnull(sync_status) | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai.app.name as \"AI System\", Total_Events as \"Total Events\" | table \"AI System\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.app.name | rename gen_ai.app.name AS gen_ai_app_name | join type=left gen_ai_app_name [| inputlookup gen_ai_app_asset_map_lookup | fields gen_ai_app_name, sync_status, approval_status] | where sync_status!=\"found\" OR isnull(sync_status) | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai_app_name as \"AI System\", Total_Events as \"Total Events\" | table \"AI System\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
         "ds_mdl_uninventoried": {
             "options": {
-                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.response.model | lookup gen_ai_model_asset_map_lookup gen_ai_response_model AS gen_ai.response.model OUTPUT sync_status, approval_status | where sync_status!=\"found\" OR isnull(sync_status) | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai.response.model as \"AI Model\", Total_Events as \"Total Events\" | table \"AI Model\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats count as Total_Events, max(_time) as last_used_epoch, values(gen_ai.provider.name) as Providers by gen_ai.response.model | rename gen_ai.response.model AS gen_ai_response_model | join type=left gen_ai_response_model [| inputlookup gen_ai_model_asset_map_lookup | fields gen_ai_response_model, sync_status, approval_status] | where sync_status!=\"found\" OR isnull(sync_status) | eval Providers=mvjoin(Providers, \", \"), \"Last Used\"=strftime(last_used_epoch, \"%Y-%m-%d %H:%M:%S\") | rename gen_ai_response_model as \"AI Model\", Total_Events as \"Total Events\" | table \"AI Model\", Providers, \"Last Used\", \"Total Events\" | sort -\"Total Events\"",
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
@@ -356,7 +359,8 @@
         },
         "ds_status_distribution": {
             "options": {
-                "query": "| inputlookup gen_ai_app_asset_map_lookup | append [| inputlookup gen_ai_model_asset_map_lookup] | eval Status=case(sync_status=\"found\" AND approval_status=\"approved\", \"Inventoried Approved\", sync_status=\"found\", \"Inventoried Unapproved\", 1==1, \"Uninventoried Unapproved\") | stats count by Status"
+                "query": "| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats count by gen_ai.app.name | rename gen_ai.app.name AS gen_ai_app_name | join type=left gen_ai_app_name [| inputlookup gen_ai_app_asset_map_lookup | fields gen_ai_app_name, sync_status, approval_status] | eval Status=case(sync_status=\"found\" AND approval_status=\"approved\", \"Inventoried Approved\", sync_status=\"found\", \"Inventoried Unapproved\", 1==1, \"Uninventoried Unapproved\") | append [| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats count by gen_ai.response.model | rename gen_ai.response.model AS gen_ai_response_model | join type=left gen_ai_response_model [| inputlookup gen_ai_model_asset_map_lookup | fields gen_ai_response_model, sync_status, approval_status] | eval Status=case(sync_status=\"found\" AND approval_status=\"approved\", \"Inventoried Approved\", sync_status=\"found\", \"Inventoried Unapproved\", 1==1, \"Uninventoried Unapproved\")] | append [| inputlookup gen_ai_app_asset_map_lookup | where sync_status=\"found\" | join type=left gen_ai_app_name [| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=* | stats count as Total_Events by gen_ai.app.name | rename gen_ai.app.name as gen_ai_app_name] | where isnull(Total_Events) OR Total_Events=0 | eval Status=\"Inventoried Not Detected\"] | append [| inputlookup gen_ai_model_asset_map_lookup | where sync_status=\"found\" | join type=left gen_ai_response_model [| search index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.response.model=* | stats count as Total_Events by gen_ai.response.model | rename gen_ai.response.model as gen_ai_response_model] | where isnull(Total_Events) OR Total_Events=0 | eval Status=\"Inventoried Not Detected\"] | stats count by Status",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },

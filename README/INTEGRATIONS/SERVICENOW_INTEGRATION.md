@@ -2,12 +2,13 @@
 
 ## Overview
 
-The TA-gen_ai_cim provides two ServiceNow integrations for AI governance:
+The TA-gen_ai_cim provides three ServiceNow integrations for AI governance:
 
 | Integration | ServiceNow Table | Purpose |
 |-------------|------------------|---------|
 | **Open Case in ServiceNow** | `sn_ai_case_mgmt_ai_case` | Escalate individual AI events to ServiceNow AI Case Management for investigation |
 | **Sync AI System in ServiceNow** | `alm_ai_system_digital_asset` | Automatically register AI applications in ServiceNow's AI System inventory |
+| **Sync AI Model in ServiceNow** | `alm_ai_model_digital_asset` | Automatically register AI models in ServiceNow's AI Model inventory |
 
 ---
 
@@ -81,6 +82,8 @@ In ServiceNow, create a dedicated service account with these roles:
 | Table | Access |
 |-------|--------|
 | `sn_ai_case_mgmt_ai_case` | Create, Read |
+| `alm_ai_system_digital_asset` | Create, Read (AI System inventory) |
+| `alm_ai_model_digital_asset` | Create, Read (AI Model inventory) |
 | `sys_user` | Read (for connection testing) |
 
 ### Step 2: Configure ServiceNow Credentials in Splunk
@@ -487,16 +490,25 @@ $SPLUNK_HOME/bin/splunk cmd python bin/snow_setup.py --interactive --test
 
 ---
 
-# Integration 2: Sync AI System in ServiceNow
+# Integration 2: Sync AI Systems and AI Models in ServiceNow
 
 ## Overview
 
-Automatically sync `gen_ai.app.name` values from Splunk events to ServiceNow's `alm_ai_system_digital_asset` table. This integration:
+Automatically sync AI applications and AI models from Splunk events to ServiceNow's inventory tables:
 
-- **Auto-registers AI applications** discovered in GenAI telemetry
-- **Links Splunk apps to ServiceNow assets** for unified AI inventory management
+| Asset Type | Splunk Field | ServiceNow Table | KV Store | Key Field |
+|------------|-------------|------------------|----------|-----------|
+| **AI Systems** (applications) | `gen_ai.app.name` | `alm_ai_system_digital_asset` | `gen_ai_app_asset_map` | `gen_ai_app_name` |
+| **AI Models** | `gen_ai.response.model` | `alm_ai_model_digital_asset` | `gen_ai_model_asset_map` | `gen_ai_response_model` |
+
+This integration:
+
+- **Auto-registers AI applications** discovered in GenAI telemetry to `alm_ai_system_digital_asset`
+- **Auto-registers AI models** discovered in GenAI telemetry to `alm_ai_model_digital_asset`
+- **Links Splunk assets to ServiceNow records** for unified AI inventory management
 - **Prevents duplicates** by checking both KV Store and ServiceNow before creation
-- **Runs on a schedule** to continuously discover new AI applications
+- **Runs on a schedule** to continuously discover new AI applications and models
+- **Pulls full inventory** from ServiceNow to populate "Inventoried Not Detected" panels
 
 ## Architecture
 
@@ -508,32 +520,40 @@ Automatically sync `gen_ai.app.name` values from Splunk events to ServiceNow's `
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  KV Store Check: gen_ai_app_asset_map                              │
+│  KV Store Check: gen_ai_app_asset_map / gen_ai_model_asset_map     │
 │  ┌────────────────────────────────────────────────────────────────┐ │
-│  │  Lookup app_name → If sys_id exists → Skip (already mapped)   │ │
-│  │                  → If no sys_id → Continue to alert action    │ │
+│  │  Lookup asset → If sys_id exists → Skip (already mapped)      │ │
+│  │               → If no sys_id → Continue to alert action       │ │
 │  └────────────────────────────────────────────────────────────────┘ │
 └────────────────────┬────────────────────────────────────────────────┘
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Alert Action: sync_snow_asset                                     │
+│  Alert Action: sync_snow_asset / pull_snow_inventory               │
 │  ┌────────────────────────────────────────────────────────────────┐ │
-│  │  1. Query ServiceNow alm_ai_system_digital_asset               │ │
-│  │     - If found → Get sys_id, save with status="found"         │ │
-│  │     - If not found → Create record, save with status="created"│ │
+│  │  AI Systems:                                                   │ │
+│  │    Query ServiceNow alm_ai_system_digital_asset                │ │
+│  │    - If found → Get sys_id, save with status="found"          │ │
+│  │    - If not found → Create record, status="created"           │ │
+│  ├────────────────────────────────────────────────────────────────┤ │
+│  │  AI Models:                                                    │ │
+│  │    Query ServiceNow alm_ai_model_digital_asset                 │ │
+│  │    - If found → Get sys_id, save with status="found"          │ │
+│  │    - If not found → Create record, status="created"           │ │
 │  └────────────────────────────────────────────────────────────────┘ │
 └────────────────────┬────────────────────────────────────────────────┘
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  ServiceNow Table: alm_ai_system_digital_asset                     │
-│  Fields: name, short_description, u_source                         │
+│  ServiceNow Tables:                                                 │
+│  ├── alm_ai_system_digital_asset  (AI Systems / applications)      │
+│  └── alm_ai_model_digital_asset   (AI Models)                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## How It Works
 
+### AI System Sync
 1. **Hourly scheduled search** finds all unique `gen_ai.app.name` values from the last 24 hours
 2. **KV Store lookup** filters out app names that are already mapped
 3. **Alert action triggers** for each unmapped app name
@@ -541,17 +561,30 @@ Automatically sync `gen_ai.app.name` values from Splunk events to ServiceNow's `
    - If the app name exists in `alm_ai_system_digital_asset` → stores `sys_id` with `sync_status="found"`
    - If not found → creates a new record and stores `sys_id` with `sync_status="created"`
 
+### AI Model Sync
+1. **Hourly scheduled search** finds all unique `gen_ai.response.model` values from the last 24 hours
+2. **KV Store lookup** filters out model names that are already mapped
+3. **Alert action triggers** for each unmapped model name
+4. **sync_snow_asset.py script** queries ServiceNow:
+   - If the model name exists in `alm_ai_model_digital_asset` → stores `sys_id` with `sync_status="found"`
+   - If not found → creates a new record and stores `sys_id` with `sync_status="created"`
+
+### Full Inventory Pull
+The `pull_snow_inventory` alert action fetches ALL records from both ServiceNow tables into the KV stores, ensuring the "Inventoried Not Detected" dashboard panels reflect the complete ServiceNow inventory.
+
 ## Setup
 
 ### Prerequisites
 
 1. **ServiceNow credentials configured** via the Configuration page (same credentials used for AI Case integration)
-2. **ServiceNow permissions** for `alm_ai_system_digital_asset` table:
+2. **ServiceNow permissions** for both inventory tables:
 
 | Permission | Required For |
 |------------|--------------|
-| `GET /api/now/table/alm_ai_system_digital_asset` | Query existing assets |
-| `POST /api/now/table/alm_ai_system_digital_asset` | Create new assets |
+| `GET /api/now/table/alm_ai_system_digital_asset` | Query existing AI System assets |
+| `POST /api/now/table/alm_ai_system_digital_asset` | Create new AI System assets |
+| `GET /api/now/table/alm_ai_model_digital_asset` | Query existing AI Model assets |
+| `POST /api/now/table/alm_ai_model_digital_asset` | Create new AI Model assets |
 
 ### Enable the Scheduled Search
 
@@ -565,56 +598,85 @@ Default schedule: `0 * * * *` (hourly at minute 0)
 
 ## KV Store Schema
 
-### Collection: `gen_ai_app_asset_map`
+### Collection: `gen_ai_app_asset_map` (AI Systems)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `app_name` | string | GenAI application name (unique key) |
-| `sys_id` | string | ServiceNow alm_ai_system_digital_asset sys_id |
+| `gen_ai_app_name` | string | GenAI application name (unique key) |
+| `service_now_sys_id` | string | ServiceNow `alm_ai_system_digital_asset` sys_id |
 | `sync_status` | string | `found` (existing in ServiceNow) or `created` (newly created) |
+| `approval_status` | string | Approval status from ServiceNow (e.g., `approved`, `unapproved`) |
+| `inventory_status` | string | Derived status (e.g., `Inventoried Approved`, `Inventoried Unapproved`) |
 | `created_at` | number | Unix epoch when mapping was created |
 | `updated_at` | number | Unix epoch when mapping was last updated |
 | `created_by` | string | Username who created the mapping |
 
-### Lookup Definition: `gen_ai_app_asset_map_lookup`
+### Collection: `gen_ai_model_asset_map` (AI Models)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `gen_ai_response_model` | string | GenAI model name (unique key) |
+| `service_now_sys_id` | string | ServiceNow `alm_ai_model_digital_asset` sys_id |
+| `sync_status` | string | `found` (existing in ServiceNow) or `created` (newly created) |
+| `approval_status` | string | Approval status from ServiceNow (e.g., `approved`, `unapproved`) |
+| `inventory_status` | string | Derived status (e.g., `Inventoried Approved`, `Inventoried Unapproved`) |
+| `created_at` | number | Unix epoch when mapping was created |
+| `updated_at` | number | Unix epoch when mapping was last updated |
+| `created_by` | string | Username who created the mapping |
+
+### Lookup Definitions
+
+- `gen_ai_app_asset_map_lookup` — KV store lookup for AI System assets
+- `gen_ai_model_asset_map_lookup` — KV store lookup for AI Model assets
 
 #### Query Examples
 
-**View all synced applications:**
+**View all synced applications (AI Systems):**
 ```spl
 | inputlookup gen_ai_app_asset_map_lookup
-| table app_name sys_id sync_status created_at
-| sort -created_at
+| table gen_ai_app_name service_now_sys_id sync_status approval_status inventory_status
+| sort -updated_at
 ```
 
-**Count by sync status:**
+**View all synced models (AI Models):**
+```spl
+| inputlookup gen_ai_model_asset_map_lookup
+| table gen_ai_response_model service_now_sys_id sync_status approval_status inventory_status
+| sort -updated_at
+```
+
+**Count by inventory status across both asset types:**
 ```spl
 | inputlookup gen_ai_app_asset_map_lookup
-| stats count by sync_status
+| eval asset_type="AI System"
+| append [| inputlookup gen_ai_model_asset_map_lookup | eval asset_type="AI Model"]
+| stats count by asset_type, inventory_status
 ```
 
-**Find applications created vs found:**
-```spl
-| inputlookup gen_ai_app_asset_map_lookup
-| eval created_time=strftime(created_at, "%Y-%m-%d %H:%M:%S")
-| table app_name sync_status created_time created_by
-```
-
-**Join with GenAI events to see asset linkage:**
+**Join with GenAI events to see AI System linkage:**
 ```spl
 index=gen_ai_log earliest=-7d
 | stats count by gen_ai.app.name
-| lookup gen_ai_app_asset_map_lookup app_name AS gen_ai.app.name OUTPUT sys_id, sync_status
-| eval status=if(isnotnull(sys_id), "Synced (".sync_status.")", "Not synced")
-| table gen_ai.app.name count status sys_id
+| lookup gen_ai_app_asset_map_lookup gen_ai_app_name AS gen_ai.app.name OUTPUT service_now_sys_id, sync_status
+| eval status=if(isnotnull(service_now_sys_id), "Synced (".sync_status.")", "Not synced")
+| table gen_ai.app.name count status service_now_sys_id
+```
+
+**Join with GenAI events to see AI Model linkage:**
+```spl
+index=gen_ai_log earliest=-7d
+| stats count by gen_ai.response.model
+| lookup gen_ai_model_asset_map_lookup gen_ai_response_model AS gen_ai.response.model OUTPUT service_now_sys_id, sync_status
+| eval status=if(isnotnull(service_now_sys_id), "Synced (".sync_status.")", "Not synced")
+| table gen_ai.response.model count status service_now_sys_id
 ```
 
 **Find unsynced applications:**
 ```spl
 index=gen_ai_log earliest=-7d gen_ai.app.name=*
 | stats count by gen_ai.app.name
-| lookup gen_ai_app_asset_map_lookup app_name AS gen_ai.app.name OUTPUT sys_id
-| where isnull(sys_id)
+| lookup gen_ai_app_asset_map_lookup gen_ai_app_name AS gen_ai.app.name OUTPUT service_now_sys_id
+| where isnull(service_now_sys_id)
 | table gen_ai.app.name count
 ```
 
@@ -639,12 +701,20 @@ index=gen_ai_log gen_ai.app.name=*
 
 ## ServiceNow Record Fields
 
-When a new asset is created, these fields are set:
+When a new AI System asset is created in `alm_ai_system_digital_asset`:
 
 | ServiceNow Field | Value |
 |------------------|-------|
 | `name` | The `gen_ai.app.name` value |
 | `short_description` | `GenAI Application: <app_name>` |
+| `u_source` | `Splunk TA-gen_ai_cim` |
+
+When a new AI Model asset is created in `alm_ai_model_digital_asset`:
+
+| ServiceNow Field | Value |
+|------------------|-------|
+| `name` | The `gen_ai.response.model` value |
+| `short_description` | `GenAI Model: <model_name>` |
 | `u_source` | `Splunk TA-gen_ai_cim` |
 
 ## Manual Sync
@@ -676,11 +746,12 @@ To manually trigger a sync for a specific application:
 
 ### Issue: "ServiceNow API error 404"
 
-**Cause:** `alm_ai_system_digital_asset` table doesn't exist
+**Cause:** `alm_ai_system_digital_asset` or `alm_ai_model_digital_asset` table doesn't exist
 
 **Solution:**
-1. Verify the table name in your ServiceNow instance
+1. Verify both table names exist in your ServiceNow instance
 2. Contact your ServiceNow admin to confirm the AI Asset Management module is installed
+3. Check `ta_gen_ai_cim_account.conf` for correct table names (`ai_system_table` and `ai_model_table`)
 
 ### Issue: Assets not being synced
 
@@ -719,15 +790,25 @@ index=_internal source="*sync_snow_asset.log"
 
 | File | Purpose |
 |------|---------|
-| `bin/sync_snow_asset.py` | Alert action script for syncing assets |
-| `default/collections.conf` | KV Store definition (`gen_ai_app_asset_map`) |
-| `default/transforms.conf` | Lookup definition (`gen_ai_app_asset_map_lookup`) |
-| `default/alert_actions.conf` | Alert action definition (`sync_snow_asset`) |
-| `default/savedsearches.conf` | Scheduled search (`GenAI - ServiceNow Asset Sync`) |
+| `bin/sync_snow_asset.py` | Alert action script for syncing assets (systems and models) |
+| `bin/pull_snow_inventory.py` | Alert action script for full ServiceNow inventory pull |
+| `default/collections.conf` | KV Store definitions (`gen_ai_app_asset_map`, `gen_ai_model_asset_map`) |
+| `default/transforms.conf` | Lookup definitions (`gen_ai_app_asset_map_lookup`, `gen_ai_model_asset_map_lookup`) |
+| `default/alert_actions.conf` | Alert action definitions (`sync_snow_asset`, `pull_snow_inventory`) |
+| `default/savedsearches.conf` | Scheduled searches for asset sync and inventory pull |
+| `default/ta_gen_ai_cim_account.conf` | Table name configuration (`ai_system_table`, `ai_model_table`) |
 
 ---
 
 ## Version History
+
+### v1.4.0 (2026-03-27)
+
+**ServiceNow AI Model Digital Asset Sync**
+- UPDATED: Documentation to cover both AI System (`alm_ai_system_digital_asset`) and AI Model (`alm_ai_model_digital_asset`) tables
+- NEW: `pull_snow_inventory` alert action for full ServiceNow inventory pull (both tables)
+- NEW: KV Store collection `gen_ai_model_asset_map` for model-to-asset mapping
+- NEW: Approval status and inventory status tracking for both asset types
 
 ### v1.3.0 (2026-02-02)
 

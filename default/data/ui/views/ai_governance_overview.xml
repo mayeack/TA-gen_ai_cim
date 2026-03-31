@@ -8,34 +8,38 @@
     "description": "A centralized view of genAI usage, cost, performance, and risk—tracking safety/PII/policy events, anomalous prompts/responses, token spend, and latency across models, services, and sessions.",
     "inputs": {
         "input_model": {
+            "context": {
+                "formattedConfig": { "number": { "prefix": "" } },
+                "formattedStatics": ">statics | formatByType(formattedConfig)",
+                "label": ">primary | seriesByName(\"model_id\") | renameSeries(\"label\") | formatByType(formattedConfig)",
+                "statics": [["All Models"], ["*"]],
+                "value": ">primary | seriesByName(\"model_id\") | renameSeries(\"value\") | formatByType(formattedConfig)"
+            },
             "dataSources": {
                 "primary": "ds_model_filter"
             },
             "options": {
                 "defaultValue": "*",
-                "items": [
-                    {
-                        "label": "All Models",
-                        "value": "*"
-                    }
-                ],
+                "items": ">frame(label, value) | prepend(formattedStatics) | objects()",
                 "token": "model_filter"
             },
             "title": "Model ID",
             "type": "input.dropdown"
         },
         "input_service": {
+            "context": {
+                "formattedConfig": { "number": { "prefix": "" } },
+                "formattedStatics": ">statics | formatByType(formattedConfig)",
+                "label": ">primary | seriesByName(\"app_name\") | renameSeries(\"label\") | formatByType(formattedConfig)",
+                "statics": [["All Apps"], ["*"]],
+                "value": ">primary | seriesByName(\"app_name\") | renameSeries(\"value\") | formatByType(formattedConfig)"
+            },
             "dataSources": {
                 "primary": "ds_service_filter"
             },
             "options": {
                 "defaultValue": "*",
-                "items": [
-                    {
-                        "label": "All Apps",
-                        "value": "*"
-                    }
-                ],
+                "items": ">frame(label, value) | prepend(formattedStatics) | objects()",
                 "token": "service_filter"
             },
             "title": "App Name",
@@ -488,8 +492,8 @@
         },
         "ds_model_filter": {
             "options": {
-                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` | stats count by gen_ai.request.model | fields gen_ai.request.model",
-                "queryParameters": { "earliest": "-7d@d", "latest": "now" }
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` | stats count by gen_ai.request.model | rename gen_ai.request.model as model_id | fields model_id",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },
@@ -551,8 +555,8 @@
         },
         "ds_service_filter": {
             "options": {
-                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` | stats count by gen_ai.app.name | fields gen_ai.app.name",
-                "queryParameters": { "earliest": "-7d@d", "latest": "now" }
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` | stats count by gen_ai.app.name | rename gen_ai.app.name as app_name | fields app_name",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
         },

@@ -159,8 +159,7 @@ class AICaseCommand(StreamingCommand):
             try:
                 accounts = service.confs['ta_gen_ai_cim_account']
                 for stanza in accounts:
-                    # Skip default and internal stanzas
-                    if stanza.name == 'default' or stanza.name.startswith('_'):
+                    if stanza.name in ('default', 'asset_discovery') or stanza.name.startswith('_'):
                         continue
                     account_conf = stanza
                     account_name = stanza.name

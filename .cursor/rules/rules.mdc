@@ -138,6 +138,19 @@ EVAL-gen_ai.user.id = coalesce(enduser_id, user_id, user)
 EVAL-gen_ai.app.name = coalesce(service_name, app_name, app)
 ```
 
+### ServiceNow Table Mapping
+The TA integrates with three ServiceNow tables:
+
+| ServiceNow Table | Purpose | Splunk KV Store | Key Field |
+|---|---|---|---|
+| `sn_ai_case_mgmt_ai_case` | AI Case escalation | `gen_ai_snow_case_map` | `request_id` |
+| `alm_ai_system_digital_asset` | AI System inventory (applications) | `gen_ai_app_asset_map` | `gen_ai_app_name` |
+| `alm_ai_model_digital_asset` | AI Model inventory (models) | `gen_ai_model_asset_map` | `gen_ai_response_model` |
+
+When querying or syncing **AI Systems** (applications), always use `alm_ai_system_digital_asset`.
+When querying or syncing **AI Models**, always use `alm_ai_model_digital_asset`.
+These table names are configurable in `ta_gen_ai_cim_account.conf` under the `[settings]` stanza (`ai_system_table` and `ai_model_table`).
+
 ### Python Scripts
 - Bundle `splunklib` in `lib/` for SDK access.
 - Custom commands go in `bin/` with corresponding entries in `commands.conf`.
