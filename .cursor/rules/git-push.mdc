@@ -1,0 +1,56 @@
+---
+description: Git push workflow for TA-gen_ai_cim - always push to the dedicated repo
+globs: 
+alwaysApply: true
+---
+
+# Git Push Rules for TA-gen_ai_cim
+
+## Repository Layout
+
+The workspace lives at `/opt/splunk/etc/apps/TA-gen_ai_cim` but the git repo root is at `/opt/splunk/etc`. Two remotes are configured:
+
+| Remote    | URL                                              | Purpose                           |
+|-----------|--------------------------------------------------|-----------------------------------|
+| `origin`  | https://github.com/mayeack/5GCoreAnalytics.git   | Parent repo (full Splunk etc/)    |
+| `ta-cim`  | https://github.com/mayeack/TA-gen_ai_cim.git     | **Dedicated TA repo (primary)**   |
+
+## Push Workflow
+
+When the user asks to push, commit, or save to git, **ALWAYS** push to the `ta-cim` remote (https://github.com/mayeack/TA-gen_ai_cim). Follow these steps:
+
+1. **Stage and commit** changes in `/opt/splunk/etc` for files under `apps/TA-gen_ai_cim/` only.
+2. **Subtree push** to the dedicated repo:
+   ```bash
+   cd /opt/splunk/etc
+   git subtree push --prefix=apps/TA-gen_ai_cim ta-cim main
+   ```
+3. If subtree push fails due to history divergence, use split + force push:
+   ```bash
+   cd /opt/splunk/etc
+   git subtree split --prefix=apps/TA-gen_ai_cim -b ta-cim-split
+   git push ta-cim ta-cim-split:main --force
+   git branch -D ta-cim-split
+   ```
+4. **Do NOT push to `origin` (5GCoreAnalytics)** unless the user explicitly requests it.
+
+## Remote Setup
+
+If the `ta-cim` remote is missing, add it:
+```bash
+cd /opt/splunk/etc
+git remote add ta-cim https://github.com/mayeack/TA-gen_ai_cim.git
+```
+
+## Excluded Files
+
+Never commit these files:
+- `.cursor/mcp.json` (instance-specific, may contain credentials)
+- `local/` directory (Splunk local overrides)
+- `lookups/*.csv` (user data, training data)
+
+## Committed `.cursor/` Content
+
+The following are intentionally tracked so the team shares the same IDE context:
+- `.cursor/rules/` (project rules)
+- `.cursor/skills/` (shared Cursor skills; symlinked from user-level `~/.cursor/skills/` for convenience)
