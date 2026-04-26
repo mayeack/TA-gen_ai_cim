@@ -89,12 +89,6 @@
 		}
 	},
 	"visualizations": {
-		"viz_explainer_mount": {
-			"type": "splunk.markdown",
-			"options": {
-				"markdown": "<div id=\"dashboard-explainer-mount\"></div>"
-			}
-		},
 		"viz_avg_latency": {
 			"dataSources": {
 				"primary": "ds_avg_latency"
@@ -196,6 +190,12 @@
 			},
 			"title": "Errors by Service",
 			"type": "splunk.bar"
+		},
+		"viz_explainer_mount": {
+			"options": {
+				"markdown": "{{DASHBOARD_EXPLAINER}}"
+			},
+			"type": "splunk.markdown"
 		},
 		"viz_genai_detection_summary": {
 			"dataSources": {
