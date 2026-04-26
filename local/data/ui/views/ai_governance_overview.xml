@@ -89,6 +89,12 @@
 		}
 	},
 	"visualizations": {
+		"viz_explainer_mount": {
+			"type": "splunk.markdown",
+			"options": {
+				"markdown": "<div id=\"dashboard-explainer-mount\"></div>"
+			}
+		},
 		"viz_avg_latency": {
 			"dataSources": {
 				"primary": "ds_avg_latency"
@@ -938,17 +944,13 @@
 		}
 	},
 	"layout": {
-		"tabs": {
-			"items": [
-				{
-					"layoutId": "layout_1",
-					"label": "New tab"
-				}
-			]
-		},
+		"globalInputs": [
+			"input_time",
+			"input_service",
+			"input_model"
+		],
 		"layoutDefinitions": {
 			"layout_1": {
-				"type": "grid",
 				"options": {
 					"height": 3460,
 					"width": 1440
@@ -958,8 +960,18 @@
 						"item": "viz_header_kpi",
 						"position": {
 							"h": 50,
-							"w": 1440,
+							"w": 1280,
 							"x": 0,
+							"y": 0
+						},
+						"type": "block"
+					},
+					{
+						"item": "viz_explainer_mount",
+						"position": {
+							"h": 50,
+							"w": 160,
+							"x": 1280,
 							"y": 0
 						},
 						"type": "block"
@@ -1314,16 +1326,20 @@
 						},
 						"type": "block"
 					}
-				]
+				],
+				"type": "grid"
 			}
 		},
-		"globalInputs": [
-			"input_time",
-			"input_service",
-			"input_model"
-		],
 		"options": {
 			"showTitleAndDescription": true
+		},
+		"tabs": {
+			"items": [
+				{
+					"label": "New tab",
+					"layoutId": "layout_1"
+				}
+			]
 		}
 	}
 }
