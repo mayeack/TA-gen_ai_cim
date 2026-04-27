@@ -191,11 +191,28 @@
 			"title": "Errors by Service",
 			"type": "splunk.bar"
 		},
-		"viz_explainer_mount": {
-			"options": {
-				"markdown": "{{DASHBOARD_EXPLAINER}}"
+		"viz_explainer_button": {
+			"dataSources": {
+				"primary": "ds_explainer_button"
 			},
-			"type": "splunk.markdown"
+			"eventHandlers": [
+				{
+					"options": {
+						"newTab": false,
+						"url": "/app/TA-dashboard_explainer/explain?dashboard=ai_governance_overview&app=TA-gen_ai_cim"
+					},
+					"type": "drilldown.linkToUrl"
+				}
+			],
+			"options": {
+				"backgroundColor": "#1a73e8",
+				"majorColor": "#ffffff",
+				"majorFontSize": 18,
+				"showSparklineAreaGraph": false,
+				"showTrendIndicator": false,
+				"useThousandSeparators": false
+			},
+			"type": "splunk.singlevalue"
 		},
 		"viz_genai_detection_summary": {
 			"dataSources": {
@@ -712,6 +729,16 @@
 			},
 			"type": "ds.search"
 		},
+		"ds_explainer_button": {
+			"options": {
+				"query": "| makeresults | eval value=\"Explain\"",
+				"queryParameters": {
+					"earliest": "-1m@m",
+					"latest": "now"
+				}
+			},
+			"type": "ds.search"
+		},
 		"ds_genai_detection_summary": {
 			"options": {
 				"query": "index=gen_ai_log sourcetype=genai_scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.pii.genai_detected'=\"true\", 1, 0))) as PII_Detected, sum(eval(if('gen_ai.hallucination.genai_detected'=\"true\", 1, 0))) as Hallucination_Detected, sum(eval(if('gen_ai.toxicity.genai_detected'=\"true\", 1, 0))) as Toxicity_Detected | transpose | rename column as detection_type, \"Row 1\" as count",
@@ -967,7 +994,7 @@
 						"type": "block"
 					},
 					{
-						"item": "viz_explainer_mount",
+						"item": "viz_explainer_button",
 						"position": {
 							"h": 50,
 							"w": 160,
