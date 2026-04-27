@@ -264,6 +264,13 @@
 			},
 			"type": "splunk.markdown"
 		},
+		"viz_header_latest_summary": {
+			"options": {
+				"fontColor": "#ffffff",
+				"markdown": "## 🤖 Latest AI Summary"
+			},
+			"type": "splunk.markdown"
+		},
 		"viz_header_logs": {
 			"options": {
 				"fontColor": "#ffffff",
@@ -342,6 +349,18 @@
 			},
 			"title": "Response Latency Over Time",
 			"type": "splunk.line"
+		},
+		"viz_latest_explainer_summary": {
+			"dataSources": {
+				"primary": "ds_latest_explainer_summary"
+			},
+			"description": "From dashboard_explainer_runs (KV store). Click \"Explain this dashboard\" above to generate a new run.",
+			"options": {
+				"count": 1,
+				"rowNumbers": false
+			},
+			"title": "Most Recent Explanation",
+			"type": "splunk.table"
 		},
 		"viz_ml_detection_summary": {
 			"dataSources": {
@@ -754,6 +773,12 @@
 			},
 			"type": "ds.search"
 		},
+		"ds_latest_explainer_summary": {
+			"options": {
+				"query": "| inputlookup dashboard_explainer_runs_lookup where app=\"TA-gen_ai_cim\" AND dashboard=\"ai_governance_overview\" AND status=\"ok\" | sort 0 -run_at | head 1 | eval \"Run At\"=strftime(run_at,\"%Y-%m-%d %H:%M:%S\"), \"Time Range\"=time_earliest.\" .. \".time_latest, \"Panels With Data\"=ok_count.\" of \".panel_count, \"Run By\"=user, \"Duration (s)\"=round(duration_ms/1000,1) | rename ai_result as \"AI Summary\" | table \"Run At\" \"Time Range\" \"Run By\" \"Panels With Data\" \"Duration (s)\" \"AI Summary\""
+			},
+			"type": "ds.search"
+		},
 		"ds_ml_detection_summary": {
 			"options": {
 				"query": "index=gen_ai_log source=*_scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if(source=\"pii_ml_scoring\" AND 'gen_ai.pii.ml_detected'=\"true\", 1, 0))) as PII_Detected, sum(eval(if(source=\"prompt_injection_ml_scoring\" AND 'gen_ai.prompt_injection.ml_detected'=\"true\", 1, 0))) as Prompt_Injection, sum(eval(if('gen_ai.response.is_anomaly'=\"true\" OR 'gen_ai.prompt.is_anomaly'=\"True\", 1, 0))) as Anomaly_Detected | transpose | rename column as detection_type, \"Row 1\" as count",
@@ -954,7 +979,7 @@
 		"layoutDefinitions": {
 			"layout_1": {
 				"options": {
-					"height": 3460,
+					"height": 3910,
 					"width": 1440
 				},
 				"structure": [
@@ -1325,6 +1350,26 @@
 							"w": 720,
 							"x": 720,
 							"y": 3180
+						},
+						"type": "block"
+					},
+					{
+						"item": "viz_header_latest_summary",
+						"position": {
+							"h": 50,
+							"w": 1440,
+							"x": 0,
+							"y": 3460
+						},
+						"type": "block"
+					},
+					{
+						"item": "viz_latest_explainer_summary",
+						"position": {
+							"h": 400,
+							"w": 1440,
+							"x": 0,
+							"y": 3510
 						},
 						"type": "block"
 					}
