@@ -177,44 +177,6 @@
 			"title": "Cost Over Time",
 			"type": "splunk.area"
 		},
-		"viz_errors_by_service": {
-			"dataSources": {
-				"primary": "ds_errors_by_service"
-			},
-			"options": {
-				"seriesColors": [
-					"#dc4e41"
-				],
-				"xAxisTitleText": "Errors",
-				"yAxisTitleText": "Service"
-			},
-			"title": "Errors by Service",
-			"type": "splunk.bar"
-		},
-		"viz_explainer_button": {
-			"options": {
-				"backgroundColor": "#000000",
-				"fontColor": "#ffffff",
-				"markdown": "### [Explain this dashboard](/app/TA-dashboard_explainer/explain?dashboard=ai_governance_overview&app=TA-gen_ai_cim)"
-			},
-			"type": "splunk.markdown"
-		},
-		"viz_genai_detection_summary": {
-			"dataSources": {
-				"primary": "ds_genai_detection_summary"
-			},
-			"options": {
-				"seriesColors": [
-					"#dc4e41",
-					"#f1813f",
-					"#f8be34"
-				],
-				"xAxisTitleText": "Detection Type",
-				"yAxisTitleText": "Count"
-			},
-			"title": "GenAI Detection Summary",
-			"type": "splunk.bar"
-		},
 		"viz_guardrails_triggered": {
 			"dataSources": {
 				"primary": "ds_guardrails_triggered"
@@ -261,13 +223,6 @@
 			"options": {
 				"fontColor": "#ffffff",
 				"markdown": "## 📊 Key Performance Indicators"
-			},
-			"type": "splunk.markdown"
-		},
-		"viz_header_latest_summary": {
-			"options": {
-				"fontColor": "#ffffff",
-				"markdown": "## 🤖 Latest AI Summary"
 			},
 			"type": "splunk.markdown"
 		},
@@ -349,34 +304,6 @@
 			},
 			"title": "Response Latency Over Time",
 			"type": "splunk.line"
-		},
-		"viz_latest_explainer_summary": {
-			"dataSources": {
-				"primary": "ds_latest_explainer_summary"
-			},
-			"description": "From dashboard_explainer_runs (KV store). Click \"Explain this dashboard\" above to generate a new run.",
-			"options": {
-				"count": 1,
-				"rowNumbers": false
-			},
-			"title": "Most Recent Explanation",
-			"type": "splunk.table"
-		},
-		"viz_ml_detection_summary": {
-			"dataSources": {
-				"primary": "ds_ml_detection_summary"
-			},
-			"options": {
-				"seriesColors": [
-					"#dc4e41",
-					"#f8be34",
-					"#6ab7c7"
-				],
-				"xAxisTitleText": "Detection Type",
-				"yAxisTitleText": "Count"
-			},
-			"title": "ML Detection Summary",
-			"type": "splunk.bar"
 		},
 		"viz_model_usage": {
 			"dataSources": {
@@ -610,6 +537,22 @@
 			"title": "Status Outcome",
 			"type": "splunk.bar"
 		},
+		"viz_ml_detection_summary": {
+			"dataSources": {
+				"primary": "ds_ml_detection_summary"
+			},
+			"options": {
+				"seriesColors": [
+					"#dc4e41",
+					"#f8be34",
+					"#6ab7c7"
+				],
+				"xAxisTitleText": "Detection Type",
+				"yAxisTitleText": "Count"
+			},
+			"title": "ML Detection Summary",
+			"type": "splunk.bar"
+		},
 		"viz_token_usage_time": {
 			"dataSources": {
 				"primary": "ds_token_usage_time"
@@ -680,6 +623,63 @@
 			},
 			"title": "Unique Sessions",
 			"type": "splunk.singlevalue"
+		},
+		"viz_errors_by_service": {
+			"dataSources": {
+				"primary": "ds_errors_by_service"
+			},
+			"options": {
+				"seriesColors": [
+					"#dc4e41"
+				],
+				"xAxisTitleText": "Errors",
+				"yAxisTitleText": "Service"
+			},
+			"title": "Errors by Service",
+			"type": "splunk.bar"
+		},
+		"viz_genai_detection_summary": {
+			"dataSources": {
+				"primary": "ds_genai_detection_summary"
+			},
+			"options": {
+				"seriesColors": [
+					"#dc4e41",
+					"#f1813f",
+					"#f8be34"
+				],
+				"xAxisTitleText": "Detection Type",
+				"yAxisTitleText": "Count"
+			},
+			"title": "GenAI Detection Summary",
+			"type": "splunk.bar"
+		},
+		"viz_explainer_button": {
+			"options": {
+				"backgroundColor": "#1A6BCB",
+				"fontColor": "#ffffff",
+				"markdown": "### [Explain this dashboard](/app/TA-dashboard_explainer/explain?app=TA-gen_ai_cim&view=ai_governance_overview)"
+			},
+			"type": "splunk.markdown"
+		},
+		"viz_header_latest_summary": {
+			"options": {
+				"fontColor": "#ffffff",
+				"markdown": "## 🤖 Latest AI Summary"
+			},
+			"type": "splunk.markdown"
+		},
+		"viz_latest_explainer_summary": {
+			"dataSources": {
+				"primary": "ds_latest_explainer_summary"
+			},
+			"description": "From dashboard_explainer_runs (KV store). Click \"Explain this dashboard\" above to generate a new run.",
+			"options": {
+				"count": 1,
+				"rowNumbers": false
+			},
+			"title": "Most Recent Explanation",
+			"type": "splunk.table"
 		}
 	},
 	"dataSources": {
@@ -723,26 +723,6 @@
 			},
 			"type": "ds.search"
 		},
-		"ds_errors_by_service": {
-			"options": {
-				"query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" (gen_ai.safety.violated=\"true\" OR gen_ai.policy.blocked=\"true\" OR gen_ai.guardrail.triggered=\"true\") | stats count as error_count by gen_ai.app.name | sort -error_count | rename gen_ai.app.name as service",
-				"queryParameters": {
-					"earliest": "$time.earliest$",
-					"latest": "$time.latest$"
-				}
-			},
-			"type": "ds.search"
-		},
-		"ds_genai_detection_summary": {
-			"options": {
-				"query": "index=gen_ai_log sourcetype=genai_scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.pii.genai_detected'=\"true\", 1, 0))) as PII_Detected, sum(eval(if('gen_ai.hallucination.genai_detected'=\"true\", 1, 0))) as Hallucination_Detected, sum(eval(if('gen_ai.toxicity.genai_detected'=\"true\", 1, 0))) as Toxicity_Detected | transpose | rename column as detection_type, \"Row 1\" as count",
-				"queryParameters": {
-					"earliest": "$time.earliest$",
-					"latest": "$time.latest$"
-				}
-			},
-			"type": "ds.search"
-		},
 		"ds_guardrails_triggered": {
 			"options": {
 				"query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.guardrail.triggered'=\"true\", 1, 0))) as guardrails_triggered | eval guardrails_triggered=coalesce(guardrails_triggered, 0)",
@@ -766,22 +746,6 @@
 		"ds_latency_time": {
 			"options": {
 				"query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | eval latency_ms='gen_ai.client.operation.duration'*1000 | timechart span=1h avg(latency_ms) as avg_latency_ms, perc95(latency_ms) as p95_latency_ms",
-				"queryParameters": {
-					"earliest": "$time.earliest$",
-					"latest": "$time.latest$"
-				}
-			},
-			"type": "ds.search"
-		},
-		"ds_latest_explainer_summary": {
-			"options": {
-				"query": "| inputlookup dashboard_explainer_runs_lookup where app=\"TA-gen_ai_cim\" AND dashboard=\"ai_governance_overview\" AND status=\"ok\" | sort 0 -run_at | head 1 | eval \"Run At\"=strftime(run_at,\"%Y-%m-%d %H:%M:%S\"), \"Time Range\"=time_earliest.\" .. \".time_latest, \"Panels With Data\"=ok_count.\" of \".panel_count, \"Run By\"=user, \"Duration (s)\"=round(duration_ms/1000,1) | rename ai_result as \"AI Summary\" | table \"Run At\" \"Time Range\" \"Run By\" \"Panels With Data\" \"Duration (s)\" \"AI Summary\""
-			},
-			"type": "ds.search"
-		},
-		"ds_ml_detection_summary": {
-			"options": {
-				"query": "index=gen_ai_log source=*_scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if(source=\"pii_ml_scoring\" AND 'gen_ai.pii.ml_detected'=\"true\", 1, 0))) as PII_Detected, sum(eval(if(source=\"prompt_injection_ml_scoring\" AND 'gen_ai.prompt_injection.ml_detected'=\"true\", 1, 0))) as Prompt_Injection, sum(eval(if('gen_ai.response.is_anomaly'=\"true\" OR 'gen_ai.prompt.is_anomaly'=\"True\", 1, 0))) as Anomaly_Detected | transpose | rename column as detection_type, \"Row 1\" as count",
 				"queryParameters": {
 					"earliest": "$time.earliest$",
 					"latest": "$time.latest$"
@@ -919,6 +883,16 @@
 			},
 			"type": "ds.search"
 		},
+		"ds_ml_detection_summary": {
+			"options": {
+				"query": "index=gen_ai_log source=*_scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if(source=\"pii_ml_scoring\" AND 'gen_ai.pii.ml_detected'=\"true\", 1, 0))) as PII_Detected, sum(eval(if(source=\"prompt_injection_ml_scoring\" AND 'gen_ai.prompt_injection.ml_detected'=\"true\", 1, 0))) as Prompt_Injection, sum(eval(if('gen_ai.response.is_anomaly'=\"true\" OR 'gen_ai.prompt.is_anomaly'=\"True\", 1, 0))) as Anomaly_Detected | transpose | rename column as detection_type, \"Row 1\" as count",
+				"queryParameters": {
+					"earliest": "$time.earliest$",
+					"latest": "$time.latest$"
+				}
+			},
+			"type": "ds.search"
+		},
 		"ds_token_usage_time": {
 			"options": {
 				"query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | timechart span=1h sum(gen_ai.usage.total_tokens) as total_tokens",
@@ -968,18 +942,48 @@
 				}
 			},
 			"type": "ds.search"
+		},
+		"ds_errors_by_service": {
+			"options": {
+				"query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" (gen_ai.safety.violated=\"true\" OR gen_ai.policy.blocked=\"true\" OR gen_ai.guardrail.triggered=\"true\") | stats count as error_count by gen_ai.app.name | sort -error_count | rename gen_ai.app.name as service",
+				"queryParameters": {
+					"earliest": "$time.earliest$",
+					"latest": "$time.latest$"
+				}
+			},
+			"type": "ds.search"
+		},
+		"ds_genai_detection_summary": {
+			"options": {
+				"query": "index=gen_ai_log sourcetype=genai_scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.pii.genai_detected'=\"true\", 1, 0))) as PII_Detected, sum(eval(if('gen_ai.hallucination.genai_detected'=\"true\", 1, 0))) as Hallucination_Detected, sum(eval(if('gen_ai.toxicity.genai_detected'=\"true\", 1, 0))) as Toxicity_Detected | transpose | rename column as detection_type, \"Row 1\" as count",
+				"queryParameters": {
+					"earliest": "$time.earliest$",
+					"latest": "$time.latest$"
+				}
+			},
+			"type": "ds.search"
+		},
+		"ds_latest_explainer_summary": {
+			"options": {
+				"query": "| inputlookup dashboard_explainer_runs_lookup where app=\"TA-gen_ai_cim\" AND dashboard=\"ai_governance_overview\" AND status=\"ok\" | sort 0 -run_at | head 1 | eval \"Run At\"=strftime(run_at,\"%Y-%m-%d %H:%M:%S\"), \"Time Range\"=time_earliest.\" .. \".time_latest, \"Panels With Data\"=ok_count.\" of \".panel_count, \"Run By\"=user, \"Duration (s)\"=round(duration_ms/1000,1) | rename ai_result as \"AI Summary\" | table \"Run At\" \"Time Range\" \"Run By\" \"Panels With Data\" \"Duration (s)\" \"AI Summary\""
+			},
+			"type": "ds.search"
 		}
 	},
 	"layout": {
-		"globalInputs": [
-			"input_time",
-			"input_service",
-			"input_model"
-		],
+		"tabs": {
+			"items": [
+				{
+					"layoutId": "layout_1",
+					"label": "New tab"
+				}
+			]
+		},
 		"layoutDefinitions": {
 			"layout_1": {
+				"type": "grid",
 				"options": {
-					"height": 3910,
+					"height": 3810,
 					"width": 1440
 				},
 				"structure": [
@@ -1004,12 +1008,32 @@
 						"type": "block"
 					},
 					{
+						"item": "viz_header_latest_summary",
+						"position": {
+							"h": 50,
+							"w": 1440,
+							"x": 0,
+							"y": 50
+						},
+						"type": "block"
+					},
+					{
+						"item": "viz_latest_explainer_summary",
+						"position": {
+							"h": 300,
+							"w": 1440,
+							"x": 0,
+							"y": 100
+						},
+						"type": "block"
+					},
+					{
 						"item": "viz_total_requests",
 						"position": {
 							"h": 120,
 							"w": 288,
 							"x": 0,
-							"y": 50
+							"y": 400
 						},
 						"type": "block"
 					},
@@ -1019,7 +1043,7 @@
 							"h": 120,
 							"w": 288,
 							"x": 288,
-							"y": 50
+							"y": 400
 						},
 						"type": "block"
 					},
@@ -1029,7 +1053,7 @@
 							"h": 120,
 							"w": 288,
 							"x": 576,
-							"y": 50
+							"y": 400
 						},
 						"type": "block"
 					},
@@ -1039,7 +1063,7 @@
 							"h": 120,
 							"w": 288,
 							"x": 864,
-							"y": 50
+							"y": 400
 						},
 						"type": "block"
 					},
@@ -1049,7 +1073,7 @@
 							"h": 120,
 							"w": 288,
 							"x": 1152,
-							"y": 50
+							"y": 400
 						},
 						"type": "block"
 					},
@@ -1059,7 +1083,7 @@
 							"h": 50,
 							"w": 1440,
 							"x": 0,
-							"y": 170
+							"y": 520
 						},
 						"type": "block"
 					},
@@ -1069,7 +1093,7 @@
 							"h": 120,
 							"w": 288,
 							"x": 0,
-							"y": 220
+							"y": 570
 						},
 						"type": "block"
 					},
@@ -1079,7 +1103,7 @@
 							"h": 120,
 							"w": 288,
 							"x": 288,
-							"y": 220
+							"y": 570
 						},
 						"type": "block"
 					},
@@ -1089,7 +1113,7 @@
 							"h": 120,
 							"w": 288,
 							"x": 576,
-							"y": 220
+							"y": 570
 						},
 						"type": "block"
 					},
@@ -1099,7 +1123,7 @@
 							"h": 120,
 							"w": 288,
 							"x": 864,
-							"y": 220
+							"y": 570
 						},
 						"type": "block"
 					},
@@ -1109,7 +1133,7 @@
 							"h": 120,
 							"w": 288,
 							"x": 1152,
-							"y": 220
+							"y": 570
 						},
 						"type": "block"
 					},
@@ -1119,7 +1143,7 @@
 							"h": 50,
 							"w": 1440,
 							"x": 0,
-							"y": 340
+							"y": 690
 						},
 						"type": "block"
 					},
@@ -1129,7 +1153,7 @@
 							"h": 280,
 							"w": 720,
 							"x": 0,
-							"y": 390
+							"y": 740
 						},
 						"type": "block"
 					},
@@ -1139,7 +1163,7 @@
 							"h": 280,
 							"w": 720,
 							"x": 720,
-							"y": 390
+							"y": 740
 						},
 						"type": "block"
 					},
@@ -1149,7 +1173,7 @@
 							"h": 280,
 							"w": 720,
 							"x": 0,
-							"y": 670
+							"y": 1020
 						},
 						"type": "block"
 					},
@@ -1159,7 +1183,7 @@
 							"h": 280,
 							"w": 720,
 							"x": 720,
-							"y": 670
+							"y": 1020
 						},
 						"type": "block"
 					},
@@ -1169,7 +1193,7 @@
 							"h": 50,
 							"w": 1440,
 							"x": 0,
-							"y": 950
+							"y": 1300
 						},
 						"type": "block"
 					},
@@ -1179,7 +1203,7 @@
 							"h": 280,
 							"w": 720,
 							"x": 0,
-							"y": 1000
+							"y": 1350
 						},
 						"type": "block"
 					},
@@ -1189,7 +1213,7 @@
 							"h": 280,
 							"w": 720,
 							"x": 720,
-							"y": 1000
+							"y": 1350
 						},
 						"type": "block"
 					},
@@ -1199,7 +1223,7 @@
 							"h": 50,
 							"w": 1440,
 							"x": 0,
-							"y": 1280
+							"y": 1630
 						},
 						"type": "block"
 					},
@@ -1209,7 +1233,7 @@
 							"h": 280,
 							"w": 720,
 							"x": 0,
-							"y": 1330
+							"y": 1680
 						},
 						"type": "block"
 					},
@@ -1219,7 +1243,7 @@
 							"h": 280,
 							"w": 720,
 							"x": 720,
-							"y": 1330
+							"y": 1680
 						},
 						"type": "block"
 					},
@@ -1229,7 +1253,7 @@
 							"h": 50,
 							"w": 1440,
 							"x": 0,
-							"y": 1610
+							"y": 1960
 						},
 						"type": "block"
 					},
@@ -1239,7 +1263,7 @@
 							"h": 280,
 							"w": 1440,
 							"x": 0,
-							"y": 1660
+							"y": 2010
 						},
 						"type": "block"
 					},
@@ -1249,7 +1273,7 @@
 							"h": 50,
 							"w": 1440,
 							"x": 0,
-							"y": 1940
+							"y": 2290
 						},
 						"type": "block"
 					},
@@ -1259,7 +1283,7 @@
 							"h": 280,
 							"w": 1440,
 							"x": 0,
-							"y": 1990
+							"y": 2340
 						},
 						"type": "block"
 					},
@@ -1269,7 +1293,7 @@
 							"h": 50,
 							"w": 1440,
 							"x": 0,
-							"y": 2270
+							"y": 2620
 						},
 						"type": "block"
 					},
@@ -1279,7 +1303,7 @@
 							"h": 280,
 							"w": 720,
 							"x": 0,
-							"y": 2320
+							"y": 2670
 						},
 						"type": "block"
 					},
@@ -1289,7 +1313,7 @@
 							"h": 280,
 							"w": 720,
 							"x": 720,
-							"y": 2320
+							"y": 2670
 						},
 						"type": "block"
 					},
@@ -1299,7 +1323,7 @@
 							"h": 50,
 							"w": 1440,
 							"x": 0,
-							"y": 2600
+							"y": 2950
 						},
 						"type": "block"
 					},
@@ -1309,7 +1333,7 @@
 							"h": 300,
 							"w": 1440,
 							"x": 0,
-							"y": 2650
+							"y": 3000
 						},
 						"type": "block"
 					},
@@ -1319,7 +1343,7 @@
 							"h": 50,
 							"w": 1440,
 							"x": 0,
-							"y": 2950
+							"y": 3300
 						},
 						"type": "block"
 					},
@@ -1329,7 +1353,7 @@
 							"h": 180,
 							"w": 1440,
 							"x": 0,
-							"y": 3000
+							"y": 3350
 						},
 						"type": "block"
 					},
@@ -1339,7 +1363,7 @@
 							"h": 280,
 							"w": 720,
 							"x": 0,
-							"y": 3180
+							"y": 3530
 						},
 						"type": "block"
 					},
@@ -1349,44 +1373,20 @@
 							"h": 280,
 							"w": 720,
 							"x": 720,
-							"y": 3180
-						},
-						"type": "block"
-					},
-					{
-						"item": "viz_header_latest_summary",
-						"position": {
-							"h": 50,
-							"w": 1440,
-							"x": 0,
-							"y": 3460
-						},
-						"type": "block"
-					},
-					{
-						"item": "viz_latest_explainer_summary",
-						"position": {
-							"h": 400,
-							"w": 1440,
-							"x": 0,
-							"y": 3510
+							"y": 3530
 						},
 						"type": "block"
 					}
-				],
-				"type": "grid"
+				]
 			}
 		},
+		"globalInputs": [
+			"input_time",
+			"input_service",
+			"input_model"
+		],
 		"options": {
 			"showTitleAndDescription": true
-		},
-		"tabs": {
-			"items": [
-				{
-					"label": "New tab",
-					"layoutId": "layout_1"
-				}
-			]
 		}
 	}
 }
