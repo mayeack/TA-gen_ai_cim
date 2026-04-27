@@ -193,9 +193,9 @@
 		},
 		"viz_explainer_button": {
 			"options": {
-				"backgroundColor": "#1a73e8",
+				"backgroundColor": "#000000",
 				"fontColor": "#ffffff",
-				"markdown": "### [▸ Explain this dashboard](/app/TA-dashboard_explainer/explain?dashboard=ai_governance_overview&app=TA-gen_ai_cim)"
+				"markdown": "### <a href=\"/app/TA-dashboard_explainer/explain?dashboard=ai_governance_overview&app=TA-gen_ai_cim\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:#ffffff;\">Explain this dashboard</a>"
 			},
 			"type": "splunk.markdown"
 		},
