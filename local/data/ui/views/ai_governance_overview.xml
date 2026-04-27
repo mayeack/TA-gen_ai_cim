@@ -965,7 +965,7 @@
 		},
 		"ds_latest_explainer_summary": {
 			"options": {
-				"query": "| inputlookup dashboard_explainer_runs_lookup where app=\"TA-gen_ai_cim\" AND dashboard=\"ai_governance_overview\" AND status=\"ok\" | sort 0 -run_at | head 1 | eval \"Run At\"=strftime(run_at,\"%Y-%m-%d %H:%M:%S\"), \"Time Range\"=time_earliest.\" .. \".time_latest, \"Panels With Data\"=ok_count.\" of \".panel_count, \"Run By\"=user, \"Duration (s)\"=round(duration_ms/1000,1) | rename ai_result as \"AI Summary\" | table \"Run At\" \"Time Range\" \"Run By\" \"Panels With Data\" \"Duration (s)\" \"AI Summary\""
+				"query": "| inputlookup dashboard_explainer_runs_lookup where app=\"TA-gen_ai_cim\" AND dashboard=\"ai_governance_overview\" AND status=\"ok\" | sort 0 -run_at | head 1 | eval \"Time Range\"=time_earliest.\" .. \".time_latest | rename ai_result as \"AI Summary\" | table \"Time Range\" \"AI Summary\""
 			},
 			"type": "ds.search"
 		}
