@@ -192,27 +192,12 @@
 			"type": "splunk.bar"
 		},
 		"viz_explainer_button": {
-			"dataSources": {
-				"primary": "ds_explainer_button"
-			},
-			"eventHandlers": [
-				{
-					"options": {
-						"newTab": false,
-						"url": "/app/TA-dashboard_explainer/explain?dashboard=ai_governance_overview&app=TA-gen_ai_cim"
-					},
-					"type": "drilldown.linkToUrl"
-				}
-			],
 			"options": {
 				"backgroundColor": "#1a73e8",
-				"majorColor": "#ffffff",
-				"majorFontSize": 18,
-				"showSparklineAreaGraph": false,
-				"showTrendIndicator": false,
-				"useThousandSeparators": false
+				"fontColor": "#ffffff",
+				"markdown": "### [▸ Explain this dashboard](/app/TA-dashboard_explainer/explain?dashboard=ai_governance_overview&app=TA-gen_ai_cim)"
 			},
-			"type": "splunk.singlevalue"
+			"type": "splunk.markdown"
 		},
 		"viz_genai_detection_summary": {
 			"dataSources": {
@@ -725,16 +710,6 @@
 				"queryParameters": {
 					"earliest": "$time.earliest$",
 					"latest": "$time.latest$"
-				}
-			},
-			"type": "ds.search"
-		},
-		"ds_explainer_button": {
-			"options": {
-				"query": "| makeresults | eval value=\"Explain\"",
-				"queryParameters": {
-					"earliest": "-1m@m",
-					"latest": "now"
 				}
 			},
 			"type": "ds.search"
