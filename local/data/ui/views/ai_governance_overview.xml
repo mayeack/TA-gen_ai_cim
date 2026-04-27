@@ -965,7 +965,7 @@
 		},
 		"ds_latest_explainer_summary": {
 			"options": {
-				"query": "| inputlookup dashboard_explainer_runs_lookup where app=\"TA-gen_ai_cim\" AND dashboard=\"ai_governance_overview\" AND status=\"ok\" | sort 0 -run_at | head 1 | eval \"Time Range\"=time_earliest.\" .. \".time_latest | rename ai_result as \"AI Summary\" | table \"Time Range\" \"AI Summary\""
+				"query": "| inputlookup dashboard_explainer_runs_lookup where app=\"TA-gen_ai_cim\" AND dashboard=\"ai_governance_overview\" AND status=\"ok\" | sort 0 -run_at | head 1 | rename ai_result as \"AI Summary\" | table \"AI Summary\""
 			},
 			"type": "ds.search"
 		}
