@@ -438,6 +438,25 @@
             },
             "title": "GenAI Detection Summary",
             "type": "splunk.bar"
+        },
+        "viz_explainer_button": {
+            "options": {
+                "backgroundColor": "#000000",
+                "fontColor": "#ffffff",
+                "markdown": "### [Explain this dashboard](/app/TA-dashboard_explainer/explain?app=TA-gen_ai_cim&dashboard=ai_governance_overview)"
+            },
+            "type": "splunk.markdown"
+        },
+        "viz_header_latest_summary": {
+            "options": { "fontColor": "#ffffff", "markdown": "## 🤖 Latest AI Summary" },
+            "type": "splunk.markdown"
+        },
+        "viz_latest_explainer_summary": {
+            "dataSources": { "primary": "ds_latest_explainer_summary" },
+            "description": "From dashboard_explainer_runs (KV store). Click \"Explain this dashboard\" above to generate a new run.",
+            "options": { "count": 1, "rowNumbers": false },
+            "title": "Most Recent Explanation",
+            "type": "splunk.table"
         }
     },
     "dataSources": {
@@ -636,49 +655,58 @@
                 "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
             },
             "type": "ds.search"
+        },
+        "ds_latest_explainer_summary": {
+            "options": {
+                "query": "| inputlookup dashboard_explainer_runs_lookup where app=\"TA-gen_ai_cim\" AND dashboard=\"ai_governance_overview\" AND status=\"ok\" | sort 0 -run_at | head 1 | rename ai_result as \"AI Summary\" | table \"AI Summary\""
+            },
+            "type": "ds.search"
         }
     },
     "layout": {
         "globalInputs": ["input_time", "input_service", "input_model"],
-        "options": { "showTitleAndDescription": true, "height": 3460, "width": 1440 },
+        "options": { "showTitleAndDescription": true, "height": 3810, "width": 1440 },
         "type": "grid",
         "structure": [
-            { "item": "viz_header_kpi", "position": { "h": 50, "w": 1440, "x": 0, "y": 0 }, "type": "block" },
-            { "item": "viz_total_requests", "position": { "h": 120, "w": 288, "x": 0, "y": 50 }, "type": "block" },
-            { "item": "viz_unique_sessions", "position": { "h": 120, "w": 288, "x": 288, "y": 50 }, "type": "block" },
-            { "item": "viz_total_tokens", "position": { "h": 120, "w": 288, "x": 576, "y": 50 }, "type": "block" },
-            { "item": "viz_total_cost", "position": { "h": 120, "w": 288, "x": 864, "y": 50 }, "type": "block" },
-            { "item": "viz_avg_latency", "position": { "h": 120, "w": 288, "x": 1152, "y": 50 }, "type": "block" },
-            { "item": "viz_header_safety", "position": { "h": 50, "w": 1440, "x": 0, "y": 170 }, "type": "block" },
-            { "item": "viz_safety_violations", "position": { "h": 120, "w": 288, "x": 0, "y": 220 }, "type": "block" },
-            { "item": "viz_pii_detected", "position": { "h": 120, "w": 288, "x": 288, "y": 220 }, "type": "block" },
-            { "item": "viz_policy_blocked", "position": { "h": 120, "w": 288, "x": 576, "y": 220 }, "type": "block" },
-            { "item": "viz_guardrails_triggered", "position": { "h": 120, "w": 288, "x": 864, "y": 220 }, "type": "block" },
-            { "item": "viz_retries", "position": { "h": 120, "w": 288, "x": 1152, "y": 220 }, "type": "block" },
-            { "item": "viz_header_trends", "position": { "h": 50, "w": 1440, "x": 0, "y": 340 }, "type": "block" },
-            { "item": "viz_request_volume", "position": { "h": 280, "w": 720, "x": 0, "y": 390 }, "type": "block" },
-            { "item": "viz_token_usage_time", "position": { "h": 280, "w": 720, "x": 720, "y": 390 }, "type": "block" },
-            { "item": "viz_latency_distribution", "position": { "h": 280, "w": 720, "x": 0, "y": 670 }, "type": "block" },
-            { "item": "viz_latency_time", "position": { "h": 280, "w": 720, "x": 720, "y": 670 }, "type": "block" },
-            { "item": "viz_header_cost", "position": { "h": 50, "w": 1440, "x": 0, "y": 950 }, "type": "block" },
-            { "item": "viz_cost_time", "position": { "h": 280, "w": 720, "x": 0, "y": 1000 }, "type": "block" },
-            { "item": "viz_cost_by_service", "position": { "h": 280, "w": 720, "x": 720, "y": 1000 }, "type": "block" },
-            { "item": "viz_header_service", "position": { "h": 50, "w": 1440, "x": 0, "y": 1280 }, "type": "block" },
-            { "item": "viz_requests_by_service", "position": { "h": 280, "w": 720, "x": 0, "y": 1330 }, "type": "block" },
-            { "item": "viz_service_performance", "position": { "h": 280, "w": 720, "x": 720, "y": 1330 }, "type": "block" },
-            { "item": "viz_header_model", "position": { "h": 50, "w": 1440, "x": 0, "y": 1610 }, "type": "block" },
-            { "item": "viz_model_usage", "position": { "h": 280, "w": 1440, "x": 0, "y": 1660 }, "type": "block" },
-            { "item": "viz_header_session", "position": { "h": 50, "w": 1440, "x": 0, "y": 1940 }, "type": "block" },
-            { "item": "viz_session_activity", "position": { "h": 280, "w": 1440, "x": 0, "y": 1990 }, "type": "block" },
-            { "item": "viz_header_status", "position": { "h": 50, "w": 1440, "x": 0, "y": 2270 }, "type": "block" },
-            { "item": "viz_status_distribution", "position": { "h": 280, "w": 720, "x": 0, "y": 2320 }, "type": "block" },
-            { "item": "viz_errors_by_service", "position": { "h": 280, "w": 720, "x": 720, "y": 2320 }, "type": "block" },
-            { "item": "viz_header_logs", "position": { "h": 50, "w": 1440, "x": 0, "y": 2600 }, "type": "block" },
-            { "item": "viz_recent_requests", "position": { "h": 300, "w": 1440, "x": 0, "y": 2650 }, "type": "block" },
-            { "item": "viz_header_compliance", "position": { "h": 50, "w": 1440, "x": 0, "y": 2950 }, "type": "block" },
-            { "item": "viz_compliance_summary", "position": { "h": 180, "w": 1440, "x": 0, "y": 3000 }, "type": "block" },
-            { "item": "viz_ml_detection_summary", "position": { "h": 280, "w": 720, "x": 0, "y": 3180 }, "type": "block" },
-            { "item": "viz_genai_detection_summary", "position": { "h": 280, "w": 720, "x": 720, "y": 3180 }, "type": "block" }
+            { "item": "viz_header_kpi", "position": { "h": 50, "w": 1280, "x": 0, "y": 0 }, "type": "block" },
+            { "item": "viz_explainer_button", "position": { "h": 50, "w": 160, "x": 1280, "y": 0 }, "type": "block" },
+            { "item": "viz_header_latest_summary", "position": { "h": 50, "w": 1440, "x": 0, "y": 50 }, "type": "block" },
+            { "item": "viz_latest_explainer_summary", "position": { "h": 300, "w": 1440, "x": 0, "y": 100 }, "type": "block" },
+            { "item": "viz_total_requests", "position": { "h": 120, "w": 288, "x": 0, "y": 400 }, "type": "block" },
+            { "item": "viz_unique_sessions", "position": { "h": 120, "w": 288, "x": 288, "y": 400 }, "type": "block" },
+            { "item": "viz_total_tokens", "position": { "h": 120, "w": 288, "x": 576, "y": 400 }, "type": "block" },
+            { "item": "viz_total_cost", "position": { "h": 120, "w": 288, "x": 864, "y": 400 }, "type": "block" },
+            { "item": "viz_avg_latency", "position": { "h": 120, "w": 288, "x": 1152, "y": 400 }, "type": "block" },
+            { "item": "viz_header_safety", "position": { "h": 50, "w": 1440, "x": 0, "y": 520 }, "type": "block" },
+            { "item": "viz_safety_violations", "position": { "h": 120, "w": 288, "x": 0, "y": 570 }, "type": "block" },
+            { "item": "viz_pii_detected", "position": { "h": 120, "w": 288, "x": 288, "y": 570 }, "type": "block" },
+            { "item": "viz_policy_blocked", "position": { "h": 120, "w": 288, "x": 576, "y": 570 }, "type": "block" },
+            { "item": "viz_guardrails_triggered", "position": { "h": 120, "w": 288, "x": 864, "y": 570 }, "type": "block" },
+            { "item": "viz_retries", "position": { "h": 120, "w": 288, "x": 1152, "y": 570 }, "type": "block" },
+            { "item": "viz_header_trends", "position": { "h": 50, "w": 1440, "x": 0, "y": 690 }, "type": "block" },
+            { "item": "viz_request_volume", "position": { "h": 280, "w": 720, "x": 0, "y": 740 }, "type": "block" },
+            { "item": "viz_token_usage_time", "position": { "h": 280, "w": 720, "x": 720, "y": 740 }, "type": "block" },
+            { "item": "viz_latency_distribution", "position": { "h": 280, "w": 720, "x": 0, "y": 1020 }, "type": "block" },
+            { "item": "viz_latency_time", "position": { "h": 280, "w": 720, "x": 720, "y": 1020 }, "type": "block" },
+            { "item": "viz_header_cost", "position": { "h": 50, "w": 1440, "x": 0, "y": 1300 }, "type": "block" },
+            { "item": "viz_cost_time", "position": { "h": 280, "w": 720, "x": 0, "y": 1350 }, "type": "block" },
+            { "item": "viz_cost_by_service", "position": { "h": 280, "w": 720, "x": 720, "y": 1350 }, "type": "block" },
+            { "item": "viz_header_service", "position": { "h": 50, "w": 1440, "x": 0, "y": 1630 }, "type": "block" },
+            { "item": "viz_requests_by_service", "position": { "h": 280, "w": 720, "x": 0, "y": 1680 }, "type": "block" },
+            { "item": "viz_service_performance", "position": { "h": 280, "w": 720, "x": 720, "y": 1680 }, "type": "block" },
+            { "item": "viz_header_model", "position": { "h": 50, "w": 1440, "x": 0, "y": 1960 }, "type": "block" },
+            { "item": "viz_model_usage", "position": { "h": 280, "w": 1440, "x": 0, "y": 2010 }, "type": "block" },
+            { "item": "viz_header_session", "position": { "h": 50, "w": 1440, "x": 0, "y": 2290 }, "type": "block" },
+            { "item": "viz_session_activity", "position": { "h": 280, "w": 1440, "x": 0, "y": 2340 }, "type": "block" },
+            { "item": "viz_header_status", "position": { "h": 50, "w": 1440, "x": 0, "y": 2620 }, "type": "block" },
+            { "item": "viz_status_distribution", "position": { "h": 280, "w": 720, "x": 0, "y": 2670 }, "type": "block" },
+            { "item": "viz_errors_by_service", "position": { "h": 280, "w": 720, "x": 720, "y": 2670 }, "type": "block" },
+            { "item": "viz_header_logs", "position": { "h": 50, "w": 1440, "x": 0, "y": 2950 }, "type": "block" },
+            { "item": "viz_recent_requests", "position": { "h": 300, "w": 1440, "x": 0, "y": 3000 }, "type": "block" },
+            { "item": "viz_header_compliance", "position": { "h": 50, "w": 1440, "x": 0, "y": 3300 }, "type": "block" },
+            { "item": "viz_compliance_summary", "position": { "h": 180, "w": 1440, "x": 0, "y": 3350 }, "type": "block" },
+            { "item": "viz_ml_detection_summary", "position": { "h": 280, "w": 720, "x": 0, "y": 3530 }, "type": "block" },
+            { "item": "viz_genai_detection_summary", "position": { "h": 280, "w": 720, "x": 720, "y": 3530 }, "type": "block" }
         ]
     }
 }

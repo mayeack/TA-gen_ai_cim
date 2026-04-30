@@ -1,0 +1,75 @@
+TA-gen_ai_cim - bin/ scripts
+=============================
+
+This directory contains the Python and shell helpers shipped with the add-on.
+All Python scripts target Python 3.7+ and use Splunk's bundled interpreter.
+
+Custom search commands
+----------------------
+
+aicase.py
+    Custom streaming search command (`| aicase`) that creates or looks up
+    ServiceNow AI Case records linked to GenAI events. Defined in
+    `default/commands.conf`. Uses `passauth = splunk-system-user` (see below).
+
+genaiscore.py
+    Custom streaming search command (`| genaiscore pipeline=<name>`) that
+    enriches events with LLM-derived risk scores via Splunk AI Toolkit's
+    Connection Management. Defined in `default/commands.conf`. Uses
+    `passauth = splunk-system-user`.
+
+Setup / data-load helpers
+-------------------------
+
+create_snow_case.py
+    Internal helper used by `aicase.py` to create ServiceNow cases via the
+    ServiceNow REST API. Not invoked directly by users.
+
+ta_gen_ai_cim_account_handler.py
+    Custom REST handler (`admin_external` in `restmap.conf`) for the
+    ServiceNow account configuration page. Manages credentials in
+    `passwords.conf` via Splunk's storage/passwords endpoint.
+
+snow_setup.py
+    One-time bootstrap helper for ServiceNow integration setup
+    (creating tables, business rules, and import sets in a customer
+    ServiceNow instance).
+
+pull_snow_inventory.py
+    Modular-input style helper that pulls AI asset inventory from
+    ServiceNow into the `gen_ai_snow_case_map` KV store.
+
+sync_snow_asset.py
+    Periodic helper that reconciles Splunk-side asset records with
+    ServiceNow.
+
+load_pii_model.sh
+load_prompt_injection_model.sh
+    Convenience scripts that load the bundled MLTK models into Splunk
+    after installation. Safe to omit on Splunk Cloud where the customer
+    re-trains models from supplied training CSVs.
+
+
+Justification: passauth = splunk-system-user
+--------------------------------------------
+
+Both `aicase` and `genaiscore` declare `passauth = splunk-system-user` in
+`default/commands.conf`. This is required because the commands must:
+
+  1. Read the configured ServiceNow / LLM credential out of the Splunk
+     `storage/passwords` REST endpoint, which is restricted to system users.
+  2. Read or write to KV store collections (`gen_ai_snow_case_map`,
+     `gen_ai_review_findings`, `gen_ai_review_audit`) that hold operator
+     state across users.
+  3. Operate transparently when triggered by scheduled saved searches
+     (`ML - PII Detection Scoring`, `ML - Prompt Injection Scoring`, and
+     the GenAI scoring pipeline searches), where the dispatching role
+     varies by tenant.
+
+We considered narrower alternatives (`list_storage_passwords` capability
+on every consuming role, per-user OAuth) and rejected them because they
+either expanded user-visible privileges or required a per-customer auth
+flow that is not viable for unattended scheduled scoring.
+
+The commands do NOT execute arbitrary user input as code, do NOT shell
+out, and do NOT write files outside `$SPLUNK_HOME/var/log/splunk/`.

@@ -71,11 +71,6 @@ export = system
 access = read : [ power, admin ], write : [ admin ]
 export = system
 
-# ServiceNow setup configuration view
-[views/servicenow_setup]
-access = read : [ admin ], write : [ admin ]
-export = none
-
 # ServiceNow case redirect view
 [views/servicenow_case]
 access = read : [ * ], write : [ admin ]

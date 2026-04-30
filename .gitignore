@@ -28,6 +28,8 @@ Thumbs.db
 
 # Log files
 *.log
+# ...except sample event logs intentionally shipped for testing
+!samples/*.log
 
 # Planning documents (AI assistant collaboration)
 planning/
@@ -38,3 +40,6 @@ README/KEY_FEATURES.md
 # Environment files
 .env
 .env.*
+
+# Cursor MCP config (instance-specific, may contain credentials)
+.cursor/mcp.json

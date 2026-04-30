@@ -678,6 +678,28 @@ Edit scoring SPL to adjust risk thresholds:
 | eval gen_ai.prompt_injection.ml_detected=if('risk_score'>0.8, "true", "false")
 ```
 
+### Enabling Data Model Acceleration
+
+The TA ships with the `AI_Inference`, `AI_Safety`, and `AI_Evaluation` data
+models defined but **with acceleration disabled by default**. This is
+required by Splunk Cloud policy: a TA must not turn on acceleration on the
+customer's behalf because the storage and indexer cost is non-trivial.
+
+To enable acceleration after installation:
+
+1. In Splunk Web go to **Settings > Data models**.
+2. Select the data model (e.g. `AI_Inference`).
+3. Click **Edit > Edit Acceleration**.
+4. Check **Accelerate** and pick a summary range. The TA pre-populates
+   sensible defaults (`-30d` for `AI_Inference`, `-90d` for `AI_Safety` and
+   `AI_Evaluation`, with a 90-day max acceleration window).
+5. Click **Save**. Splunk will start building the summary index and the
+   `AI Overview`, `Cost Analysis`, and `Safety` dashboards will return
+   results faster as the summary fills in.
+
+For details, see the Splunk docs on
+[Accelerate data models](https://docs.splunk.com/Documentation/Splunk/latest/Knowledge/Acceleratedatamodels).
+
 ---
 
 ## Troubleshooting

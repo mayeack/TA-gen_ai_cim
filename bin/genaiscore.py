@@ -52,16 +52,27 @@ import time
 
 app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-debug_log_path = os.path.join(app_root, 'genaiscore_debug.log')
+# Splunk Cloud / AppInspect: app directory is read-only at runtime, so logs
+# must be written to $SPLUNK_HOME/var/log/splunk/. Fall back to a temp dir if
+# SPLUNK_HOME is not set (e.g., unit-test invocation outside Splunk).
+_splunk_home = os.environ.get('SPLUNK_HOME')
+if _splunk_home:
+    _log_dir = os.path.join(_splunk_home, 'var', 'log', 'splunk')
+else:
+    import tempfile
+    _log_dir = tempfile.gettempdir()
+
+try:
+    os.makedirs(_log_dir, exist_ok=True)
+except OSError:
+    pass
+
+debug_log_path = os.path.join(_log_dir, 'genaiscore.log')
 debug_logger = logging.getLogger('genaiscore_debug')
 debug_logger.setLevel(logging.DEBUG)
 _fh = logging.FileHandler(debug_log_path)
 _fh.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
 debug_logger.addHandler(_fh)
-try:
-    os.chmod(debug_log_path, 0o666)
-except OSError:
-    pass
 
 lib_path = os.path.join(app_root, 'lib')
 if lib_path not in sys.path:
@@ -391,6 +402,7 @@ class GenAIScoreCommand(StreamingCommand):
         """Make a direct HTTP call to the LLM provider and return the text response."""
         import urllib.request
         import urllib.error
+        import urllib.parse
 
         provider_upper = provider.strip().replace(' ', '')
         provider_lower = provider_upper.lower()
@@ -486,8 +498,23 @@ class GenAIScoreCommand(StreamingCommand):
             req.add_header(k, v)
 
         ctx = ssl.create_default_context()
-        if provider_lower == 'ollama' and (
-                'localhost' in url or '127.0.0.1' in url):
+        # AppInspect / security note:
+        # Default to full TLS verification for all providers. The ONLY
+        # exception is local Ollama development (loopback hostnames), where
+        # users typically run with self-signed or no certificates. The
+        # exception is gated by:
+        #   1. provider must be "ollama"
+        #   2. URL scheme must be http or https
+        #   3. URL hostname must be exactly "localhost", "127.0.0.1", or "::1"
+        # parsed via urllib.parse so substring matches in path/query cannot
+        # bypass the guard.
+        try:
+            _parsed = urllib.parse.urlparse(url)
+            _host = (_parsed.hostname or '').lower()
+        except (ValueError, AttributeError):
+            _host = ''
+        _loopback_hosts = {'localhost', '127.0.0.1', '::1'}
+        if provider_lower == 'ollama' and _host in _loopback_hosts:
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
 
