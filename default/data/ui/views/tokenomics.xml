@@ -1,0 +1,539 @@
+
+<dashboard version="2" theme="dark">
+    <label>Tokenomics</label>
+    <description>Token usage, cost attribution, and spend efficiency across providers, models, apps, and users. Reuses the genai_token_cost KV store for time-versioned pricing.</description>
+    <definition><![CDATA[
+{
+    "title": "Tokenomics",
+    "description": "Token usage, cost attribution, and spend efficiency across providers, models, apps, and users. Reuses the genai_token_cost KV store for time-versioned pricing.",
+    "inputs": {
+        "input_model": {
+            "context": {
+                "formattedConfig": { "number": { "prefix": "" } },
+                "formattedStatics": ">statics | formatByType(formattedConfig)",
+                "label": ">primary | seriesByName(\"model_id\") | renameSeries(\"label\") | formatByType(formattedConfig)",
+                "statics": [["All Models"], ["*"]],
+                "value": ">primary | seriesByName(\"model_id\") | renameSeries(\"value\") | formatByType(formattedConfig)"
+            },
+            "dataSources": {
+                "primary": "ds_model_filter"
+            },
+            "options": {
+                "defaultValue": "*",
+                "items": ">frame(label, value) | prepend(formattedStatics) | objects()",
+                "token": "model_filter"
+            },
+            "title": "Model ID",
+            "type": "input.dropdown"
+        },
+        "input_service": {
+            "context": {
+                "formattedConfig": { "number": { "prefix": "" } },
+                "formattedStatics": ">statics | formatByType(formattedConfig)",
+                "label": ">primary | seriesByName(\"app_name\") | renameSeries(\"label\") | formatByType(formattedConfig)",
+                "statics": [["All Apps"], ["*"]],
+                "value": ">primary | seriesByName(\"app_name\") | renameSeries(\"value\") | formatByType(formattedConfig)"
+            },
+            "dataSources": {
+                "primary": "ds_service_filter"
+            },
+            "options": {
+                "defaultValue": "*",
+                "items": ">frame(label, value) | prepend(formattedStatics) | objects()",
+                "token": "service_filter"
+            },
+            "title": "App Name",
+            "type": "input.dropdown"
+        },
+        "input_time": {
+            "options": {
+                "defaultValue": "-24h@h,now",
+                "token": "time"
+            },
+            "title": "Time Range",
+            "type": "input.timerange"
+        }
+    },
+    "defaults": {
+        "dataSources": {
+            "ds.search": {
+                "options": {
+                    "queryParameters": {
+                        "earliest": "-24h@h",
+                        "latest": "now"
+                    }
+                }
+            }
+        }
+    },
+    "visualizations": {
+        "viz_header_kpi": {
+            "options": { "fontColor": "#ffffff", "markdown": "## Key Tokenomics KPIs" },
+            "type": "splunk.markdown"
+        },
+        "viz_header_trend": {
+            "options": { "fontColor": "#ffffff", "markdown": "## Spend & Volume Trend" },
+            "type": "splunk.markdown"
+        },
+        "viz_header_attribution": {
+            "options": { "fontColor": "#ffffff", "markdown": "## Cost Attribution" },
+            "type": "splunk.markdown"
+        },
+        "viz_header_efficiency": {
+            "options": { "fontColor": "#ffffff", "markdown": "## Efficiency (Cost per Unit of Work)" },
+            "type": "splunk.markdown"
+        },
+        "viz_header_top_spenders": {
+            "options": { "fontColor": "#ffffff", "markdown": "## Top Spenders" },
+            "type": "splunk.markdown"
+        },
+        "viz_header_anomalies": {
+            "options": { "fontColor": "#ffffff", "markdown": "## Anomalies & Forecast" },
+            "type": "splunk.markdown"
+        },
+
+        "viz_total_cost": {
+            "dataSources": { "primary": "ds_total_cost" },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#f7bc38",
+                "numberPrecision": 4,
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "$",
+                "unitPosition": "before"
+            },
+            "title": "Total Cost",
+            "type": "splunk.singlevalue"
+        },
+        "viz_total_tokens": {
+            "dataSources": { "primary": "ds_total_tokens" },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#6ab7c7",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Total Tokens",
+            "type": "splunk.singlevalue"
+        },
+        "viz_total_requests": {
+            "dataSources": { "primary": "ds_total_requests" },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#53a051",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Total Requests",
+            "type": "splunk.singlevalue"
+        },
+        "viz_avg_cost_per_request": {
+            "dataSources": { "primary": "ds_avg_cost_per_request" },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#f7bc38",
+                "numberPrecision": 6,
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "$",
+                "unitPosition": "before"
+            },
+            "title": "Avg Cost / Request",
+            "type": "splunk.singlevalue"
+        },
+        "viz_avg_tokens_per_request": {
+            "dataSources": { "primary": "ds_avg_tokens_per_request" },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#6ab7c7",
+                "numberPrecision": 0,
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            },
+            "title": "Avg Tokens / Request",
+            "type": "splunk.singlevalue"
+        },
+        "viz_output_input_ratio": {
+            "dataSources": { "primary": "ds_output_input_ratio" },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    { "to": 1, "value": "#53a051" },
+                    { "from": 1, "to": 3, "value": "#f8be34" },
+                    { "from": 3, "value": "#dc4e41" }
+                ],
+                "numberPrecision": 2,
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "x",
+                "unitPosition": "after"
+            },
+            "title": "Output : Input Ratio",
+            "type": "splunk.singlevalue"
+        },
+
+        "viz_cost_time": {
+            "dataSources": { "primary": "ds_cost_time" },
+            "options": {
+                "seriesColors": ["#f7bc38"],
+                "xAxisTitleText": "Time",
+                "yAxisTitleText": "Cost ($)"
+            },
+            "title": "Cost Over Time",
+            "type": "splunk.area"
+        },
+        "viz_tokens_time_stacked": {
+            "dataSources": { "primary": "ds_tokens_time_stacked" },
+            "options": {
+                "legendDisplay": "bottom",
+                "seriesColors": ["#6ab7c7", "#f1813f"],
+                "stackMode": "stacked",
+                "xAxisTitleText": "Time",
+                "yAxisTitleText": "Tokens"
+            },
+            "title": "Tokens Over Time (Input vs Output, Stacked)",
+            "type": "splunk.area"
+        },
+
+        "viz_cost_by_provider": {
+            "dataSources": { "primary": "ds_cost_by_provider" },
+            "options": { "labelDisplay": "valuesAndPercentage", "showDonutHole": true },
+            "title": "Cost by Provider",
+            "type": "splunk.pie"
+        },
+        "viz_cost_by_app": {
+            "dataSources": { "primary": "ds_cost_by_app" },
+            "options": { "labelDisplay": "valuesAndPercentage", "showDonutHole": true },
+            "title": "Cost by App",
+            "type": "splunk.pie"
+        },
+        "viz_cost_by_model": {
+            "dataSources": { "primary": "ds_cost_by_model" },
+            "options": {
+                "seriesColors": ["#f7bc38"],
+                "xAxisTitleText": "Cost ($)",
+                "yAxisTitleText": "Model"
+            },
+            "title": "Cost by Model (Top 15)",
+            "type": "splunk.bar"
+        },
+        "viz_cost_by_user": {
+            "dataSources": { "primary": "ds_cost_by_user" },
+            "options": { "count": 25 },
+            "title": "Cost by User (Top 25)",
+            "type": "splunk.table"
+        },
+
+        "viz_eff_cost_per_1k_tokens": {
+            "dataSources": { "primary": "ds_eff_cost_per_1k_tokens" },
+            "options": {
+                "seriesColors": ["#f7bc38"],
+                "xAxisTitleText": "Model",
+                "yAxisTitleText": "Cost per 1K tokens ($)"
+            },
+            "title": "Effective Cost per 1K Tokens by Model",
+            "type": "splunk.column"
+        },
+        "viz_tokens_per_second": {
+            "dataSources": { "primary": "ds_tokens_per_second" },
+            "options": {
+                "seriesColors": ["#6ab7c7"],
+                "xAxisTitleText": "Model",
+                "yAxisTitleText": "Tokens / sec"
+            },
+            "title": "Tokens per Second by Model",
+            "type": "splunk.column"
+        },
+        "viz_output_input_ratio_by_model": {
+            "dataSources": { "primary": "ds_output_input_ratio_by_model" },
+            "options": {
+                "seriesColors": ["#f1813f"],
+                "xAxisTitleText": "Model",
+                "yAxisTitleText": "Output : Input"
+            },
+            "title": "Output : Input Ratio by Model",
+            "type": "splunk.column"
+        },
+
+        "viz_top_sessions": {
+            "dataSources": { "primary": "ds_top_sessions" },
+            "options": { "count": 10 },
+            "title": "Top 10 Sessions by Cost",
+            "type": "splunk.table"
+        },
+        "viz_top_conversations": {
+            "dataSources": { "primary": "ds_top_conversations" },
+            "options": { "count": 10 },
+            "title": "Top 10 Conversations by Cost",
+            "type": "splunk.table"
+        },
+        "viz_top_users": {
+            "dataSources": { "primary": "ds_top_users" },
+            "options": { "count": 10 },
+            "title": "Top 10 Users by Cost",
+            "type": "splunk.table"
+        },
+
+        "viz_cost_vs_baseline": {
+            "dataSources": { "primary": "ds_cost_vs_baseline" },
+            "options": {
+                "legendDisplay": "bottom",
+                "seriesColors": ["#f7bc38", "#6ab7c7"],
+                "xAxisTitleText": "Time",
+                "yAxisTitleText": "Cost ($)"
+            },
+            "title": "Hourly Cost vs Rolling 24h Baseline",
+            "type": "splunk.line"
+        },
+        "viz_projected_30d_spend": {
+            "dataSources": { "primary": "ds_projected_30d_spend" },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    { "to": 1000, "value": "#53a051" },
+                    { "from": 1000, "to": 10000, "value": "#f8be34" },
+                    { "from": 10000, "value": "#dc4e41" }
+                ],
+                "numberPrecision": 2,
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "$",
+                "unitPosition": "before"
+            },
+            "title": "Projected 30-Day Spend",
+            "type": "splunk.singlevalue"
+        },
+        "viz_unattributed_cost": {
+            "dataSources": { "primary": "ds_unattributed_cost" },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+                "majorColorEditorConfig": [
+                    { "to": 0.01, "value": "#53a051" },
+                    { "from": 0.01, "to": 100, "value": "#f8be34" },
+                    { "from": 100, "value": "#dc4e41" }
+                ],
+                "numberPrecision": 4,
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "unit": "$",
+                "unitPosition": "before"
+            },
+            "title": "Unattributed Cost (no gen_ai.user.id)",
+            "type": "splunk.singlevalue"
+        }
+    },
+    "dataSources": {
+        "ds_model_filter": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` | stats count by gen_ai.request.model | rename gen_ai.request.model as model_id | fields model_id",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_service_filter": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` | stats count by gen_ai.app.name | rename gen_ai.app.name as app_name | fields app_name",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+
+        "ds_total_cost": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(event_cost) as total_cost | eval total_cost=round(coalesce(total_cost, 0), 4)",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_total_tokens": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(gen_ai.usage.total_tokens) as total_tokens | eval total_tokens=coalesce(total_tokens, 0)",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_total_requests": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as total_requests",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_avg_cost_per_request": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(event_cost) as total_cost, count as total_requests | eval avg_cost_per_request=if(total_requests>0, round(total_cost/total_requests, 6), 0) | fields avg_cost_per_request",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_avg_tokens_per_request": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(gen_ai.usage.total_tokens) as total_tokens, count as total_requests | eval avg_tokens=if(total_requests>0, round(total_tokens/total_requests, 0), 0) | fields avg_tokens",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_output_input_ratio": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(gen_ai.usage.input_tokens) as input_tokens, sum(gen_ai.usage.output_tokens) as output_tokens | eval ratio=if(input_tokens>0, round(output_tokens/input_tokens, 2), 0) | fields ratio",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+
+        "ds_cost_time": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | timechart span=1h sum(event_cost) as total_cost",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_tokens_time_stacked": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | timechart span=1h sum(gen_ai.usage.input_tokens) as input_tokens, sum(gen_ai.usage.output_tokens) as output_tokens",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+
+        "ds_cost_by_provider": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | eval provider=coalesce('gen_ai.provider.name', \"unknown\") | stats sum(event_cost) as total_cost by provider | sort -total_cost",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_cost_by_app": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(event_cost) as total_cost by gen_ai.app.name | sort -total_cost",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_cost_by_model": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(event_cost) as total_cost by gen_ai.request.model | sort -total_cost | head 15 | rename gen_ai.request.model as model",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_cost_by_user": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | eval user_id=coalesce('gen_ai.user.id', \"(unattributed)\") | stats sum(event_cost) as Cost_USD, sum(gen_ai.usage.total_tokens) as Total_Tokens, count as Requests by user_id | eval Cost_USD=round(coalesce(Cost_USD, 0), 4) | eval Total_Tokens=coalesce(Total_Tokens, 0) | rename user_id as User | sort -Cost_USD | head 25",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+
+        "ds_eff_cost_per_1k_tokens": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(event_cost) as total_cost, sum(gen_ai.usage.total_tokens) as total_tokens by gen_ai.request.model | eval cost_per_1k=if(total_tokens>0, round((total_cost/total_tokens)*1000, 6), 0) | sort -cost_per_1k | head 15 | rename gen_ai.request.model as model | fields model, cost_per_1k",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_tokens_per_second": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.client.operation.duration=* | stats sum(gen_ai.usage.total_tokens) as total_tokens, sum(gen_ai.client.operation.duration) as total_seconds by gen_ai.request.model | eval tokens_per_sec=if(total_seconds>0, round(total_tokens/total_seconds, 1), 0) | sort -tokens_per_sec | head 15 | rename gen_ai.request.model as model | fields model, tokens_per_sec",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_output_input_ratio_by_model": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(gen_ai.usage.input_tokens) as input_tokens, sum(gen_ai.usage.output_tokens) as output_tokens by gen_ai.request.model | eval ratio=if(input_tokens>0, round(output_tokens/input_tokens, 2), 0) | sort -ratio | head 15 | rename gen_ai.request.model as model | fields model, ratio",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+
+        "ds_top_sessions": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Requests, sum(gen_ai.usage.total_tokens) as Tokens, sum(event_cost) as Cost_USD, min(_time) as start_t, max(_time) as end_t by gen_ai.session.id | eval Start=strftime(start_t, \"%Y-%m-%d %H:%M:%S\"), End=strftime(end_t, \"%Y-%m-%d %H:%M:%S\") | eval Cost_USD=round(coalesce(Cost_USD, 0), 4) | eval Tokens=coalesce(Tokens, 0) | rename gen_ai.session.id as Session_ID | fields Session_ID, Requests, Tokens, Cost_USD, Start, End | sort -Cost_USD | head 10",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_top_conversations": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" gen_ai.conversation.id=* | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats count as Requests, sum(gen_ai.usage.total_tokens) as Tokens, sum(event_cost) as Cost_USD by gen_ai.conversation.id | eval Cost_USD=round(coalesce(Cost_USD, 0), 4) | eval Tokens=coalesce(Tokens, 0) | rename gen_ai.conversation.id as Conversation_ID | fields Conversation_ID, Requests, Tokens, Cost_USD | sort -Cost_USD | head 10",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_top_users": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | eval user_id=coalesce('gen_ai.user.id', \"(unattributed)\") | stats count as Requests, sum(gen_ai.usage.total_tokens) as Tokens, sum(event_cost) as Cost_USD by user_id | eval Cost_USD=round(coalesce(Cost_USD, 0), 4) | eval Tokens=coalesce(Tokens, 0) | rename user_id as User | fields User, Requests, Tokens, Cost_USD | sort -Cost_USD | head 10",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+
+        "ds_cost_vs_baseline": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | timechart span=1h sum(event_cost) as hourly_cost | streamstats window=24 avg(hourly_cost) as baseline_24h | eval baseline_24h=round(coalesce(baseline_24h, 0), 6) | eval hourly_cost=round(coalesce(hourly_cost, 0), 6)",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_projected_30d_spend": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | stats sum(event_cost) as window_cost, min(_time) as t_start, max(_time) as t_end | eval window_seconds=if(t_end>t_start, t_end-t_start, 1) | eval projected_30d=round((window_cost/window_seconds)*86400*30, 2) | eval projected_30d=coalesce(projected_30d, 0) | fields projected_30d",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        },
+        "ds_unattributed_cost": {
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _input_dir=\"input\", _output_dir=\"output\" | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _input_dir OUTPUT cost_per_million AS _input_cpm | lookup genai_token_cost_lookup provider AS gen_ai.provider.name, model AS gen_ai.request.model, direction AS _output_dir OUTPUT cost_per_million AS _output_cpm | eval event_cost = (coalesce('gen_ai.usage.input_tokens', 0) * coalesce(_input_cpm, 0) / 1000000) + (coalesce('gen_ai.usage.output_tokens', 0) * coalesce(_output_cpm, 0) / 1000000) | where isnull('gen_ai.user.id') OR 'gen_ai.user.id'=\"\" | stats sum(event_cost) as unattributed_cost | eval unattributed_cost=round(coalesce(unattributed_cost, 0), 4)",
+                "queryParameters": { "earliest": "$time.earliest$", "latest": "$time.latest$" }
+            },
+            "type": "ds.search"
+        }
+    },
+    "layout": {
+        "globalInputs": ["input_time", "input_service", "input_model"],
+        "options": { "showTitleAndDescription": true, "height": 2270, "width": 1440 },
+        "type": "grid",
+        "structure": [
+            { "item": "viz_header_kpi", "position": { "h": 50, "w": 1440, "x": 0, "y": 0 }, "type": "block" },
+            { "item": "viz_total_cost", "position": { "h": 120, "w": 240, "x": 0, "y": 50 }, "type": "block" },
+            { "item": "viz_total_tokens", "position": { "h": 120, "w": 240, "x": 240, "y": 50 }, "type": "block" },
+            { "item": "viz_total_requests", "position": { "h": 120, "w": 240, "x": 480, "y": 50 }, "type": "block" },
+            { "item": "viz_avg_cost_per_request", "position": { "h": 120, "w": 240, "x": 720, "y": 50 }, "type": "block" },
+            { "item": "viz_avg_tokens_per_request", "position": { "h": 120, "w": 240, "x": 960, "y": 50 }, "type": "block" },
+            { "item": "viz_output_input_ratio", "position": { "h": 120, "w": 240, "x": 1200, "y": 50 }, "type": "block" },
+
+            { "item": "viz_header_trend", "position": { "h": 50, "w": 1440, "x": 0, "y": 170 }, "type": "block" },
+            { "item": "viz_cost_time", "position": { "h": 280, "w": 720, "x": 0, "y": 220 }, "type": "block" },
+            { "item": "viz_tokens_time_stacked", "position": { "h": 280, "w": 720, "x": 720, "y": 220 }, "type": "block" },
+
+            { "item": "viz_header_attribution", "position": { "h": 50, "w": 1440, "x": 0, "y": 500 }, "type": "block" },
+            { "item": "viz_cost_by_provider", "position": { "h": 280, "w": 480, "x": 0, "y": 550 }, "type": "block" },
+            { "item": "viz_cost_by_app", "position": { "h": 280, "w": 480, "x": 480, "y": 550 }, "type": "block" },
+            { "item": "viz_cost_by_model", "position": { "h": 280, "w": 480, "x": 960, "y": 550 }, "type": "block" },
+            { "item": "viz_cost_by_user", "position": { "h": 280, "w": 1440, "x": 0, "y": 830 }, "type": "block" },
+
+            { "item": "viz_header_efficiency", "position": { "h": 50, "w": 1440, "x": 0, "y": 1110 }, "type": "block" },
+            { "item": "viz_eff_cost_per_1k_tokens", "position": { "h": 280, "w": 480, "x": 0, "y": 1160 }, "type": "block" },
+            { "item": "viz_tokens_per_second", "position": { "h": 280, "w": 480, "x": 480, "y": 1160 }, "type": "block" },
+            { "item": "viz_output_input_ratio_by_model", "position": { "h": 280, "w": 480, "x": 960, "y": 1160 }, "type": "block" },
+
+            { "item": "viz_header_top_spenders", "position": { "h": 50, "w": 1440, "x": 0, "y": 1440 }, "type": "block" },
+            { "item": "viz_top_sessions", "position": { "h": 280, "w": 480, "x": 0, "y": 1490 }, "type": "block" },
+            { "item": "viz_top_conversations", "position": { "h": 280, "w": 480, "x": 480, "y": 1490 }, "type": "block" },
+            { "item": "viz_top_users", "position": { "h": 280, "w": 480, "x": 960, "y": 1490 }, "type": "block" },
+
+            { "item": "viz_header_anomalies", "position": { "h": 50, "w": 1440, "x": 0, "y": 1770 }, "type": "block" },
+            { "item": "viz_cost_vs_baseline", "position": { "h": 280, "w": 1440, "x": 0, "y": 1820 }, "type": "block" },
+            { "item": "viz_projected_30d_spend", "position": { "h": 150, "w": 720, "x": 0, "y": 2100 }, "type": "block" },
+            { "item": "viz_unattributed_cost", "position": { "h": 150, "w": 720, "x": 720, "y": 2100 }, "type": "block" }
+        ]
+    }
+}
+]]></definition>
+</dashboard>

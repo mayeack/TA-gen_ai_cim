@@ -3,8 +3,9 @@
 ## Pre-Deployment Checklist
 
 - [ ] Splunk Enterprise 9.0+ or Splunk Cloud
-- [ ] Splunk AI Toolkit installed (for ML models)
-- [ ] User performing setup has the **`mltk_admin`** role (required for ML model training and management)
+- [ ] Splunk AI Toolkit installed (for ML models **and** the LLM Connections UI)
+- [ ] **Python for Scientific Computing (PSC)** installed — the build matching your host's **OS + CPU architecture** (Apple Silicon = `Splunk_SA_Scientific_Python_darwin_arm64`, [Splunkbase app 6785](https://splunkbase.splunk.com/app/6785); Linux x86-64 = [app 2882](https://splunkbase.splunk.com/app/2882); Mac Intel = [app 2881](https://splunkbase.splunk.com/app/2881)). The AI Toolkit loads `Splunk_SA_Scientific_Python_<platform>`; without it the Connections UI **and** ML engine fail. Restart Splunk after installing.
+- [ ] User performing setup has the **`mltk_admin`** role — required for ML training **and** to create LLM connections (`edit_ai_commander_config` + `edit_storage_passwords`). A plain `admin` role is **not** sufficient to create connections.
 - [ ] SSL CA certificate bundle configured for outbound HTTPS (see [SSL Certificate Setup](#ssl-certificate-setup-for-outbound-https) below)
 - [ ] Default LLM connection configured in Splunk AI Toolkit (**Apps > Splunk AI Toolkit > Connection Management**) for generative AI capabilities
 - [ ] AI telemetry flowing into Splunk indexes
@@ -149,7 +150,14 @@ cp /etc/ssl/certs/ca-certificates.crt $SPLUNK_HOME/openssl/cert.pem
 
 ### Corporate TLS Inspection Proxies (Cisco Secure Access, Zscaler, etc.)
 
-If your network uses a TLS inspection proxy, the system CA bundle alone may not suffice. You must also append the proxy's root CA certificate:
+**Detect it first.** Inspect the certificate chain the LLM host presents — if the issuer is your proxy vendor (e.g. *Cisco Secure Access*, *Zscaler*) instead of a public CA, an inspection proxy is in the path:
+```bash
+echo | openssl s_client -connect api.anthropic.com:443 -servername api.anthropic.com -showcerts 2>/dev/null \
+  | grep -E '^ *[0-9]+ s:|^ *[0-9]+ i:'
+# e.g.  i:O=Cisco, CN=Cisco Secure Access ... SubCA   => proxy is intercepting
+```
+
+If your network uses a TLS inspection proxy, the system CA bundle alone will **not** suffice — Splunk rejects the proxy-issued cert with `CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate`. You must also append the proxy's root CA certificate:
 
 1. Find the proxy root CA in the system trust store:
    ```bash
@@ -197,7 +205,7 @@ After confirming connectivity, enable certificate verification in Splunk:
    $SPLUNK_HOME/bin/splunk restart
    ```
 
-> **Note:** The CA bundle file is not managed by Splunk and will not be updated automatically. After OS certificate updates or proxy CA rotations, re-copy the bundle to keep it current.
+> **Note:** These CA bundles are not managed by Splunk and will not be updated automatically. After OS certificate updates or proxy CA rotations, re-copy the bundle. **Upgrading PSC replaces its bundled `certifi/cacert.pem`**, dropping any proxy root you appended there — re-append it after every PSC upgrade. For a more durable setup, point Python's HTTP client at the single managed bundle by adding `REQUESTS_CA_BUNDLE=$SPLUNK_HOME/openssl/cert.pem` to `$SPLUNK_HOME/etc/splunk-launch.conf` (then restart), and maintain only `openssl/cert.pem`.
 
 ---
 
@@ -220,6 +228,21 @@ After confirming connectivity, enable certificate verification in Splunk:
 - Configure SMTP in Splunk: `Settings > System Settings > Email Settings`
 - Update `action.email.to` in savedsearches.conf
 - Test: `| sendemail to="test@example.com" subject="Test"`
+
+### Issue: AI Toolkit Connections page is blank, shows "No providers found", or `fit`/`apply` fail
+**Resolution:** All three share one cause — **Python for Scientific Computing (PSC) is missing or the wrong platform build is installed.** The connection-management backend and the ML engine both require PSC.
+- Confirm the matching build exists: `ls $SPLUNK_HOME/etc/apps | grep Scientific_Python`
+- The name must match your OS + CPU arch (Apple Silicon → `Splunk_SA_Scientific_Python_darwin_arm64`, app 6785; Linux x86-64 → app 2882; Mac Intel → app 2881)
+- Look for `Failed to find Python for Scientific Computing Add-on (Splunk_SA_Scientific_Python_<platform>)` in `index=_internal source=*mlspl.log`
+- Install the correct PSC package, then **restart Splunk**
+
+### Issue: LLM connection test fails "Unable to connect" but TLS/cert config is correct (macOS / EDR)
+**Resolution:** The connection test shells out to the **PSC Python interpreter binary** (`Splunk_SA_Scientific_Python_<platform>/bin/<arch>/<ver>/bin/python`); a `json.JSONDecodeError` from `py_executable_bouncer.py` in `splunkd.log`/`mlspl.log` points here, not the network. ML `fit` loads PSC libraries in-process and does **not** use this binary, so `fit` can pass while the connection test fails. On macOS:
+- **Missing binary:** `tar` can silently drop the ~6 MB `python` (only `python3-config` remains). Re-extract just that file from the PSC package — not the whole app, which would wipe any proxy CA appended to PSC's certifi.
+- **Quarantine:** endpoint security (e.g. **Cisco Secure Endpoint / AMP**) or Gatekeeper deletes the freshly extracted, `com.apple.quarantine`-tagged binary on first `exec`. Clear it: `xattr -dr com.apple.quarantine "$SPLUNK_HOME/etc/apps/Splunk_SA_Scientific_Python_darwin_arm64"`.
+- No Splunk restart needed (the interpreter is spawned per test). **Re-apply both after any PSC reinstall/upgrade.**
+
+> The AI Toolkit's LLM calls use `httpx`+`litellm` with `httpx.Client(verify=True)`, which verifies against **`certifi`** and ignores `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`. Behind a TLS-inspection proxy the proxy root must be in the **certifi `cacert.pem` bundles** (core python and PSC), not only `openssl/cert.pem`.
 
 ### Issue: ML models fail to train
 **Resolution:**

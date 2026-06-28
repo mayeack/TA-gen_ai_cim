@@ -49,6 +49,7 @@ import re
 import ssl
 import logging
 import time
+from datetime import datetime, timezone
 
 app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -825,22 +826,34 @@ class GenAIScoreCommand(StreamingCommand):
         Only includes the required context fields from the original event,
         the dynamic scoring fields, and pipeline metadata.  The full event
         is sent to the LLM separately via _build_event_json.
+
+        ``timestamp`` is always re-emitted as an explicit-UTC ISO 8601
+        string (``YYYY-MM-DDTHH:MM:SS.ffffffZ``) derived from the
+        record's ``_time``.  The source event's ``timestamp`` field is
+        deliberately ignored here because upstream producers commonly
+        ship UTC values without a TZ marker; if such a naïve string is
+        re-indexed by the ``[genai_scoring]`` sourcetype (which has no
+        explicit ``TIME_FORMAT`` / ``TZ``), Splunk interprets the value
+        as local time and places ``_time`` hours away from the original
+        event.  Emitting an explicit ``Z`` suffix prevents that.
         """
         output = {}
 
         for field in GenAIScoreCommand._CONTEXT_FIELDS:
+            if field == 'timestamp':
+                continue
             val = GenAIScoreCommand._resolve_scalar(record.get(field))
             if val is not None:
                 output[field] = val
 
-        if 'timestamp' not in output:
-            _time = record.get('_time')
-            if _time is not None:
-                try:
-                    output['timestamp'] = time.strftime(
-                        '%Y-%m-%dT%H:%M:%S', time.localtime(float(_time)))
-                except (ValueError, TypeError, OSError):
-                    pass
+        _time = record.get('_time')
+        if _time is not None:
+            try:
+                output['timestamp'] = datetime.fromtimestamp(
+                    float(_time), tz=timezone.utc
+                ).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+            except (ValueError, TypeError, OSError, OverflowError):
+                pass
 
         output['source'] = '{}_genai_scoring'.format(pipeline_name)
 

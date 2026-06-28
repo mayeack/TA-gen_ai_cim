@@ -17,10 +17,21 @@ Get TA-gen_ai_cim up and running in 10 minutes.
 
 | Component | Version | Splunkbase | Notes |
 |-----------|---------|------------|-------|
-| **Splunk AI Toolkit** | Latest | [Download](https://splunkbase.splunk.com/app/6842) | Required for PII detection, prompt injection, TF-IDF anomaly, and AI-powered case summaries |
-| **Python for Scientific Computing** | Latest | [Download](https://splunkbase.splunk.com/app/2882) | Required by Splunk AI Toolkit |
+| **Splunk AI Toolkit** | Latest | [app 6842](https://splunkbase.splunk.com/app/6842) | Required for PII detection, prompt injection, TF-IDF anomaly, AI-powered case summaries, **and the LLM Connections UI** |
+| **Python for Scientific Computing (PSC)** | Latest | platform-specific ↓ | **Required** by the AI Toolkit. Must match your Splunk host's **OS + CPU architecture** |
 
-> **Role Requirement:** The user performing ML setup must have the **`mltk_admin`** role in Splunk. This role is provided by the Splunk AI Toolkit and grants permission to train, manage, and deploy ML models.
+**Pick the PSC build that matches your platform** — the AI Toolkit loads `Splunk_SA_Scientific_Python_<platform>` and its Connections UI *and* ML engine fail if the matching build is absent:
+
+| Platform | Splunkbase |
+|----------|------------|
+| Linux x86-64 | [app 2882](https://splunkbase.splunk.com/app/2882) |
+| macOS Apple Silicon (arm64) | [app 6785](https://splunkbase.splunk.com/app/6785) |
+| macOS Intel (x86-64) | [app 2881](https://splunkbase.splunk.com/app/2881) |
+| Windows x86-64 | search Splunkbase: "Python for Scientific Computing for Windows" |
+
+After installing PSC, **restart Splunk**, then verify it is present: `ls $SPLUNK_HOME/etc/apps | grep Scientific_Python`.
+
+> **Role Requirement:** The user must have the **`mltk_admin`** role (provided by the AI Toolkit). It grants ML training/management **and** the `edit_ai_commander_config` + `edit_storage_passwords` capabilities required to **create LLM connections**. A plain `admin` role is **not** sufficient to create connections — also assign `mltk_admin` (or `sc_admin` / `mltk_model_admin`).
 
 > **LLM Connection:** To use generative AI capabilities (e.g., AI-powered case summaries via the `| ai` command), configure a **default LLM connection** in the Splunk AI Toolkit under **Apps > Splunk AI Toolkit > Connection Management**.
 
@@ -234,7 +245,64 @@ cp /etc/pki/tls/certs/ca-bundle.crt $SPLUNK_HOME/openssl/cert.pem
 cp /etc/ssl/certs/ca-certificates.crt $SPLUNK_HOME/openssl/cert.pem
 ```
 
-If behind a corporate TLS inspection proxy (Cisco Secure Access, Zscaler, etc.), you must also append the proxy's root CA to this file. See [DEPLOYMENT_GUIDE.md](README/DEPLOYMENT_GUIDE.md#ssl-certificate-setup-for-outbound-https) for full instructions.
+If behind a corporate TLS inspection proxy (Cisco Secure Access, Zscaler, etc.), the system CA bundle alone is **not** enough — Splunk will reject the proxy-issued cert with `CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate`. Detect it by inspecting the chain the LLM host presents (proxy issuer instead of a public CA):
+
+```bash
+echo | openssl s_client -connect api.anthropic.com:443 -servername api.anthropic.com -showcerts 2>/dev/null \
+  | grep -E '^ *[0-9]+ s:|^ *[0-9]+ i:'   # issuer "Cisco Secure Access"/"Zscaler" => proxy in path
+```
+
+Then append the proxy's **root CA** to **both** bundles — the AI Toolkit's Python HTTP client verifies against PSC's `certifi`, not only `openssl/cert.pem`:
+
+```bash
+# 1) Splunk's openssl bundle
+security find-certificate -a -c "Cisco Secure Access Root CA" -p /Library/Keychains/System.keychain >> $SPLUNK_HOME/openssl/cert.pem
+# 2) PSC certifi bundle (the one the AI Toolkit actually uses)
+PSC_CERTIFI=$(find $SPLUNK_HOME/etc/apps/Splunk_SA_Scientific_Python_*/bin/*/lib/python*/site-packages/certifi/cacert.pem 2>/dev/null | head -1)
+security find-certificate -a -c "Cisco Secure Access Root CA" -p /Library/Keychains/System.keychain >> "$PSC_CERTIFI"
+```
+
+See [DEPLOYMENT_GUIDE.md](README/DEPLOYMENT_GUIDE.md#ssl-certificate-setup-for-outbound-https) for full instructions and non-macOS sources.
+
+### AI Toolkit Connections Page Is Blank, "No providers found", or `fit` Fails
+
+These three are the **same root cause: Python for Scientific Computing (PSC) is missing, or the wrong platform build is installed.** The AI Toolkit's connection-management backend *and* its ML engine both require PSC.
+
+Symptoms:
+- The **Connection settings** section of the *Custom/Anthropic LLM connection* form renders empty (no Endpoint / API-key fields), or **Test connection** fails before any network call.
+- Searching providers under **+ Connection** returns *"No providers found."*
+- ML searches error with `Failed to find Python for Scientific Computing Add-on (Splunk_SA_Scientific_Python_<platform>)` — check `index=_internal source=*mlspl.log`.
+
+Fix: install the **platform-correct** PSC package (see Prerequisites), then **restart Splunk**:
+
+```bash
+ls $SPLUNK_HOME/etc/apps | grep Scientific_Python   # the build must match your OS + arch
+$SPLUNK_HOME/bin/splunk restart
+```
+
+### LLM Test Fails "Unable to connect to Anthropic" — but TLS/cert config is correct (macOS / endpoint security)
+
+If the SSL and proxy steps above are correct but **Test connection** still fails with *"Unable to connect to Anthropic"*, and `splunkd.log` / `index=_internal source=*mlspl.log` shows a `json.JSONDecodeError: Expecting value` from `py_executable_bouncer.py`, the cause is the **PSC Python interpreter binary**, not the network. The connection test shells out to it (`.../Splunk_SA_Scientific_Python_<platform>/bin/<arch>/<ver>/bin/python`); ML `fit` does **not**, which is why `fit` can succeed while the connection test fails.
+
+Two macOS gotchas, both seen on Cisco-managed Macs:
+
+1. **The interpreter binary is missing.** `tar -xzf` can silently drop the ~6 MB `python` binary (leaving only `python3-config`). Check, and re-extract just that file — do **not** re-extract the whole app, which would wipe any proxy CA you appended to PSC's certifi:
+   ```bash
+   PSC=$SPLUNK_HOME/etc/apps/Splunk_SA_Scientific_Python_darwin_arm64
+   ls -la "$PSC"/bin/*/*/bin/python    # expect a ~6 MB binary, not just python3-config
+   tar -xzf <psc-package>.tgz -C $SPLUNK_HOME/etc/apps/ \
+     Splunk_SA_Scientific_Python_darwin_arm64/bin/<arch>/<ver>/bin/python
+   ```
+
+2. **Endpoint security quarantines/deletes the binary on execution.** A freshly extracted binary carries `com.apple.quarantine`; Gatekeeper or an EDR agent (e.g. **Cisco Secure Endpoint / AMP**) blocks and removes it on first `exec` — the binary vanishes the moment it runs. Clear quarantine so it matches a normal install:
+   ```bash
+   xattr -dr com.apple.quarantine "$PSC"
+   SPLUNK_HOME=$SPLUNK_HOME "$PSC"/bin/*/*/bin/python --version   # should print Python 3.x and persist
+   ```
+
+No Splunk restart is needed — the test spawns the interpreter fresh each time. **Re-apply both after any PSC reinstall/upgrade.**
+
+> Note: the AI Toolkit's LLM calls use `httpx` + `litellm` with `httpx.Client(verify=True)`, which verifies against **`certifi`** (`certifi.where()`) and ignores `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`. Behind a TLS-inspection proxy, the proxy root must be appended to the **certifi `cacert.pem` bundles** (core python *and* PSC), not only `openssl/cert.pem`.
 
 ### No Normalized Fields Appearing
 
