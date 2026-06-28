@@ -166,6 +166,42 @@ export = system
 access = read : [ * ], write : [ admin ]
 export = system
 
+# GenAI scoring pipeline saved searches must be owned by a real user (admin)
+# so the scheduler runs them with a valid, authenticated session. The
+# genaiscore command reads ta_gen_ai_cim_genai_scoring.conf over REST, and that
+# conf is restricted to read:[admin]; a nobody-owned scheduled search fails
+# config load with "Session is not logged in" and silently drops every event
+# (genai_scoring_status=error gets filtered out). Owning as admin fixes it.
+[savedsearches/GenAI%20Scoring%20-%20Pipeline%201]
+owner = admin
+
+[savedsearches/GenAI%20Scoring%20-%20Pipeline%202]
+owner = admin
+
+[savedsearches/GenAI%20Scoring%20-%20Pipeline%203]
+owner = admin
+
+[savedsearches/GenAI%20Scoring%20-%20Pipeline%204]
+owner = admin
+
+[savedsearches/GenAI%20Scoring%20-%20Pipeline%205]
+owner = admin
+
+[savedsearches/GenAI%20Scoring%20-%20Pipeline%206]
+owner = admin
+
+[savedsearches/GenAI%20Scoring%20-%20Pipeline%207]
+owner = admin
+
+[savedsearches/GenAI%20Scoring%20-%20Pipeline%208]
+owner = admin
+
+[savedsearches/GenAI%20Scoring%20-%20Pipeline%209]
+owner = admin
+
+[savedsearches/GenAI%20Scoring%20-%20Pipeline%2010]
+owner = admin
+
 ###############################################################################
 # EVENTTYPE AND TAG PERMISSIONS
 ###############################################################################

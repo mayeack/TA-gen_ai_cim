@@ -50,6 +50,7 @@ import ssl
 import logging
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -83,8 +84,13 @@ from splunklib.searchcommands import dispatch, StreamingCommand, Configuration, 
 import splunklib.client as client
 
 MLTK_APP = 'Splunk_ML_Toolkit'
+# Legacy AI Toolkit schema (older MLTK versions).
 KV_COLLECTION = 'mltk_ai_commander_collection'
 SECRET_REALM = 'mltk_llm_tokens'
+# Current AI Toolkit schema (connections live here in newer MLTK versions).
+AITK_LLM_CONNECTION_COLLECTION = 'aitk_llm_connection'
+AITK_DEFAULT_LLM_MAPPING_COLLECTION = 'aitk_llm_default_mappings'
+AITK_SECRET_REALM = 'aitk_llm_secrets'
 
 
 @Configuration()
@@ -124,23 +130,39 @@ class GenAIScoreCommand(StreamingCommand):
         self._llm_config = None
         self._api_key = None
 
+    def _connect(self, app):
+        """Connect to splunkd via the dispatch-provided management URI.
+
+        splunklib's ``client.connect()`` defaults to port 8089. Relying on
+        that default breaks whenever splunkd's management port differs from
+        8089 -- or a stale splunkd instance is squatting on 8089 -- because
+        the session key issued by the splunkd that launched this command is
+        then presented to the wrong instance and rejected with "Session is
+        not logged in". Building the connection from
+        ``searchinfo.splunkd_uri`` (the same source splunklib's own
+        ``SearchCommand.service`` property uses) guarantees we always talk to
+        the splunkd that launched us, on whatever port it actually serves.
+        """
+        searchinfo = self.metadata.searchinfo
+        uri = urlsplit(searchinfo.splunkd_uri, allow_fragments=False)
+        return client.connect(
+            scheme=uri.scheme,
+            host=uri.hostname,
+            port=uri.port,
+            token=searchinfo.session_key,
+            owner='nobody',
+            app=app,
+        )
+
     def _get_service(self):
         if self._service is None:
-            self._service = client.connect(
-                token=self.metadata.searchinfo.session_key,
-                owner='nobody',
-                app='TA-gen_ai_cim'
-            )
+            self._service = self._connect('TA-gen_ai_cim')
         return self._service
 
     def _get_mltk_service(self):
         """Get a Splunk service connected to the ML Toolkit app."""
         if self._mltk_service is None:
-            self._mltk_service = client.connect(
-                token=self.metadata.searchinfo.session_key,
-                owner='nobody',
-                app=MLTK_APP
-            )
+            self._mltk_service = self._connect(MLTK_APP)
         return self._mltk_service
 
     def _load_pipeline_config(self):
@@ -244,14 +266,106 @@ class GenAIScoreCommand(StreamingCommand):
         return default
 
     def _get_llm_config(self):
-        """Read LLM configuration from AI Toolkit's KV store.
+        """Resolve the default LLM connection configured in AI Toolkit.
 
-        Finds the default provider and model, reads endpoint URL and model
-        settings.  Result is cached for the lifetime of the command.
+        Prefers the current AI Toolkit schema (``aitk_llm_connection`` +
+        ``aitk_llm_default_mappings``) and falls back to the legacy
+        ``mltk_ai_commander_collection`` used by older AI Toolkit versions.
+        Result is cached for the lifetime of the command.
         """
         if self._llm_config is not None:
             return self._llm_config
 
+        config = self._get_llm_config_aitk()
+        if config is None:
+            config = self._get_llm_config_legacy()
+        self._llm_config = config
+        return self._llm_config
+
+    def _kv_query(self, collection_name, query=None):
+        """Query a KV store collection, returning a list of records.
+
+        Returns None if the collection does not exist or cannot be read
+        (e.g. a different AI Toolkit version), so callers can fall back to
+        another schema.
+        """
+        service = self._get_mltk_service()
+        try:
+            collection = service.kvstore[collection_name]
+            if query is None:
+                return collection.data.query()
+            return collection.data.query(query=json.dumps(query))
+        except Exception as e:
+            debug_logger.info(
+                "KV query on '%s' unavailable: %s", collection_name, str(e))
+            return None
+
+    def _get_llm_config_aitk(self):
+        """Read the default LLM connection from the current AI Toolkit schema.
+
+        Returns the normalized config dict, or None if no connection is
+        configured in the new collections (so the legacy path can run).
+        """
+        connections = self._kv_query(AITK_LLM_CONNECTION_COLLECTION)
+        if not connections:
+            return None
+
+        # Resolve the default connection name from the per-user mapping,
+        # then fall back to any mapping, then to a connection flagged
+        # default_users=['*'], then to the sole connection.
+        username = getattr(self.metadata.searchinfo, 'owner', None) or 'nobody'
+        mappings = self._kv_query(
+            AITK_DEFAULT_LLM_MAPPING_COLLECTION, {'user': username})
+        if not mappings:
+            mappings = self._kv_query(AITK_DEFAULT_LLM_MAPPING_COLLECTION)
+
+        default_name = None
+        for mapping in (mappings or []):
+            name = mapping.get('name')
+            if name and name != 'N/A':
+                default_name = name
+                break
+
+        connection = None
+        if default_name:
+            for candidate in connections:
+                if candidate.get('name') == default_name:
+                    connection = candidate
+                    break
+        if connection is None:
+            for candidate in connections:
+                if candidate.get('default_users') == ['*']:
+                    connection = candidate
+                    break
+        if connection is None and len(connections) == 1:
+            connection = connections[0]
+        if connection is None:
+            return None
+
+        details = connection.get('connection_details') or {}
+        params = connection.get('llm_params') or {}
+
+        debug_logger.info(
+            "AITK default LLM: name=%s provider=%s model=%s endpoint=%s",
+            connection.get('name'), connection.get('provider'),
+            connection.get('model'), (details.get('endpoint') or '')[:60])
+
+        return {
+            'provider': connection.get('provider', ''),
+            'model': connection.get('model', ''),
+            'endpoint': details.get('endpoint', ''),
+            'secrets_id': details.get('secrets_id', ''),
+            'max_tokens': int(params.get('max_tokens') or 2000),
+            'temperature': float(params.get('response_variability') or 0.1),
+            'timeout': float(details.get('request_timeout') or 120),
+        }
+
+    def _get_llm_config_legacy(self):
+        """Read LLM configuration from the legacy AI Toolkit KV store.
+
+        Finds the default provider and model, reads endpoint URL and model
+        settings.
+        """
         service = self._get_mltk_service()
 
         try:
@@ -376,26 +490,41 @@ class GenAIScoreCommand(StreamingCommand):
                 diag))
 
     def _get_api_key(self, provider_name):
-        """Read API key from Splunk storage passwords."""
+        """Read the API key for the resolved LLM connection from storage passwords.
+
+        Current AI Toolkit connections store the key under a per-connection
+        ``secrets_id`` ("realm:name"); legacy connections store it under realm
+        'mltk_llm_tokens' keyed by provider. Try the secrets_id first, then
+        fall back to the legacy provider lookup.
+        """
         if self._api_key is not None:
             return self._api_key
 
         service = self._get_mltk_service()
 
+        # Candidate (realm, username) pairs in priority order.
+        candidates = []
+        secrets_id = (self._llm_config or {}).get('secrets_id')
+        if secrets_id and ':' in secrets_id:
+            realm, name = secrets_id.split(':', 1)
+            candidates.append((realm, name))
+        candidates.append((SECRET_REALM, provider_name))
+
         try:
             for sp in service.storage_passwords:
-                if sp.realm == SECRET_REALM and sp.username == provider_name:
-                    self._api_key = sp.clear_password
-                    return self._api_key
+                for realm, name in candidates:
+                    if sp.realm == realm and sp.username == name:
+                        self._api_key = sp.clear_password
+                        return self._api_key
         except Exception as e:
             debug_logger.error("Storage password lookup failed: %s", str(e))
             raise ValueError(
                 "Cannot read API key for '{}': {}".format(provider_name, str(e)))
 
         raise ValueError(
-            "No API key found for provider '{}'. "
+            "No API key found for connection (provider '{}', secrets_id '{}'). "
             "Please save the connection in AI Toolkit Connection Management.".format(
-                provider_name))
+                provider_name, secrets_id or 'n/a'))
 
     def _send_llm_request(self, provider, model, endpoint, api_key, prompt,
                           system_prompt="You are a helpful assistant",
@@ -709,29 +838,34 @@ class GenAIScoreCommand(StreamingCommand):
             'types': types_list
         }
 
+    _INPUT_MSG_FIELDS = (
+        'input_messages',
+        'gen_ai.input.messages_raw',
+    )
     _OUTPUT_MSG_FIELDS = (
         'output_messages',
         'gen_ai.output.messages_raw',
     )
 
-    def _build_event_json(self, record):
-        """Build a JSON payload containing only the output messages for LLM scoring.
+    @staticmethod
+    def _resolve_messages(record, raw_fields, content_field, eval_field):
+        """Resolve GenAI messages from the several shapes Splunk may deliver.
 
-        Splunk can deliver ``output_messages`` in several shapes depending on
+        Splunk can deliver a message field in several shapes depending on
         ``KV_MODE`` and the streaming-command SDK transport:
 
         1. **String** -- raw JSON array straight from ``_raw``.
         2. **List** -- multi-value field where each element is a JSON object
            string (Splunk auto-expanded the array).
-        3. **Sub-field** -- ``output_messages{}.content`` with just the text
-           values extracted by Splunk's JSON path expansion.
-        4. **EVAL scalar** -- ``gen_ai.output.messages``, always a single
+        3. **Sub-field** -- e.g. ``input_messages{}.content`` with just the
+           text values extracted by Splunk's JSON path expansion.
+        4. **EVAL scalar** -- e.g. ``gen_ai.input.messages``, a single
            space-joined string computed at search time.
 
-        The method walks these in priority order and returns the first
-        non-empty result wrapped as ``{"output_messages": ...}``.
+        Walks these in priority order and returns the first non-empty result
+        (a list, dict, or string), or ``""`` if nothing usable is present.
         """
-        for field in self._OUTPUT_MSG_FIELDS:
+        for field in raw_fields:
             value = record.get(field)
             if value is None:
                 continue
@@ -746,23 +880,19 @@ class GenAIScoreCommand(StreamingCommand):
                     except (json.JSONDecodeError, ValueError):
                         items.append(s)
                 if items:
-                    return json.dumps(
-                        {"output_messages": items}, indent=2, ensure_ascii=False)
+                    return items
                 continue
             s = str(value).strip()
             if not s or s.lower() == 'none':
                 continue
             if s.startswith(('[', '{')):
                 try:
-                    parsed = json.loads(s)
-                    return json.dumps(
-                        {"output_messages": parsed}, indent=2, ensure_ascii=False)
+                    return json.loads(s)
                 except (json.JSONDecodeError, ValueError):
                     pass
-            return json.dumps(
-                {"output_messages": s}, indent=2, ensure_ascii=False)
+            return s
 
-        content = record.get('output_messages{}.content')
+        content = record.get(content_field)
         if content is not None:
             if isinstance(content, list):
                 texts = [str(c).strip() for c in content
@@ -772,18 +902,33 @@ class GenAIScoreCommand(StreamingCommand):
                 t = str(content).strip()
                 texts = [t] if t and t.lower() != 'none' else []
             if texts:
-                return json.dumps(
-                    {"output_messages": " ".join(texts)}, indent=2, ensure_ascii=False)
+                return " ".join(texts)
 
-        value = record.get('gen_ai.output.messages')
+        value = record.get(eval_field)
         if value is not None:
             s = str(value).strip()
             if s and s.lower() != 'none':
-                return json.dumps(
-                    {"output_messages": s}, indent=2, ensure_ascii=False)
+                return s
 
+        return ""
+
+    def _build_event_json(self, record):
+        """Build a JSON payload with both the input and output messages.
+
+        Both sides are always included so the scoring pipeline's prompt can
+        decide which to analyze (e.g. inspect the input for prompt injection,
+        or the output for PII). Each side is resolved independently from
+        whichever shape Splunk delivered (see :meth:`_resolve_messages`).
+        """
+        input_messages = self._resolve_messages(
+            record, self._INPUT_MSG_FIELDS,
+            'input_messages{}.content', 'gen_ai.input.messages')
+        output_messages = self._resolve_messages(
+            record, self._OUTPUT_MSG_FIELDS,
+            'output_messages{}.content', 'gen_ai.output.messages')
         return json.dumps(
-            {"output_messages": ""}, indent=2, ensure_ascii=False)
+            {"input_messages": input_messages, "output_messages": output_messages},
+            indent=2, ensure_ascii=False)
 
     _CONTEXT_FIELDS = (
         'client.address',
