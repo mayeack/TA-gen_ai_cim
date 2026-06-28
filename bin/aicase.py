@@ -50,6 +50,7 @@ import sys
 import json
 import time
 import ssl
+from urllib.parse import urlsplit
 
 # Add Splunk SDK paths - use lib directory in this app
 app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -135,10 +136,22 @@ class AICaseCommand(StreamingCommand):
         self._service = None
         
     def _get_service(self):
-        """Get Splunk service connection"""
+        """Get Splunk service connection.
+
+        Build the connection from searchinfo.splunkd_uri rather than relying
+        on splunklib's default port (8089). The default breaks when splunkd's
+        management port differs from 8089 -- or a stale instance squats on
+        8089 -- causing the session key to be presented to the wrong instance
+        and rejected with "Session is not logged in".
+        """
         if self._service is None:
+            searchinfo = self.metadata.searchinfo
+            uri = urlsplit(searchinfo.splunkd_uri, allow_fragments=False)
             self._service = client.connect(
-                token=self.metadata.searchinfo.session_key,
+                scheme=uri.scheme,
+                host=uri.hostname,
+                port=uri.port,
+                token=searchinfo.session_key,
                 owner='nobody',
                 app='TA-gen_ai_cim'
             )
