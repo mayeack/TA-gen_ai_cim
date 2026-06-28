@@ -25,16 +25,28 @@ require([
     var pipelines = {};
 
     function getCSRFToken() {
-        var token = $('input[name="splunk_form_key"]').val();
-        if (!token) {
-            var cookies = document.cookie.split(';');
-            for (var i = 0; i < cookies.length; i++) {
-                var cookie = cookies[i].trim();
-                if (cookie.indexOf('splunkweb_csrf_token_') === 0) {
-                    token = cookie.split('=')[1];
-                    break;
+        // Prefer the live CSRF cookie over the page's splunk_form_key hidden input.
+        // Under Splunk's modernNav SPA navigation the hidden input goes stale (no full
+        // page reload), causing POSTs to fail CSRF validation; the cookie stays current.
+        var cookies = document.cookie.split(';');
+        var port = window.location.port;
+        var portToken = null;
+        var anyToken = null;
+        for (var i = 0; i < cookies.length; i++) {
+            var cookie = cookies[i].trim();
+            if (cookie.indexOf('splunkweb_csrf_token_') === 0) {
+                var val = decodeURIComponent(cookie.substring(cookie.indexOf('=') + 1));
+                if (port && cookie.indexOf('splunkweb_csrf_token_' + port + '=') === 0) {
+                    portToken = val;
+                }
+                if (anyToken === null) {
+                    anyToken = val;
                 }
             }
+        }
+        var token = portToken || anyToken;
+        if (!token) {
+            token = $('input[name="splunk_form_key"]').val();
         }
         return token;
     }
@@ -252,7 +264,10 @@ require([
                     },
                     error: function(xhr2) {
                         $btn.prop('disabled', false).text('Save Pipeline');
-                        showStatus('pipeline-status-' + key, 'Failed to save: ' + xhr2.status, 'error');
+                        var msg = xhr2.status === 403
+                            ? 'Failed to save (session expired - reload the page): 403'
+                            : 'Failed to save: ' + xhr2.status;
+                        showStatus('pipeline-status-' + key, msg, 'error');
                     }
                 });
             }
