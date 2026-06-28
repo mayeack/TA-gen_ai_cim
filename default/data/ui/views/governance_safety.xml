@@ -1,5 +1,5 @@
 
-<dashboard version="2" theme="dark">
+<dashboard version="2" theme="dark" isVisible="false">
     <label>TF-IDF Anomaly Detection</label>
     <description>TF-IDF anomaly detection for prompts and responses - identify unusual patterns and potential security risks.</description>
     <definition><![CDATA[
