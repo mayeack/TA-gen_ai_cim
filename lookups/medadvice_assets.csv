@@ -1,0 +1,4 @@
+ip,nt_host,dns,owner,priority,bunit,category,is_expected,should_timesync,should_update,requires_av,pci_domain
+127.0.0.1,medadvice-app-01,medadvice-app-01.medadvice.example.com,medadvice-platform,high,medadvice,server|application,true,true,true,true,none
+76.87.129.168,,,remote-user,low,medadvice,user_endpoint,true,false,false,false,none
+212.185.66.18,,,unknown,critical,external,adversary|external,false,false,false,false,none
