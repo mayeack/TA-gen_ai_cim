@@ -684,13 +684,13 @@ require([
                     });
                 }
                 
-                // Default to all enabled if not set (except random_escalation)
+                // Default to all disabled if not set
                 if (Object.keys(detectionSettings).length === 0) {
                     detectionSettings = {
-                        detect_pii: true,
-                        detect_phi: true,
-                        detect_prompt_injection: true,
-                        detect_anomalies: true,
+                        detect_pii: false,
+                        detect_phi: false,
+                        detect_prompt_injection: false,
+                        detect_anomalies: false,
                         random_escalation: false,
                         rng_seed: ''
                     };
@@ -701,7 +701,7 @@ require([
             },
             error: function(xhr) {
                 console.log('Detection settings load error:', xhr.status);
-                // Use defaults (all enabled except random_escalation)
+                // Use defaults (all disabled)
                 detectionSettings = {
                     detect_pii: true,
                     detect_phi: true,

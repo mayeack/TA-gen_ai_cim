@@ -10,7 +10,7 @@
           <div class="config-tabs">
             <button class="config-tab active" data-tab="accounts">ServiceNow Settings</button>
             <button class="config-tab" data-tab="genai">GenAI Summary</button>
-            <button class="config-tab" data-tab="detection">Detection Settings</button>
+            <button class="config-tab" data-tab="detection">ML Detection Settings</button>
           </div>
 
           <!-- Accounts Tab Content -->
@@ -136,7 +136,7 @@
           <div class="config-tab-content" id="tab-detection">
             <div class="detection-settings">
               <div class="settings-section">
-                <h3>Detection Settings</h3>
+                <h3>ML Detection Settings</h3>
                 <p class="section-description">Configure which types of content detection are enabled for AI governance monitoring. When enabled, the corresponding detection alerts will automatically analyze GenAI events and escalate findings to the Review Queue.</p>
                 
                 <!-- Detect PII Toggle -->
@@ -144,10 +144,10 @@
                   <label>Detect PII</label>
                   <div class="toggle-container">
                     <label class="toggle-switch">
-                      <input type="checkbox" id="detect-pii" checked="checked" />
+                      <input type="checkbox" id="detect-pii" />
                       <span class="toggle-slider"></span>
                     </label>
-                    <span class="toggle-label enabled" id="detect-pii-status">Enabled</span>
+                    <span class="toggle-label" id="detect-pii-status">Disabled</span>
                   </div>
                   <div class="help-text">Detect Personally Identifiable Information (PII) such as names, email addresses, phone numbers, SSNs, and credit card numbers in AI prompts and responses.</div>
                 </div>
@@ -157,10 +157,10 @@
                   <label>Detect PHI</label>
                   <div class="toggle-container">
                     <label class="toggle-switch">
-                      <input type="checkbox" id="detect-phi" checked="checked" />
+                      <input type="checkbox" id="detect-phi" />
                       <span class="toggle-slider"></span>
                     </label>
-                    <span class="toggle-label enabled" id="detect-phi-status">Enabled</span>
+                    <span class="toggle-label" id="detect-phi-status">Disabled</span>
                   </div>
                   <div class="help-text">Detect Protected Health Information (PHI) such as medical records, diagnoses, treatment information, and health insurance details in AI interactions.</div>
                 </div>
@@ -170,10 +170,10 @@
                   <label>Detect Prompt Injection</label>
                   <div class="toggle-container">
                     <label class="toggle-switch">
-                      <input type="checkbox" id="detect-prompt-injection" checked="checked" />
+                      <input type="checkbox" id="detect-prompt-injection" />
                       <span class="toggle-slider"></span>
                     </label>
-                    <span class="toggle-label enabled" id="detect-prompt-injection-status">Enabled</span>
+                    <span class="toggle-label" id="detect-prompt-injection-status">Disabled</span>
                   </div>
                   <div class="help-text">Detect prompt injection attacks that attempt to manipulate AI model behavior through malicious input patterns.</div>
                 </div>
@@ -183,10 +183,10 @@
                   <label>Detect Anomalies</label>
                   <div class="toggle-container">
                     <label class="toggle-switch">
-                      <input type="checkbox" id="detect-anomalies" checked="checked" />
+                      <input type="checkbox" id="detect-anomalies" />
                       <span class="toggle-slider"></span>
                     </label>
-                    <span class="toggle-label enabled" id="detect-anomalies-status">Enabled</span>
+                    <span class="toggle-label" id="detect-anomalies-status">Disabled</span>
                   </div>
                   <div class="help-text">Detect anomalous patterns in AI usage such as unusual request volumes, atypical response times, or unexpected model behaviors.</div>
                 </div>
