@@ -131,7 +131,7 @@ The **TA-gen_ai_cim** is a Splunk Technology Add-on that normalizes GenAI/LLM te
 
 | Package | Version | Location | Notes |
 |---------|---------|----------|-------|
-| `splunklib` | 2.0.2 | Bundled in `lib/` | Splunk SDK for Python - no installation required |
+| `splunklib` | 2.1.1 | Bundled in `lib/` | Splunk SDK for Python - no installation required |
 | Standard Library | - | Built-in | json, os, sys, time, re, ssl, base64, datetime, argparse, getpass, urllib |
 | Splunk Internal | - | Splunk Platform | `splunk.admin`, `splunk.entity`, `splunk.auth` |
 
