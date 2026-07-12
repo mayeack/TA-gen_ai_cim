@@ -40,7 +40,6 @@ Copyright 2026 Splunk Inc.
 Licensed under Apache License 2.0
 """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os
 import sys
