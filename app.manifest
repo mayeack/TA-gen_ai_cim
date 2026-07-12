@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "2.0.0",
+  "info": {
+    "title": "AI Governance",
+    "id": {
+      "group": null,
+      "name": "TA-gen_ai_cim",
+      "version": "1.2.2"
+    },
+    "author": [
+      {
+        "name": "Splunk AI Governance Team",
+        "email": null,
+        "company": null
+      }
+    ],
+    "releaseDate": null,
+    "description": "Technology Add-on that normalizes GenAI events into a unified Common Information Model (CIM) for inference, safety, governance, and evaluation telemetry.",
+    "classification": {
+      "intendedAudience": null,
+      "categories": [],
+      "developmentStatus": null
+    },
+    "commonInformationModels": null,
+    "license": {
+      "name": null,
+      "text": null,
+      "uri": null
+    },
+    "privacyPolicy": {
+      "name": null,
+      "text": null,
+      "uri": null
+    },
+    "releaseNotes": {
+      "name": null,
+      "text": "./README.md",
+      "uri": null
+    }
+  },
+  "dependencies": null,
+  "tasks": null,
+  "inputGroups": null,
+  "incompatibleApps": null,
+  "platformRequirements": {
+    "splunk": {
+      "Enterprise": "9.0"
+    }
+  },
+  "supportedDeployments": [
+    "_standalone",
+    "_distributed",
+    "_search_head_clustering"
+  ],
+  "targetWorkloads": [
+    "_search_heads"
+  ]
+}
