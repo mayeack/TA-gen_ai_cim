@@ -17,6 +17,11 @@
             "options": { "defaultValue": "-7d@d,now", "token": "time" },
             "title": "Time Range",
             "type": "input.timerange"
+        },
+        "input_snow_instance": {
+            "options": { "defaultValue": "your-instance", "token": "snow_instance" },
+            "title": "ServiceNow Instance",
+            "type": "input.text"
         }
     },
     "defaults": {
@@ -139,7 +144,7 @@
             "eventHandlers": [
                 {
                     "options": {
-                        "url": "https://ciscoaidfsir.service-now.com/now/ai-control-tower/assets",
+                        "url": "https://$snow_instance$.service-now.com/now/ai-control-tower/assets",
                         "newTab": true
                     },
                     "type": "drilldown.customUrl"
@@ -168,7 +173,7 @@
             "eventHandlers": [
                 {
                     "options": {
-                        "url": "https://ciscoaidfsir.service-now.com/now/ai-control-tower/intake-form/alm_ai_system_digital_asset/-1",
+                        "url": "https://$snow_instance$.service-now.com/now/ai-control-tower/intake-form/alm_ai_system_digital_asset/-1",
                         "newTab": true
                     },
                     "type": "drilldown.customUrl"
@@ -190,7 +195,7 @@
             "eventHandlers": [
                 {
                     "options": {
-                        "url": "https://ciscoaidfsir.service-now.com/now/ai-control-tower/intake-form/alm_ai_model_digital_asset/-1",
+                        "url": "https://$snow_instance$.service-now.com/now/ai-control-tower/intake-form/alm_ai_model_digital_asset/-1",
                         "newTab": true
                     },
                     "type": "drilldown.customUrl"
@@ -219,7 +224,7 @@
             "eventHandlers": [
                 {
                     "options": {
-                        "url": "https://ciscoaidfsir.service-now.com/now/ai-control-tower/assets",
+                        "url": "https://$snow_instance$.service-now.com/now/ai-control-tower/assets",
                         "newTab": true
                     },
                     "type": "drilldown.customUrl"
@@ -390,7 +395,7 @@
         }
     },
     "layout": {
-        "globalInputs": ["input_time"],
+        "globalInputs": ["input_time", "input_snow_instance"],
         "options": { "showTitleAndDescription": true, "width": 1440, "height": 1640 },
         "type": "absolute",
         "structure": [

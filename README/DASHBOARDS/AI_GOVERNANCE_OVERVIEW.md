@@ -7,7 +7,7 @@ The **AI Governance Overview** is the default landing page and primary dashboard
 ## File Location
 
 ```
-default/data/ui/views/genai_governance_overview_studio.json
+default/data/ui/views/ai_governance_overview.xml
 ```
 
 ## Design

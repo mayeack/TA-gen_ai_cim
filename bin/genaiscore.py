@@ -70,7 +70,11 @@ except OSError:
 
 debug_log_path = os.path.join(_log_dir, 'genaiscore.log')
 debug_logger = logging.getLogger('genaiscore_debug')
-debug_logger.setLevel(logging.DEBUG)
+# Default to INFO: prompt/response/event content is only logged at DEBUG,
+# which is opt-in via debug_logging = true in ta_gen_ai_cim_genai_scoring.conf
+# [settings] (this TA scores events that may contain PII/PHI — content must
+# not land in plaintext logs unless an admin explicitly asks for it).
+debug_logger.setLevel(logging.INFO)
 _fh = logging.FileHandler(debug_log_path)
 _fh.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
 debug_logger.addHandler(_fh)
@@ -176,6 +180,8 @@ class GenAIScoreCommand(StreamingCommand):
             for stanza in scoring_conf:
                 if stanza.name == 'settings':
                     self._system_prompt = stanza.content.get('system_prompt', '')
+                    if self._is_truthy(stanza.content.get('debug_logging', '0')):
+                        debug_logger.setLevel(logging.DEBUG)
                 elif stanza.name == self.pipeline:
                     self._pipeline_config = {
                         'enabled': stanza.content.get('enabled', '0'),
@@ -590,7 +596,10 @@ class GenAIScoreCommand(StreamingCommand):
 
         elif provider_lower == 'gemini':
             base = (endpoint or '').rstrip('/')
-            url = '{}/{}:generateContent?key={}'.format(base, model, api_key)
+            # API key goes in the x-goog-api-key header, never the URL query
+            # string: URLs leak into proxy/access logs and debug output.
+            url = '{}/{}:generateContent'.format(base, model)
+            headers['x-goog-api-key'] = api_key
             body = {
                 "contents": [
                     {"role": "user", "parts": [{"text": prompt}]}
@@ -647,9 +656,12 @@ class GenAIScoreCommand(StreamingCommand):
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
 
+        # Log only host+path, never the query string (defense in depth
+        # against credentials or event data appearing in the URL).
+        _log_parsed = urllib.parse.urlsplit(url)
         debug_logger.info(
-            "LLM HTTP request: provider=%s model=%s url=%s body_len=%d",
-            provider, model, url[:80], len(payload))
+            "LLM HTTP request: provider=%s model=%s url=%s%s body_len=%d",
+            provider, model, _log_parsed.netloc, _log_parsed.path, len(payload))
 
         try:
             resp = urllib.request.urlopen(req, context=ctx, timeout=int(timeout))
@@ -712,8 +724,10 @@ class GenAIScoreCommand(StreamingCommand):
             )
 
             debug_logger.info(
-                "LLM response OK: event_id=%s len=%d first300=%s",
-                event_id, len(response), response[:300])
+                "LLM response OK: event_id=%s len=%d", event_id, len(response))
+            debug_logger.debug(
+                "LLM response content: event_id=%s first300=%s",
+                event_id, response[:300])
 
             return (response.strip(), None)
 
@@ -1036,8 +1050,10 @@ class GenAIScoreCommand(StreamingCommand):
             event_json = self._build_event_json(record)
 
             debug_logger.info(
-                "Event JSON built: event_id=%s len=%d first500=%s",
-                event_id, len(event_json), event_json[:500])
+                "Event JSON built: event_id=%s len=%d", event_id, len(event_json))
+            debug_logger.debug(
+                "Event JSON content: event_id=%s first500=%s",
+                event_id, event_json[:500])
 
             user_prompt = "SCORING TASK: {}\n\nEVENT DATA:\n{}".format(
                 pipeline_prompt,
@@ -1085,4 +1101,5 @@ class GenAIScoreCommand(StreamingCommand):
             pipeline_name, event_count, success_count))
 
 
-dispatch(GenAIScoreCommand, sys.argv, sys.stdin, sys.stdout, __name__)
+if __name__ == '__main__':
+    dispatch(GenAIScoreCommand, sys.argv, sys.stdin, sys.stdout, __name__)

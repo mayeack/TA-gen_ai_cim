@@ -18,7 +18,7 @@ For detailed documentation on each dashboard including panel descriptions, purpo
 
 | Dashboard | File |
 |-----------|------|
-| AI Governance Overview | `default/data/ui/views/genai_governance_overview_studio.json` |
+| AI Governance Overview | `default/data/ui/views/ai_governance_overview.xml` |
 | PII Detection | `default/data/ui/views/pii_detection.xml` |
 | Prompt Injection Detection | `default/data/ui/views/prompt_injection_detection.xml` |
 | Review Queue | `default/data/ui/views/review_queue.xml` |

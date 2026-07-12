@@ -6,7 +6,7 @@
 #
 
 [settings]
-# ServiceNow instance name (e.g., "ciscoaidfsir" for ciscoaidfsir.service-now.com)
+# ServiceNow instance name (e.g., "your-instance" for your-instance.service-now.com)
 # Do NOT include .service-now.com suffix
 instance = <string>
 

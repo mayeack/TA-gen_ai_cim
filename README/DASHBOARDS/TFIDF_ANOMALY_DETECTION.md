@@ -18,7 +18,7 @@ This dashboard enables AI governance teams to:
 This is a tab within the main AI Governance Overview dashboard:
 
 ```
-default/data/ui/views/genai_governance_overview_studio.json
+default/data/ui/views/ai_governance_overview.xml
 ```
 
 ## Panels

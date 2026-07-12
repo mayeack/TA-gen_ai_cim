@@ -139,7 +139,7 @@ If you want to create ServiceNow AI Cases from Splunk:
 Test with:
 
 ```spl
-| makeresults | eval gen_ai.request.id="test_123" | aicase mode=lookup
+| makeresults | eval gen_ai.event.id="test_123" | aicase mode=lookup
 ```
 
 ---

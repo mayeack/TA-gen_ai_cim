@@ -784,7 +784,7 @@ The TA includes integration with ServiceNow AI Case Management for one-click esc
 
 2. **Test the connection:**
    ```spl
-   | makeresults | eval gen_ai.request.id="test_123" | aicase mode=lookup
+   | makeresults | eval gen_ai.event.id="test_123" | aicase mode=lookup
    ```
 
 3. **Create a case from an event:**
@@ -792,7 +792,7 @@ The TA includes integration with ServiceNow AI Case Management for one-click esc
    index=gen_ai_log gen_ai.safety.violated="true" | head 1 | aicase
    ```
 
-4. **Use the Event Context menu:** Right-click any event with `gen_ai.request.id` → "Open Case in ServiceNow"
+4. **Use the Event Context menu:** Right-click any event with `gen_ai.event.id` → "Open Case in ServiceNow"
 
 **Full documentation:** See [ServiceNow Integration](README/SERVICENOW_INTEGRATION.md)
 
@@ -804,80 +804,95 @@ The TA includes integration with ServiceNow AI Case Management for one-click esc
 TA-gen_ai_cim/
 ├── README.md                      # Main documentation
 ├── QUICKSTART.md                  # Quick setup guide
-├── INSTALL.sh                     # Quick install script
+├── app.manifest                   # Splunk Cloud ACS package manifest
+├── package.sh                     # AppInspect-clean package builder (dev only)
 ├── bin/
 │   ├── aicase.py                  # ServiceNow AI Case custom command
-│   ├── create_snow_case.py        # ServiceNow alert action script
-│   ├── load_pii_model.sh          # ML model loader script
+│   ├── create_snow_case.py        # ServiceNow case alert action
+│   ├── genaiscore.py              # GenAI LLM scoring custom command
+│   ├── pull_snow_inventory.py     # ServiceNow inventory pull alert action
 │   ├── snow_setup.py              # ServiceNow CLI setup utility
+│   ├── sync_snow_asset.py         # ServiceNow asset sync alert action + shared client
 │   └── ta_gen_ai_cim_account_handler.py  # REST handler for account management
 ├── appserver/
-│   └── static/
-│       ├── config_config.js       # Configuration page JavaScript
-│       ├── event_review.css       # Event review form styling
-│       ├── review_landing.js      # Review landing page handler
-│       ├── review_save.js         # Review save handler
-│       ├── servicenow_case.js     # ServiceNow case redirect handler
-│       ├── servicenow_config.css  # Configuration page styling
-│       └── servicenow_setup.css   # Setup page styling
-├── lookups/                       # Lookup files (user-provided, not in git)
-│   └── (training data CSVs)       # PII training data, etc.
-├── mlspl/
-│   └── README.md                  # ML models directory info
+│   └── static/                    # Icons, dashboard JS/CSS
+├── lib/
+│   └── splunklib/                 # Vendored Splunk Python SDK
+├── lookups/
+│   ├── medadvice_assets.csv       # Sample ES asset data (synthetic)
+│   ├── medadvice_identities.csv   # Sample ES identity data (synthetic)
+│   └── prompt_injection_training_examples.csv  # Seed training data
 ├── default/
-│   ├── app.conf                   # App metadata
+│   ├── app.conf                   # App metadata ([id], version, reload triggers)
 │   ├── alert_actions.conf         # Alert actions (ServiceNow)
-│   ├── authorize.conf             # Role definitions (ai_reviewers)
+│   ├── authorize.conf             # Role definitions (ai_reviewers, ml_power_user)
 │   ├── collections.conf           # KV store collections
 │   ├── commands.conf              # Custom search command definitions
+│   ├── datamodels.conf            # AI_Inference / AI_Safety / AI_Evaluation
+│   ├── eventtypes.conf / tags.conf  # CIM-style eventtypes and tags
 │   ├── fields.conf                # Field definitions
+│   ├── inputs.conf                # ES Asset & Identity registrations
 │   ├── macros.conf                # Search macros
-│   ├── props.conf                 # Field normalization logic
+│   ├── props.conf                 # Field normalization (search-time only)
 │   ├── restmap.conf               # REST endpoint mapping
-│   ├── savedsearches.conf         # Governance alerts
-│   ├── ta_gen_ai_cim_account.conf         # ServiceNow account config
-│   ├── ta_gen_ai_cim_account.conf.spec    # Account config spec
-│   ├── ta_gen_ai_cim_detection.conf       # Detection settings
-│   ├── ta_gen_ai_cim_detection.conf.spec  # Detection config spec
-│   ├── ta_gen_ai_cim_llm.conf             # GenAI LLM settings
-│   ├── ta_gen_ai_cim_llm.conf.spec        # LLM config spec
-│   ├── ta_gen_ai_cim_servicenow.conf      # ServiceNow settings
-│   ├── ta_gen_ai_cim_servicenow.conf.spec # ServiceNow config spec
-│   ├── transforms.conf            # JSON extractions, lookups
-│   ├── web.conf                   # Web server configuration
+│   ├── savedsearches.conf         # Alerts/reports/rules (ALL ship disabled)
+│   ├── server.conf                # SHC replication for custom confs
+│   ├── ta_gen_ai_cim_*.conf(.spec)  # Custom config files and specs
+│   ├── transforms.conf            # Extractions, CSV + KV store lookups
+│   ├── web.conf                   # REST endpoint exposure
 │   ├── workflow_actions.conf      # Event Context menu actions
-│   └── data/
-│       └── ui/
-│           ├── nav/
-│           │   └── default.xml    # Navigation menu
-│           └── views/
-│               ├── configuration.xml                  # Configuration dashboard
-│               ├── event_review.xml                   # Event review form
-│               ├── genai_governance_overview_studio.json  # Main dashboard (Studio)
-│               ├── review_landing.xml                 # Review landing page
-│               ├── review_queue.xml                   # Review queue dashboard
-│               └── servicenow_case.xml                # ServiceNow case redirect
+│   └── data/ui/
+│       ├── nav/default.xml        # Navigation menu
+│       └── views/                 # 20 dashboards (Studio + Simple XML)
 ├── metadata/
-│   └── default.meta               # Permissions
-└── README/
+│   └── default.meta               # Permissions (admin + sc_admin on config)
+├── elements/                      # Per-dashboard design docs (dev only, not packaged)
+├── tools/                         # Dev-only utilities (not packaged)
+│   ├── install-dev.sh             # Copy app into a dev instance
+│   ├── load_pii_model.sh          # MLTK model loader (dev only, writes to MLTK app)
+│   ├── load_prompt_injection_model.sh  # MLTK model loader (dev only)
+│   └── appinspect-cloud-*.{md,json}    # Last AppInspect results
+└── README/                        # Extended documentation (not packaged)
     ├── AI_CIM.md                  # AI CIM field reference
-    ├── DASHBOARD_COMPARISON.md    # Dashboard Studio vs Classic comparison
     ├── DASHBOARD_PANELS.md        # Dashboard panel definitions
+    ├── DASHBOARDS/                # Per-dashboard guides
     ├── DEPLOYMENT_GUIDE.md        # Installation and deployment guide
-    ├── DOCUMENTATION_CLEANUP.md   # Documentation maintenance notes
+    ├── GENAI_SCORING_PIPELINE.md  # LLM scoring pipeline guide
     ├── GOVERNANCE_REVIEW.md       # Governance review workflow guide
-    ├── ML Models/                 # Machine Learning model documentation
-    │   ├── Feedback_Loop.md       # Active learning feedback loop
-    │   ├── PII_Detection.md       # PII/PHI detection (includes healthcare training)
-    │   ├── Prompt_Injection.md    # Prompt injection detection
-    │   ├── README.md              # ML models overview
-    │   └── TFIDF_Anomaly.md       # TF-IDF anomaly detection
+    ├── INTEGRATIONS/              # Integration guides
+    ├── ML Models/                 # ML model documentation
     ├── PROVIDER_EXAMPLES.md       # Provider-specific field mappings
     ├── SERVICENOW_INTEGRATION.md  # ServiceNow integration guide
     ├── TOKEN_COST_ADMIN.md        # Token cost administration
     └── YOUR_DATA_IS_READY.md      # Quick start for training data
-
 ```
+
+### Runtime-generated lookups
+
+`transforms.conf` defines several CSV lookups whose files are **not shipped**;
+they are created on the search head at runtime:
+
+| Lookup file | Created by |
+|---|---|
+| `pii_training_data_engineered.csv` | "ML - PII Training" saved search (`outputlookup`) |
+| `prompt_injection_training_data_engineered.csv` | "ML - Prompt Injection Training" saved search |
+| `pii_model_metadata.csv` / `prompt_injection_model_metadata.csv` | model-promotion feedback-loop searches |
+| `tfidf_training_data_v3.csv` / `pii_training_examples.csv` | operator-curated per environment |
+| `llm_pii_mixed_responses_200k.csv` | dev-only 48 MB training dataset (never packaged) |
+
+Do not ship placeholder CSVs for these — bundled lookup files overwrite the
+runtime-generated versions on every app upgrade.
+
+### Views not in the navigation menu
+
+`ai_cost_analysis_dashboard`, `ai_overview_dashboard`, `ai_safety_dashboard`,
+and `genai_governance_overview_studio` ship with the app but are not linked
+from the navigation menu (legacy/alternate views kept for reference —
+removal is a candidate for a future release). `review_landing` and
+`servicenow_case` are intentionally nav-less: they are reached via workflow
+actions. The two `genai_governance_overview_*.json.template` files are
+Dashboard Studio JSON sources for the AI Governance Overview dashboard and
+are excluded from the package.
 
 ---
 
