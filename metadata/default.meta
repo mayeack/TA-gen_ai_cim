@@ -78,20 +78,20 @@ export = system
 
 # ServiceNow account configuration (conf file)
 [conf/ta_gen_ai_cim_account]
-access = read : [ admin ], write : [ admin ]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = none
 
 [configs/conf-ta_gen_ai_cim_account]
-access = read : [ admin ], write : [ admin ]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = none
 
 # REST endpoint for account management
 [admin:ta_gen_ai_cim_account]
-access = read : [ admin ], write : [ admin ]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = none
 
 [admin_external:ta_gen_ai_cim_account]
-access = read : [ admin ], write : [ admin ]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = none
 
 ###############################################################################
@@ -149,16 +149,16 @@ export = system
 
 # GenAI scoring configuration (conf file)
 [conf/ta_gen_ai_cim_genai_scoring]
-access = read : [ admin ], write : [ admin ]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = none
 
 [configs/conf-ta_gen_ai_cim_genai_scoring]
-access = read : [ admin ], write : [ admin ]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = none
 
 # GenAI scoring configuration view
 [views/genai_scoring_config]
-access = read : [ admin ], write : [ admin ]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = system
 
 # GenAI scoring custom search command

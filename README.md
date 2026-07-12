@@ -4,7 +4,7 @@
 
 **Splunk Technology Add-on for Generative AI Common Information Model**
 
-Version: 1.2.0-alpha  
+Version: 1.2.2  
 Author: Splunk AI Governance Team  
 License: Apache 2.0
 
@@ -228,7 +228,7 @@ $SPLUNK_HOME/bin/splunk display app TA-gen_ai_cim
 Expected output:
 ```
 TA-gen_ai_cim
-  Version: 1.2.0
+  Version: 1.2.2
   Status: enabled
 ```
 
@@ -977,6 +977,33 @@ The TA supports compliance requirements for:
 ---
 
 ## Version History
+
+### v1.2.2 (2026-07-12)
+
+**Code Review Remediation — Splunk Cloud & AppInspect hardening (no feature changes)**
+- FIXED: `app.conf` now carries an `[id]` stanza and matches the documented version
+  (v1.2.1 shipped in docs without an app.conf bump; this release supersedes it)
+- NEW: `app.manifest` for Splunk Cloud ACS / self-service installs
+- NEW: `default/server.conf` `[shclustering]` replication for the TA's custom confs
+- NEW: `python.required = 3.13` on all custom commands, alert actions, and the REST
+  handler (Python 3.13 readiness, clears AppInspect future-failures)
+- CHANGED: all shipped scheduled searches are now `disabled = 1` by default —
+  enable the ones you need per environment (see "Enabling the shipped searches")
+- CHANGED: stock `admin` role is no longer modified by the app (Cloud best practice);
+  grant `apply_ai_commander_command` / `list_ai_commander_config` per environment
+- CHANGED: `metadata/default.meta` grants `sc_admin` (Splunk Cloud admin) access to
+  the configuration pages alongside `admin`
+- FIXED: packaging no longer strips the small sample lookup CSVs that
+  `transforms.conf`/`inputs.conf` reference; Dashboard Studio `*.json.template`
+  sources and internal docs are excluded from the package
+- FIXED: ServiceNow OAuth client-credentials flow now sends `grant_type=client_credentials`
+- FIXED: `| aicase mode=open` no longer creates a case; case deep links no longer
+  hardcode `localhost:8000`; `create_snow_aicase` alert action honors `param.request_id`
+- FIXED: KV-store lookup failures abort case creation instead of silently creating duplicates
+- SECURITY: Gemini API key moved from URL query string to `x-goog-api-key` header;
+  prompt/response content logging demoted to opt-in debug level
+- INTERNAL: ServiceNow client consolidated (aicase.py now reuses sync_snow_asset.py
+  helpers); Python 2 compatibility shims removed; bundled splunklib SDK upgraded
 
 ### v1.2.1 (2026-01-21)
 

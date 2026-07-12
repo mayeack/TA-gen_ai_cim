@@ -11,8 +11,11 @@
 #   - Local overrides and credentials (local/, metadata/local.meta)
 #   - Compiled Python (*.pyc, __pycache__)
 #   - Runtime logs (*.log)
-#   - Large training assets (lookups/*.csv, lookups/__mlspl_*.mlmodel)
-#   - Internal docs, planning, and Cursor skill files
+#   - Large training assets (the 200k-row PII CSV, lookups/__mlspl_*.mlmodel).
+#     Small sample CSVs (medadvice_*, prompt_injection_training_examples)
+#     DO ship: transforms.conf and inputs.conf reference them.
+#   - Internal docs, planning, Dashboard Studio JSON sources (*.json.template),
+#     and Cursor/Claude assistant files (.cursor, .claude, CLAUDE.md)
 #   - The INSTALL helper (developer-only)
 #
 # Validate after build:
@@ -90,6 +93,8 @@ tar -czvf "${OUTPUT}" \
     --exclude='.gitignore' \
     --exclude='.gitattributes' \
     --exclude='.cursor' \
+    --exclude='.claude' \
+    --exclude='CLAUDE.md' \
     --exclude='.DS_Store' \
     --exclude='Thumbs.db' \
     --exclude='.idea' \
@@ -104,13 +109,15 @@ tar -czvf "${OUTPUT}" \
     --exclude='__pycache__' \
     --exclude='*.log' \
     --exclude='genaiscore_debug.log' \
-    --exclude='lookups/*.csv' \
+    --exclude='lookups/llm_pii_mixed_responses_200k.csv' \
     --exclude='lookups/__mlspl_*.mlmodel' \
+    --exclude='*.json.template' \
     --exclude='INSTALL.sh' \
     --exclude='package.sh' \
     --exclude='tools' \
     --exclude='tools/*' \
     --exclude='README/' \
+    --exclude='elements/' \
     --exclude='planning/' \
     --exclude='.env' \
     --exclude='.env.*' \

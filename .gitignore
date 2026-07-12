@@ -12,8 +12,14 @@ __pycache__/
 # Splunk-generated ML models (large binary files)
 lookups/*.mlmodel
 
-# Lookup data files (may contain sensitive data)
-lookups/*.csv
+# Lookup data files: ignore only large/generated datasets. Small synthetic
+# sample CSVs (medadvice_*, prompt_injection_training_examples) are tracked
+# and shipped because transforms.conf / inputs.conf reference them.
+lookups/llm_pii_mixed_responses_200k.csv
+lookups/*_training_data_engineered.csv
+lookups/tfidf_training_data_v3.csv
+lookups/*_model_metadata.csv
+lookups/pii_training_examples.csv
 
 # OS files
 .DS_Store
@@ -43,3 +49,6 @@ README/KEY_FEATURES.md
 
 # Cursor MCP config (instance-specific, may contain credentials)
 .cursor/mcp.json
+
+# Claude Code local settings (instance-specific)
+.claude/settings.local.json
