@@ -43,14 +43,11 @@ Copyright 2026 Splunk Inc.
 Licensed under Apache License 2.0
 """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import os
 import sys
 import json
 import time
-import ssl
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, quote
 
 # Add Splunk SDK paths - use lib directory in this app
 app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -58,14 +55,15 @@ lib_path = os.path.join(app_root, 'lib')
 if lib_path not in sys.path:
     sys.path.insert(0, lib_path)
 
-# Handle Python 2/3 compatibility for Splunk versions
-try:
-    from urllib.request import Request, urlopen
-    from urllib.error import HTTPError, URLError
-    from urllib.parse import urlencode, quote
-except ImportError:
-    from urllib2 import Request, urlopen, HTTPError, URLError
-    from urllib import urlencode, quote
+# Shared ServiceNow client (config, OAuth, HTTP) lives in sync_snow_asset.py
+bin_path = os.path.dirname(os.path.abspath(__file__))
+if bin_path not in sys.path:
+    sys.path.insert(0, bin_path)
+
+from sync_snow_asset import (
+    get_snow_config as _shared_get_snow_config,
+    make_snow_request as _shared_make_snow_request,
+)
 
 # Splunk SDK imports
 from splunklib.searchcommands import dispatch, StreamingCommand, Configuration, Option, validators
@@ -158,195 +156,41 @@ class AICaseCommand(StreamingCommand):
         return self._service
     
     def _get_snow_config(self):
-        """Retrieve ServiceNow configuration from account configuration"""
+        """Retrieve ServiceNow configuration via the shared client in
+        sync_snow_asset.py, using this command's splunkd-URI-aware service
+        connection. Cached for the lifetime of the command invocation."""
         if self._snow_config is not None:
             return self._snow_config
-            
+
         try:
             service = self._get_service()
-            
-            # Get account configuration from ta_gen_ai_cim_account.conf
-            account_conf = None
-            account_name = None
-            
-            try:
-                accounts = service.confs['ta_gen_ai_cim_account']
-                for stanza in accounts:
-                    if stanza.name in ('default', 'asset_discovery') or stanza.name.startswith('_'):
-                        continue
-                    account_conf = stanza
-                    account_name = stanza.name
-                    self.logger.info("Found ServiceNow account: {}".format(account_name))
-                    break
-            except KeyError:
-                self.logger.error("Config file ta_gen_ai_cim_account.conf not found")
-            except Exception as e:
-                self.logger.error("Error reading account config: {}".format(str(e)))
-            
-            if account_conf is None:
-                self._snow_config = {
-                    'configured': False,
-                    'error': 'No ServiceNow account configured. Go to Configuration page to add an account.'
-                }
-                return self._snow_config
-            
-            # Extract configuration
-            url = account_conf.content.get('url', '')
-            auth_type = account_conf.content.get('auth_type', 'basic')
-            username = account_conf.content.get('username', '')
-            client_id = account_conf.content.get('client_id', '')
-            
-            # Extract instance from URL
-            instance = url.replace('https://', '').replace('http://', '').replace('.service-now.com', '').strip('/')
-            
-            # Get passwords from storage/passwords
-            password = None
-            client_secret = None
-            realm = 'ta_gen_ai_cim_account__' + account_name
-            
-            self.logger.info("Looking for passwords with realm: {}".format(realm))
-            
-            storage_passwords = service.storage_passwords
-            for credential in storage_passwords:
-                cred_realm = credential.content.get('realm', '')
-                if cred_realm == realm:
-                    cred_name = credential.content.get('username', '') or ''
-                    if ':' in credential.name:
-                        parts = credential.name.split(':')
-                        if len(parts) > 1:
-                            cred_name = parts[1]
-                    clear_password = credential.content.get('clear_password', '')
-                    self.logger.info("Found credential: name={}, realm={}".format(cred_name, cred_realm))
-                    if cred_name == 'password' or 'password' in credential.name:
-                        password = clear_password
-                        self.logger.info("Found password credential")
-                    elif cred_name == 'client_secret' or 'client_secret' in credential.name:
-                        client_secret = clear_password
-                        self.logger.info("Found client_secret credential")
-            
-            if not password and auth_type == 'basic':
-                self.logger.warning("No password found for account {}".format(account_name))
-            
-            # Validate configuration based on auth type
-            if auth_type in ['oauth_auth_code', 'oauth_client_creds']:
-                if not all([instance, client_id, client_secret]):
-                    self._snow_config = {
-                        'configured': False,
-                        'error': 'OAuth credentials incomplete. Check account configuration.'
-                    }
-                else:
-                    self._snow_config = {
-                        'configured': True,
-                        'auth_type': 'oauth',
-                        'instance': instance,
-                        'url': url,
-                        'client_id': client_id,
-                        'client_secret': client_secret,
-                        'username': username,
-                        'password': password,
-                        'access_token': None,
-                        'token_expires': 0
-                    }
-            else:
-                # Basic authentication
-                if not all([instance, username, password]):
-                    self._snow_config = {
-                        'configured': False,
-                        'error': 'Basic auth credentials incomplete. Check account configuration.'
-                    }
-                else:
-                    self._snow_config = {
-                        'configured': True,
-                        'auth_type': 'basic',
-                        'instance': instance,
-                        'url': url,
-                        'username': username,
-                        'password': password
-                    }
-                
+            self._snow_config = _shared_get_snow_config(None, service=service)
         except Exception as e:
             self._snow_config = {
                 'configured': False,
                 'error': 'Failed to retrieve ServiceNow config: {}'.format(str(e))
             }
-            
+
         return self._snow_config
-    
-    def _get_oauth_token(self, config):
-        """Get OAuth 2.0 access token from ServiceNow"""
-        import base64
-        
-        # Check if we have a valid cached token
-        if config.get('access_token') and config.get('token_expires', 0) > time.time():
-            return config['access_token']
-        
-        # Request new token
-        token_url = 'https://{}.service-now.com/oauth_token.do'.format(config['instance'])
-        
-        # Prepare token request data
-        token_data = {
-            'grant_type': 'password',
-            'client_id': config['client_id'],
-            'client_secret': config['client_secret'],
-            'username': config['username'],
-            'password': config['password']
-        }
-        
-        # URL encode the data
-        if sys.version_info[0] >= 3:
-            body = urlencode(token_data).encode('utf-8')
-        else:
-            body = urlencode(token_data)
-        
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json'
-        }
-        
-        req = Request(token_url, data=body, headers=headers)
-        
-        try:
-            ssl_context = ssl.create_default_context()
-            response = urlopen(req, context=ssl_context, timeout=30)
-            response_data = response.read()
-            if sys.version_info[0] >= 3:
-                response_data = response_data.decode('utf-8')
-            
-            token_response = json.loads(response_data)
-            access_token = token_response.get('access_token')
-            expires_in = token_response.get('expires_in', 1800)
-            
-            # Cache the token
-            config['access_token'] = access_token
-            config['token_expires'] = time.time() + expires_in - 60  # 60 second buffer
-            
-            return access_token
-            
-        except HTTPError as e:
-            error_body = e.read()
-            if sys.version_info[0] >= 3:
-                error_body = error_body.decode('utf-8')
-            raise Exception('OAuth token error {}: {}'.format(e.code, error_body))
-        except URLError as e:
-            raise Exception('OAuth connection error: {}'.format(str(e.reason)))
-    
+
     def _get_kv_store_record(self, event_id):
-        """Check KV Store for existing mapping"""
-        try:
-            service = self._get_service()
-            collection = service.kvstore['gen_ai_snow_case_map']
-            
-            # Query by event_id
-            query = json.dumps({'event_id': event_id})
-            results = collection.data.query(query=query)
-            
-            if results and len(results) > 0:
-                return results[0]
-            return None
-            
-        except Exception as e:
-            self.logger.error("KV Store lookup failed: {}".format(str(e)))
-            return None
+        """Check KV Store for existing mapping.
+
+        Raises on KV Store errors instead of returning None: a lookup
+        failure is indistinguishable from "no case exists", and proceeding
+        would create a duplicate ServiceNow case. stream() aborts the
+        record on exception.
+        """
+        service = self._get_service()
+        collection = service.kvstore['gen_ai_snow_case_map']
+
+        # Query by event_id
+        query = json.dumps({'event_id': event_id})
+        results = collection.data.query(query=query)
+
+        if results and len(results) > 0:
+            return results[0]
+        return None
     
     def _save_kv_store_record(self, event_id, sys_id, sn_instance, username):
         """Save mapping to KV Store"""
@@ -372,92 +216,40 @@ class AICaseCommand(StreamingCommand):
             return False
     
     def _make_snow_request(self, method, url, data=None, config=None):
-        """Make HTTP request to ServiceNow REST API"""
-        import base64
-        
+        """Make HTTP request to ServiceNow via the shared client."""
         if config is None:
             config = self._get_snow_config()
-            
-        if not config.get('configured'):
-            raise Exception(config.get('error', 'ServiceNow not configured'))
-        
-        # Construct full URL
-        base_url = 'https://{}.service-now.com'.format(config['instance'])
-        full_url = base_url + url
-        
-        # Prepare request headers
-        headers = {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-        }
-        
-        # Set authentication based on auth type
-        auth_type = config.get('auth_type', 'basic')
-        
-        if auth_type == 'oauth':
-            # OAuth 2.0 Bearer token
-            access_token = self._get_oauth_token(config)
-            headers['Authorization'] = 'Bearer {}'.format(access_token)
-        else:
-            # Basic authentication
-            auth_string = '{}:{}'.format(config['username'], config['password'])
-            if sys.version_info[0] >= 3:
-                auth_bytes = base64.b64encode(auth_string.encode('utf-8')).decode('utf-8')
-            else:
-                auth_bytes = base64.b64encode(auth_string)
-            headers['Authorization'] = 'Basic {}'.format(auth_bytes)
-        
-        # Prepare data
-        body = None
-        if data is not None:
-            body = json.dumps(data)
-            if sys.version_info[0] >= 3:
-                body = body.encode('utf-8')
-        
-        # Create request
-        req = Request(full_url, data=body, headers=headers)
-        if method.upper() != 'POST' and body is not None:
-            req.get_method = lambda: method.upper()
-        
-        # Make request with SSL context
-        try:
-            # Create SSL context that handles certificates properly
-            ssl_context = ssl.create_default_context()
-            response = urlopen(req, context=ssl_context, timeout=30)
-            response_data = response.read()
-            if sys.version_info[0] >= 3:
-                response_data = response_data.decode('utf-8')
-            return json.loads(response_data)
-        except HTTPError as e:
-            error_body = e.read()
-            if sys.version_info[0] >= 3:
-                error_body = error_body.decode('utf-8')
-            raise Exception('ServiceNow API error {}: {}'.format(e.code, error_body))
-        except URLError as e:
-            raise Exception('ServiceNow connection error: {}'.format(str(e.reason)))
-    
+        return _shared_make_snow_request(method, url, data=data, config=config)
+
     def _get_today_date(self):
         """Get today's date in ServiceNow format (YYYY-MM-DD)"""
         import datetime
         return datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')
     
     def _get_splunk_event_url(self, event_id):
-        """Build a URL to view the event in Splunk"""
-        # Get Splunk web URL from server info if available, otherwise use placeholder
+        """Build a URL to view the event in Splunk Web.
+
+        Derives scheme/host/port from the server's own settings
+        (enableSplunkWebSSL, httpport) and the splunkd host this search
+        ran against; falls back to http://localhost:8000/ only if the
+        settings endpoint is unreachable.
+        """
         try:
             service = self._get_service()
-            server_info = service.info
-            # Default to localhost - in production this would be configured
-            splunk_host = 'localhost:8000/'
+            settings = service.settings.content
+            web_ssl = str(settings.get('enableSplunkWebSSL', '0')).lower() in ('1', 'true')
+            web_port = settings.get('httpport') or '8000'
+            host = urlsplit(self.metadata.searchinfo.splunkd_uri).hostname or 'localhost'
+            base_url = '{}://{}:{}/'.format('https' if web_ssl else 'http', host, web_port)
         except Exception:
-            splunk_host = 'localhost:8000/'
-        
+            base_url = 'http://localhost:8000/'
+
         # Build search URL to find the event
         # Format: search index=gen_ai_log gen_ai.event.id=<value>
         search_query = 'search index=gen_ai_log gen_ai.event.id={}'.format(event_id)
         encoded_query = quote(search_query, safe='')
-        
-        return 'http://{}en-US/app/search/search?q={}'.format(splunk_host, encoded_query)
+
+        return '{}en-US/app/search/search?q={}'.format(base_url, encoded_query)
     
     def _fetch_event_details(self, event_id):
         """Fetch full event details from Splunk for the given event_id.
@@ -514,13 +306,9 @@ class AICaseCommand(StreamingCommand):
             }
             
             search_results = service.jobs.oneshot(search_query, **kwargs_oneshot)
-            
+
             # Parse JSON results
-            if sys.version_info[0] >= 3:
-                results_data = search_results.read().decode('utf-8')
-            else:
-                results_data = search_results.read()
-            
+            results_data = search_results.read().decode('utf-8')
             results_json = json.loads(results_data)
             
             if results_json.get('results') and len(results_json['results']) > 0:
@@ -701,10 +489,7 @@ class AICaseCommand(StreamingCommand):
             
             # Get results
             results_stream = job.results(output_mode='json', count=10)
-            if sys.version_info[0] >= 3:
-                results_data = results_stream.read().decode('utf-8')
-            else:
-                results_data = results_stream.read()
+            results_data = results_stream.read().decode('utf-8')
             
             # Clean up job
             job.cancel()
@@ -947,26 +732,45 @@ class AICaseCommand(StreamingCommand):
                 continue
             
             try:
-                # Check KV Store for existing mapping
-                existing = self._get_kv_store_record(evt_id)
-                
+                # Check KV Store for existing mapping. A lookup failure must
+                # abort this record: treating it as "no case" would create a
+                # duplicate ServiceNow case on every KV Store hiccup.
+                try:
+                    existing = self._get_kv_store_record(evt_id)
+                except Exception as e:
+                    self.logger.error(
+                        "KV Store lookup failed for event_id={}; not creating a "
+                        "case to avoid duplicates: {}".format(evt_id, str(e)))
+                    record['snow_case_status'] = 'error'
+                    record['snow_case_message'] = \
+                        'KV Store lookup failed; case not created: {}'.format(str(e))
+                    yield record
+                    continue
+
                 if existing:
                     # Case already exists
                     sys_id = existing.get('sys_id')
                     instance = existing.get('sn_instance', snow_config['instance'])
-                    
+
                     record['snow_case_url'] = self._get_case_url(sys_id, instance)
                     record['snow_case_sys_id'] = sys_id
                     record['snow_case_status'] = 'existing'
                     record['snow_case_message'] = 'Existing case found for event_id={}'.format(evt_id)
-                    
+
                 elif self.mode == 'lookup':
                     # Lookup only mode - no case found
                     record['snow_case_status'] = 'not_found'
                     record['snow_case_message'] = 'No existing case for event_id={}'.format(evt_id)
-                    
+
+                elif self.mode == 'open':
+                    # Open mode returns the URL of an existing case only —
+                    # it must never create one. The existing-case branch
+                    # above already handled the found case.
+                    record['snow_case_status'] = 'not_found'
+                    record['snow_case_message'] = 'No existing case to open for event_id={}'.format(evt_id)
+
                 else:
-                    # Create new case
+                    # Create new case (mode=create)
                     # Get service name from record
                     service_name = record.get('gen_ai.service.name') or \
                                    record.get('gen_ai.app.name') or \

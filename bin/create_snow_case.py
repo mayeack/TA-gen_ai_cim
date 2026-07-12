@@ -13,19 +13,10 @@ Copyright 2026 Splunk Inc.
 Licensed under Apache License 2.0
 """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import os
 import sys
 import json
 import time
-
-# Handle Python 2/3 compatibility
-try:
-    from urllib.request import Request, urlopen
-    from urllib.error import HTTPError, URLError
-except ImportError:
-    from urllib2 import Request, urlopen, HTTPError, URLError
 
 # Add lib/ and bin/ paths
 app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -62,17 +53,19 @@ def get_snow_config(session_key):
 
 
 def check_existing_case(service, event_id):
-    """Check KV Store for existing case mapping"""
-    try:
-        collection = service.kvstore[KV_COLLECTION]
-        query = json.dumps({'event_id': event_id})
-        results = collection.data.query(query=query)
-        
-        if results and len(results) > 0:
-            return results[0]
-        return None
-    except Exception:
-        return None
+    """Check KV Store for existing case mapping.
+
+    Raises on KV Store errors instead of returning None: a lookup failure
+    is indistinguishable from "no case exists", and proceeding would create
+    a duplicate ServiceNow case. Callers must abort on exception.
+    """
+    collection = service.kvstore[KV_COLLECTION]
+    query = json.dumps({'event_id': event_id})
+    results = collection.data.query(query=query)
+
+    if results and len(results) > 0:
+        return results[0]
+    return None
 
 
 def save_case_mapping(service, event_id, sys_id, sn_instance, username):
@@ -132,9 +125,21 @@ def main():
 
     logger.info("create_snow_case started - payload keys: {}".format(list(payload.keys())))
 
+    def _param(value):
+        """Treat empty strings, the conf-spec placeholder '<string>', and
+        unresolved $result...$ tokens as unset."""
+        if not value:
+            return None
+        value = str(value).strip()
+        if not value or value == '<string>' or (value.startswith('$') and value.endswith('$')):
+            return None
+        return value
+
     config = payload.get('configuration', {})
-    event_id = config.get('event_id')
-    case_description = config.get('case_description', '')
+    # The alert action UI exposes param.request_id; accept the legacy
+    # event_id key too for ad-hoc invocations.
+    event_id = _param(config.get('request_id')) or _param(config.get('event_id'))
+    case_description = _param(config.get('case_description')) or ''
     session_key = payload.get('session_key')
 
     if not event_id:
@@ -167,7 +172,14 @@ def main():
         print(json.dumps({'success': False, 'message': 'Splunk connection error: {}'.format(str(e))}))
         sys.exit(1)
 
-    existing = check_existing_case(service, event_id)
+    try:
+        existing = check_existing_case(service, event_id)
+    except Exception as e:
+        logger.error("KV Store lookup failed for event_id={}; aborting to avoid "
+                     "creating a duplicate case: {}".format(event_id, str(e)))
+        print(json.dumps({'success': False,
+                          'message': 'KV Store lookup failed; case not created: {}'.format(str(e))}))
+        sys.exit(1)
     if existing:
         case_url = 'https://{}.service-now.com/{}.do?sys_id={}'.format(
             existing.get('sn_instance', snow_config['instance']),

@@ -23,8 +23,6 @@ Copyright 2026 Splunk Inc.
 Licensed under Apache License 2.0
 """
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import os
 import sys
 import json
@@ -39,14 +37,9 @@ lib_path = os.path.join(app_root, 'lib')
 if lib_path not in sys.path:
     sys.path.insert(0, lib_path)
 
-# Handle Python 2/3 compatibility for Splunk versions
-try:
-    from urllib.request import Request, urlopen
-    from urllib.error import HTTPError, URLError
-    from urllib.parse import urlencode, quote
-except ImportError:
-    from urllib2 import Request, urlopen, HTTPError, URLError
-    from urllib import urlencode, quote
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode, quote
 
 import splunklib.client as client
 
@@ -74,19 +67,26 @@ def setup_logging(log_name='sync_snow_asset'):
 logger = setup_logging('sync_snow_asset')
 
 
-def get_snow_config(session_key):
+def get_snow_config(session_key, service=None):
     """Retrieve ServiceNow configuration from account configuration.
-    
+
     Reads from ta_gen_ai_cim_account.conf and retrieves passwords
     from Splunk's secure storage/passwords.
+
+    Args:
+        session_key: Splunk session key (ignored when service is given)
+        service: optional pre-built splunklib Service; callers that know
+            their splunkd URI (e.g. search commands) pass one so the
+            connection isn't assumed to be on the default port 8089
     """
     try:
-        service = client.connect(
-            token=session_key,
-            owner='nobody',
-            app='TA-gen_ai_cim'
-        )
-        
+        if service is None:
+            service = client.connect(
+                token=session_key,
+                owner='nobody',
+                app='TA-gen_ai_cim'
+            )
+
         # Get account configuration from ta_gen_ai_cim_account.conf
         account_conf = None
         account_name = None
@@ -163,6 +163,9 @@ def get_snow_config(session_key):
             return {
                 'configured': True,
                 'auth_type': 'oauth',
+                # Preserve the configured OAuth subtype so get_oauth_token can
+                # pick the correct grant (client_credentials vs password).
+                'auth_subtype': auth_type,
                 'instance': instance,
                 'url': url,
                 'client_id': client_id,
@@ -278,58 +281,61 @@ def derive_inventory_status(sync_status, approval_status):
 
 def get_oauth_token(config):
     """Get OAuth 2.0 access token from ServiceNow"""
-    import base64
-    
     # Check if we have a valid cached token
     if config.get('access_token') and config.get('token_expires', 0) > time.time():
         return config['access_token']
-    
+
     # Request new token
     token_url = 'https://{}.service-now.com/oauth_token.do'.format(config['instance'])
-    
-    # Prepare token request data
-    token_data = {
-        'grant_type': 'password',
-        'client_id': config['client_id'],
-        'client_secret': config['client_secret'],
-        'username': config['username'],
-        'password': config['password']
-    }
-    
-    # URL encode the data
-    if sys.version_info[0] >= 3:
-        body = urlencode(token_data).encode('utf-8')
+
+    # Prepare token request data based on the configured OAuth subtype.
+    if config.get('auth_subtype') == 'oauth_client_creds':
+        # Client-credentials grant: the client authenticates as itself;
+        # no user credentials are sent.
+        token_data = {
+            'grant_type': 'client_credentials',
+            'client_id': config['client_id'],
+            'client_secret': config['client_secret']
+        }
     else:
-        body = urlencode(token_data)
-    
+        # oauth_auth_code (and legacy configs without a subtype) use the
+        # resource-owner password grant. A true authorization-code flow
+        # would need a browser redirect + refresh-token store, which this
+        # add-on does not implement.
+        token_data = {
+            'grant_type': 'password',
+            'client_id': config['client_id'],
+            'client_secret': config['client_secret'],
+            'username': config['username'],
+            'password': config['password']
+        }
+
+    body = urlencode(token_data).encode('utf-8')
+
     headers = {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json'
     }
-    
+
     req = Request(token_url, data=body, headers=headers)
-    
+
     try:
         ssl_context = ssl.create_default_context()
         response = urlopen(req, context=ssl_context, timeout=30)
-        response_data = response.read()
-        if sys.version_info[0] >= 3:
-            response_data = response_data.decode('utf-8')
-        
+        response_data = response.read().decode('utf-8')
+
         token_response = json.loads(response_data)
         access_token = token_response.get('access_token')
         expires_in = token_response.get('expires_in', 1800)
-        
+
         # Cache the token
         config['access_token'] = access_token
         config['token_expires'] = time.time() + expires_in - 60  # 60 second buffer
-        
+
         return access_token
-        
+
     except HTTPError as e:
-        error_body = e.read()
-        if sys.version_info[0] >= 3:
-            error_body = error_body.decode('utf-8')
+        error_body = e.read().decode('utf-8')
         raise Exception('OAuth token error {}: {}'.format(e.code, error_body))
     except URLError as e:
         raise Exception('OAuth connection error: {}'.format(str(e.reason)))
@@ -367,38 +373,26 @@ def make_snow_request(method, url, data=None, config=None):
     else:
         # Basic authentication
         auth_string = '{}:{}'.format(config['username'], config['password'])
-        if sys.version_info[0] >= 3:
-            auth_bytes = base64.b64encode(auth_string.encode('utf-8')).decode('utf-8')
-        else:
-            auth_bytes = base64.b64encode(auth_string)
+        auth_bytes = base64.b64encode(auth_string.encode('utf-8')).decode('utf-8')
         headers['Authorization'] = 'Basic {}'.format(auth_bytes)
-        # Debug: Log auth header (first 20 chars only for security)
         logger.info("ServiceNow API Request - Auth header set (Basic auth)")
-    
+
     # Prepare data
     body = None
     if data is not None:
-        body = json.dumps(data)
-        if sys.version_info[0] >= 3:
-            body = body.encode('utf-8')
-    
+        body = json.dumps(data).encode('utf-8')
+
     # Create request
-    req = Request(full_url, data=body, headers=headers)
-    if method.upper() != 'POST' and method.upper() != 'GET':
-        req.get_method = lambda: method.upper()
-    
+    req = Request(full_url, data=body, headers=headers, method=method.upper())
+
     # Make request with SSL context
     try:
         ssl_context = ssl.create_default_context()
         response = urlopen(req, context=ssl_context, timeout=30)
-        response_data = response.read()
-        if sys.version_info[0] >= 3:
-            response_data = response_data.decode('utf-8')
+        response_data = response.read().decode('utf-8')
         return json.loads(response_data)
     except HTTPError as e:
-        error_body = e.read()
-        if sys.version_info[0] >= 3:
-            error_body = error_body.decode('utf-8')
+        error_body = e.read().decode('utf-8')
         raise Exception('ServiceNow API error {}: {}'.format(e.code, error_body))
     except URLError as e:
         raise Exception('ServiceNow connection error: {}'.format(str(e.reason)))
