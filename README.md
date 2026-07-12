@@ -343,6 +343,12 @@ The TA extracts and normalizes **60+ fields** across these categories:
 
 The TA includes **15+ pre-configured alerts** in `savedsearches.conf`:
 
+> **All shipped searches are disabled by default.** Following Splunk Cloud
+> best practice, every scheduled search, alert, report, and correlation rule
+> ships with `disabled = 1` so a fresh install never sends email, calls
+> ServiceNow, or consumes scheduler slots until you opt in. See
+> [Enabling the shipped searches](#enabling-the-shipped-searches) below.
+
 ### Safety & Compliance
 - **GenAI - Safety Violation Alert** - Detects safety policy violations
 - **GenAI - Critical Safety Alert - EMERGENCY** - Immediate EMERGENCY-level alerts
@@ -380,13 +386,33 @@ The TA includes **15+ pre-configured alerts** in `savedsearches.conf`:
 - **GenAI - TFIDF Anomaly Rate Threshold Alert** - Overall anomaly rate > 10%
 - **GenAI - TFIDF Daily Anomaly Summary** - Daily summary report
 
-**Enable alerts:**
-```bash
-# Enable all governance alerts
-$SPLUNK_HOME/bin/splunk search "| savedsearch \"GenAI - *\""
-```
+### Enabling the shipped searches
 
-**Customize alerts:** Edit `$SPLUNK_HOME/etc/apps/TA-gen_ai_cim/default/savedsearches.conf`
+Every scheduled search ships `disabled = 1`. Enable only what your
+environment needs — never by editing `default/`:
+
+- **Splunk Web:** Settings → Searches, reports, and alerts → filter on the
+  TA-gen_ai_cim app → Edit → Enable.
+- **Configuration files** (on-prem / deployment automation): create
+  `$SPLUNK_HOME/etc/apps/TA-gen_ai_cim/local/savedsearches.conf` with a
+  `disabled = 0` override per search, e.g.:
+
+  ```ini
+  [GenAI - Safety Violation Alert]
+  disabled = 0
+  ```
+
+- **Splunk Cloud:** use the UI, or ACS `POST /adminconfig/v2/apps` config
+  workflows per your operating model.
+
+Before enabling, review each search's cadence and actions: the ML scoring
+searches run every minute, the ServiceNow sync searches make outbound API
+calls hourly, most alerts send email (configure `action.email.to` first),
+and the two `AI Governance - * - Rule` correlation searches require
+Splunk Enterprise Security for their notable/risk actions.
+
+**Customize alerts:** override thresholds and actions in
+`local/savedsearches.conf` (upgrade-safe) — never edit `default/`.
 
 ---
 
