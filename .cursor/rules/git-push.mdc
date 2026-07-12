@@ -1,56 +1,47 @@
 ---
-description: Git push workflow for TA-gen_ai_cim - always push to the dedicated repo
-globs: 
+description: Git workflow for TA-gen_ai_cim - standalone repo, feature-branch PR flow
+globs:
 alwaysApply: true
 ---
 
-# Git Push Rules for TA-gen_ai_cim
+# Git Workflow for TA-gen_ai_cim
 
 ## Repository Layout
 
-The workspace lives at `/opt/splunk/etc/apps/TA-gen_ai_cim` but the git repo root is at `/opt/splunk/etc`. Two remotes are configured:
+This app directory **is** the git repo root (a standalone repository).
+There is exactly one remote:
 
-| Remote    | URL                                              | Purpose                           |
-|-----------|--------------------------------------------------|-----------------------------------|
-| `origin`  | https://github.com/mayeack/5GCoreAnalytics.git   | Parent repo (full Splunk etc/)    |
-| `ta-cim`  | https://github.com/mayeack/TA-gen_ai_cim.git     | **Dedicated TA repo (primary)**   |
+| Remote   | URL                                            | Purpose            |
+|----------|------------------------------------------------|--------------------|
+| `origin` | https://github.com/mayeack/TA-gen_ai_cim.git   | The TA repo        |
+
+> Historical note: this project once lived as a subtree of a
+> `/opt/splunk/etc` monorepo (`5GCoreAnalytics`) pushed via
+> `git subtree push` to a `ta-cim` remote. That layout no longer exists —
+> do not use subtree commands here.
 
 ## Push Workflow
 
-When the user asks to push, commit, or save to git, **ALWAYS** push to the `ta-cim` remote (https://github.com/mayeack/TA-gen_ai_cim). Follow these steps:
-
-1. **Stage and commit** changes in `/opt/splunk/etc` for files under `apps/TA-gen_ai_cim/` only.
-2. **Subtree push** to the dedicated repo:
-   ```bash
-   cd /opt/splunk/etc
-   git subtree push --prefix=apps/TA-gen_ai_cim ta-cim main
-   ```
-3. If subtree push fails due to history divergence, use split + force push:
-   ```bash
-   cd /opt/splunk/etc
-   git subtree split --prefix=apps/TA-gen_ai_cim -b ta-cim-split
-   git push ta-cim ta-cim-split:main --force
-   git branch -D ta-cim-split
-   ```
-4. **Do NOT push to `origin` (5GCoreAnalytics)** unless the user explicitly requests it.
-
-## Remote Setup
-
-If the `ta-cim` remote is missing, add it:
-```bash
-cd /opt/splunk/etc
-git remote add ta-cim https://github.com/mayeack/TA-gen_ai_cim.git
-```
+1. Work on a feature branch (`fix/...`, `chore/...`, `feature/...`) —
+   never commit directly to `main`.
+2. Commit only files under this app; write a real commit message
+   (no empty messages).
+3. `git push -u origin <branch>` and open a PR against `main`.
 
 ## Excluded Files
 
-Never commit these files:
-- `.cursor/mcp.json` (instance-specific, may contain credentials)
-- `local/` directory (Splunk local overrides)
-- `lookups/*.csv` (user data, training data)
+Never commit:
+- `local/` directory and `metadata/local.meta` (instance overrides — this
+  checkout is also a live dev Splunk instance)
+- `.cursor/mcp.json` and `.claude/settings.local.json` (may contain credentials)
+- Large/generated lookup CSVs (see `.gitignore`; the small sample CSVs
+  `medadvice_*.csv` and `prompt_injection_training_examples.csv` ARE
+  tracked and ship with the app)
 
-## Committed `.cursor/` Content
+## Shared assistant content
 
-The following are intentionally tracked so the team shares the same IDE context:
-- `.cursor/rules/` (project rules)
-- `.cursor/skills/` (shared Cursor skills; symlinked from user-level `~/.cursor/skills/` for convenience)
+Intentionally tracked so the team shares the same context:
+- `.cursor/rules/` and `.cursor/skills/` (Cursor)
+- `.claude/skills/` and `CLAUDE.md` (Claude Code)
+
+Keep `.cursor/skills/` and `.claude/skills/` in sync when editing either.

@@ -44,7 +44,7 @@ After installing PSC, **restart Splunk**, then verify it is present: `ls $SPLUNK
 ### Bundled Dependencies (No Action Required)
 
 The TA includes all necessary Python libraries in the `lib/` directory:
-- `splunklib` SDK v2.0.2 - Splunk SDK for Python
+- `splunklib` SDK v2.1.1 - Splunk SDK for Python
 
 ### Verify Prerequisites
 
