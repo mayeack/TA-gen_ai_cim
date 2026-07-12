@@ -497,8 +497,9 @@ class AICaseCommand(StreamingCommand):
             self.logger.info("AI Toolkit search completed, parsing results")
             results_json = json.loads(results_data)
             
-            # Log the raw results for debugging
-            self.logger.info("AI Toolkit raw results (first 500 chars): {}".format(results_data[:500] if len(results_data) > 500 else results_data))
+            # Raw results carry prompt/response content (potential PII) —
+            # log at debug only.
+            self.logger.debug("AI Toolkit raw results (first 500 chars): {}".format(results_data[:500] if len(results_data) > 500 else results_data))
             
             if results_json.get('results') and len(results_json['results']) > 0:
                 # The | ai command outputs to ai_result_1 field
@@ -514,7 +515,7 @@ class AICaseCommand(StreamingCommand):
                     if error_field:
                         self.logger.warning("AI Toolkit returned error: {}".format(error_field))
                     # Log all keys and values for debugging
-                    self.logger.warning("AI Toolkit result row contents: {}".format(result_row))
+                    self.logger.debug("AI Toolkit result row contents: {}".format(result_row))
             else:
                 self.logger.warning("AI Toolkit returned no results. Full response: {}".format(results_data))
             

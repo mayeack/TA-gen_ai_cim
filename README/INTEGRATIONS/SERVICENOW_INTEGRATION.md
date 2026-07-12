@@ -50,7 +50,7 @@ One-click escalation of AI events into ServiceNow AI Case Management with audita
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  ServiceNow (ciscoaidfsir.service-now.com)                          │
+│  ServiceNow (your-instance.service-now.com)                          │
 │  Table: sn_ai_case_mgmt_ai_case                                     │
 │  Fields: Name, Type, Date of Discovery                              │
 └─────────────────────────────────────────────────────────────────────┘
@@ -98,7 +98,7 @@ $SPLUNK_HOME/bin/splunk cmd python bin/snow_setup.py --interactive
 
 # Or command-line mode
 $SPLUNK_HOME/bin/splunk cmd python bin/snow_setup.py \
-    --instance ciscoaidfsir \
+    --instance your-instance \
     --username svc_splunk_snow \
     --password '<your-password>' \
     --test
@@ -111,7 +111,7 @@ $SPLUNK_HOME/bin/splunk cmd python bin/snow_setup.py \
 curl -k -u admin:<password> -X POST \
     https://localhost:8089/servicesNS/nobody/TA-gen_ai_cim/storage/passwords \
     -d "name=ta_gen_ai_cim_snow" \
-    -d "password=ciscoaidfsir" \
+    -d "password=your-instance" \
     -d "realm=servicenow_instance"
 
 # Store ServiceNow credentials
@@ -126,7 +126,7 @@ curl -k -u admin:<password> -X POST \
 
 1. Navigate to **GenAI Governance** app
 2. Click **Configuration** → **ServiceNow Setup**
-3. Enter your ServiceNow instance name (e.g., `ciscoaidfsir`)
+3. Enter your ServiceNow instance name (e.g., `your-instance`)
 4. Enter the service account username and password
 5. Click **Test Connection** to verify
 6. Click **Save Configuration**

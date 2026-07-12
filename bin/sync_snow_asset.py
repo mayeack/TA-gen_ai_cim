@@ -833,7 +833,8 @@ def main():
     logger.info("results_file: {}".format(results_file))
     logger.info("result keys: {}".format(list(results.keys()) if results else 'None'))
     if results:
-        logger.info("result contents: {}".format(results))
+        # Result rows can carry event content (potential PII) — debug only.
+        logger.debug("result contents: {}".format(results))
 
     processed_count = 0
     success_count = 0

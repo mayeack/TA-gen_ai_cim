@@ -12,29 +12,34 @@ The navigation uses Splunk's standard `<nav>` structure with a dark color theme 
 
 ```
 ├── Search (external link to Splunk search)
-├── AI Governance Overview (default landing page)
-├── Governance Review (collection)
-│   ├── Review Queue
-│   └── Event Review
-├── ML Feedback Loop (collection)
-│   ├── PII Feedback Loop - Model Comparison
-│   └── PII Feedback Loop - Model Registry
+├── Dashboards (collection)
+│   ├── AI Governance Overview (default landing page)
+│   ├── Tokenomics
+│   ├── AI Asset Discovery
+│   ├── PII Detection
+│   └── Prompt Injection Detection
 ├── Configuration
+├── GenAI Scoring
 ├── Datasets (built-in)
 ├── Reports (built-in)
 └── Alerts (built-in)
 ```
+
+Two collections are currently commented out in the nav (views still ship,
+reachable by URL): **Governance Review** (Review Queue, Event Review) and
+**ML Feedback Loop** (PII / TF-IDF Model Comparison and Registry), plus the
+TF-IDF Anomaly Detection entry (`governance_safety`). `review_landing` and
+`servicenow_case` are intentionally nav-less — they are reached via
+Event Context workflow actions.
 
 ## Purpose
 
 The navigation organizes the app's functionality into logical groups:
 
 1. **Search**: Quick access to search the `gen_ai_log` index
-2. **AI Governance Overview**: Central dashboard for monitoring all AI activity
-3. **Governance Review**: Human review workflow for flagged AI events
-4. **ML Feedback Loop**: Model management and continuous improvement
-5. **Configuration**: Administrative settings and integrations
-6. **Datasets/Reports/Alerts**: Standard Splunk knowledge objects
+2. **Dashboards**: Central monitoring for AI activity, cost, assets, and detections
+3. **Configuration / GenAI Scoring**: Administrative settings and integrations
+4. **Datasets/Reports/Alerts**: Standard Splunk knowledge objects
 
 ## File Location
 
@@ -48,7 +53,7 @@ default/data/ui/nav/default.xml
 |-----------|-------|-------------|
 | `search_view` | `search` | Default search view |
 | `color` | `#3C444D` | Navigation bar background color |
-| `default` | `genai_governance_overview_studio` | Default landing page |
+| `default` | `ai_governance_overview` | Default landing page |
 
 ## Related Files
 

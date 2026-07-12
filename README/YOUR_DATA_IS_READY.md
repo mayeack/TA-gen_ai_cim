@@ -135,7 +135,7 @@ cp $SPLUNK_HOME/etc/apps/Splunk_ML_Toolkit/local/mlspl_models/pii_healthcare_mod
    $SPLUNK_HOME/etc/apps/TA-gen_ai_cim/mlspl/
 
 # Load model
-bash $SPLUNK_HOME/etc/apps/TA-gen_ai_cim/bin/load_pii_model.sh
+bash $SPLUNK_HOME/etc/apps/TA-gen_ai_cim/tools/load_pii_model.sh
 
 # Restart Splunk
 $SPLUNK_HOME/bin/splunk restart
@@ -193,7 +193,7 @@ With 200k examples and healthcare-optimized features:
 - `mlspl/pii_healthcare_model_metadata.json`
 
 ### Scripts
-- **Model Loader:** `bin/load_pii_model.sh`
+- **Model Loader:** `tools/load_pii_model.sh`
 
 ---
 
@@ -231,7 +231,7 @@ With 200k examples and healthcare-optimized features:
 ✅ **Healthcare-optimized features** (22 features including MRN, Member ID, Claims)  
 ✅ **Complete training SPL** provided above  
 ✅ **Comprehensive documentation** in `README/ML Models/PII_Detection.md`  
-✅ **Model loader script** ready: `bin/load_pii_model.sh`  
+✅ **Model loader script** ready: `tools/load_pii_model.sh`  
 
 **You're ready to train!** Just copy the SPL above into Splunk Search. 🚀
 

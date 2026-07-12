@@ -4,6 +4,12 @@
 #
 
 [settings]
+debug_logging = <bool>
+* When true, the genaiscore command logs prompt/response/event content
+  (truncated) to $SPLUNK_HOME/var/log/splunk/genaiscore.log at DEBUG level
+* Leave false in production: scored events may contain PII/PHI
+* Default: false
+
 system_prompt = <string>
 * Global system prompt prepended to every pipeline-specific prompt
 * Establishes the LLM's role and enforces the JSON output schema

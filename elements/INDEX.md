@@ -10,8 +10,8 @@ This directory contains detailed documentation for each page and UI element in t
 
 | Page | File | Description |
 |------|------|-------------|
-| AI Governance Overview | [AI_GOVERNANCE_OVERVIEW.md](AI_GOVERNANCE_OVERVIEW.md) | Default landing page with comprehensive AI monitoring |
-| Review Queue | [REVIEW_QUEUE.md](REVIEW_QUEUE.md) | Triage queue for events requiring human review |
+| AI Governance Overview | [README/DASHBOARDS/AI_GOVERNANCE_OVERVIEW.md](../README/DASHBOARDS/AI_GOVERNANCE_OVERVIEW.md) | Default landing page with comprehensive AI monitoring |
+| Review Queue | [README/DASHBOARDS/REVIEW_QUEUE.md](../README/DASHBOARDS/REVIEW_QUEUE.md) | Triage queue for events requiring human review |
 | Event Review | [EVENT_REVIEW.md](EVENT_REVIEW.md) | Detailed event investigation and findings form |
 | Configuration | [CONFIGURATION.md](CONFIGURATION.md) | Administrative settings and integrations |
 
@@ -60,8 +60,6 @@ These pages support ML model management:
 elements/
 ├── INDEX.md                              # This file
 ├── NAVIGATION.md                         # Navigation menu
-├── AI_GOVERNANCE_OVERVIEW.md             # Main dashboard
-├── REVIEW_QUEUE.md                       # Review queue
 ├── EVENT_REVIEW.md                       # Event review form
 ├── CONFIGURATION.md                      # Configuration page
 ├── PII_FEEDBACK_LOOP_MODEL_COMPARISON.md # ML model comparison
@@ -69,6 +67,12 @@ elements/
 ├── REVIEW_LANDING.md                     # Review redirect helper
 └── SERVICENOW_CASE.md                    # ServiceNow redirect helper
 ```
+
+Dashboard guides for AI Governance Overview, Review Queue, PII Detection,
+Prompt Injection Detection, and TF-IDF Anomaly Detection live in
+[README/DASHBOARDS/](../README/DASHBOARDS/). This directory covers the
+governance-review/configuration/ML-registry surface only — not every view
+in `default/data/ui/views/`.
 
 ## Related Documentation
 
