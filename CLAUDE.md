@@ -102,9 +102,20 @@ bash package.sh   # then:
 splunk-appinspect inspect TA-gen_ai_cim-<version>.tgz --included-tags cloud
 ```
 
-Expected AppInspect result: 0 errors / 0 failures / 0 future-failures;
-accepted warnings only (reload_trigger_for_meta, gratuitous cron,
-datamodel-acceleration info, splunk_js, collections info).
+Expected AppInspect result (`--included-tags cloud`): 0 errors / 0
+failures / 0 future-failures, and only these 8 accepted warnings:
+
+- `check_reload_trigger_for_meta` — custom-conf reload triggers, by design.
+- `check_for_gratuitous_cron_scheduling` — governance searches on fixed crons.
+- `check_for_datamodel_acceleration` — DMA shipped off (customer opts in).
+- `check_for_splunk_js` — vendored dashboard JS.
+- `check_collections_conf` — informational KV store collection review.
+- `check_for_python_script_existence` — informational review of bin/ scripts.
+- `check_python_sdk_version` — manual review of the vendored splunklib.
+- `check_hostnames_and_ips` — public IPs in the `medadvice_*` demo lookups.
+
+Any warning outside this list, or a count other than 8, is drift: fix the
+underlying item or update this list in the same change.
 
 Live checks on this box (Splunk MCP `splunk_run_query`; note `| rest` and
 custom commands are blocked by the MCP): scheduler health via
