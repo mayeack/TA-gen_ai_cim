@@ -4,7 +4,7 @@
 
 **Splunk Technology Add-on for Generative AI Common Information Model**
 
-Version: 1.2.2  
+Version: 1.3.1  
 Author: Splunk AI Governance Team  
 License: Apache 2.0
 
@@ -228,7 +228,7 @@ $SPLUNK_HOME/bin/splunk display app TA-gen_ai_cim
 Expected output:
 ```
 TA-gen_ai_cim
-  Version: 1.2.2
+  Version: 1.3.1
   Status: enabled
 ```
 
@@ -1018,6 +1018,30 @@ The TA supports compliance requirements for:
 ---
 
 ## Version History
+
+### v1.3.1 (2026-07-18)
+
+**Security hardening — custom command permissions & SPL injection (no feature changes)**
+- SECURITY: the `aicase` and `genaiscore` custom search commands are no longer
+  exported with `read : [ * ]`. `aicase` is now restricted to `admin`, `sc_admin`,
+  and `power` (matching the `open_case_in_servicenow` workflow action and the
+  `gen_ai_snow_case_map` collection); `genaiscore` is restricted to `admin` and
+  `sc_admin` (its scoring pipelines are admin-owned saved searches).
+  **To grant either command to a custom analyst role, add a `[commands/<name>]`
+  stanza with the desired `read` ACL to `metadata/local.meta`** — do not edit
+  `default.meta`.
+- SECURITY: `aicase.py` now escapes `gen_ai.event.id` (via the existing
+  `_escape_spl_string` helper) before interpolating it into the event-lookup
+  SPL, preventing a crafted event ID from injecting additional SPL that would
+  run under the invoking user's session.
+- SECURITY: the `open_case_in_servicenow` workflow action now URL-encodes its
+  substituted field values (`$!field$`), and the `servicenow_case` redirect
+  dashboard applies the `|s` search-string token filter before `| aicase`,
+  so field content containing `&`, `"`, or `|` cannot alter the target URL or
+  the dashboard search.
+- INTERNAL: removed the misleading `passauth = splunk-system-user` lines from
+  `commands.conf`. Splunk ignores `passauth` for chunked (v2 protocol)
+  commands; both commands already run under the invoking user's session.
 
 ### v1.2.2 (2026-07-12)
 

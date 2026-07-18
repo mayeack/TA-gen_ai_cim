@@ -26,7 +26,7 @@
     <panel>
       <table id="case_results">
         <search id="case_search">
-          <query>| makeresults | eval gen_ai.event.id="$event_id$", "gen_ai.service.name"="$service_name$" | aicase | table snow_case_url snow_case_sys_id snow_case_status snow_case_message</query>
+          <query>| makeresults | eval gen_ai.event.id=$event_id|s$, "gen_ai.service.name"=$service_name|s$ | aicase | table snow_case_url snow_case_sys_id snow_case_status snow_case_message</query>
           <earliest>-1m</earliest>
           <latest>now</latest>
         </search>
