@@ -245,8 +245,11 @@ class AICaseCommand(StreamingCommand):
             base_url = 'http://localhost:8000/'
 
         # Build search URL to find the event
-        # Format: search index=gen_ai_log gen_ai.event.id=<value>
-        search_query = 'search index=gen_ai_log gen_ai.event.id={}'.format(event_id)
+        # Format: search index=gen_ai_log gen_ai.event.id="<value>"
+        # Escape + quote the event_id so a value containing quotes/backslashes
+        # cannot alter the generated search string.
+        search_query = 'search index=gen_ai_log gen_ai.event.id="{}"'.format(
+            self._escape_spl_string(event_id))
         encoded_query = quote(search_query, safe='')
 
         return '{}en-US/app/search/search?q={}'.format(base_url, encoded_query)
@@ -295,7 +298,7 @@ class AICaseCommand(StreamingCommand):
                     latest(gen_ai.guardrail.triggered) as gen_ai.guardrail.triggered,
                     latest(gen_ai.guardrail.name) as gen_ai.guardrail.name,
                     latest(_time) as _time
-                by gen_ai.event.id'''.format(event_id)
+                by gen_ai.event.id'''.format(self._escape_spl_string(event_id))
             
             # Run a oneshot search
             kwargs_oneshot = {

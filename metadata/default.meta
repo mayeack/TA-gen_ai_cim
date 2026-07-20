@@ -56,9 +56,13 @@ access = read : [ * ], write : [ admin, sc_admin, power ]
 export = system
 
 # Custom search command - aicase
-# All users can read (run the command), admins can modify
+# Restricted to the same trusted roles as the open_case_in_servicenow workflow
+# action and the gen_ai_snow_case_map collection (power users create cases,
+# admins manage). Ordinary search users must not invoke | aicase directly: it
+# fetches event content and creates external ServiceNow cases under the
+# invoking user's session. Grant additional roles per-environment via local.meta.
 [commands/aicase]
-access = read : [ * ], write : [ admin, sc_admin ]
+access = read : [ admin, sc_admin, power ], write : [ admin, sc_admin ]
 export = system
 
 # Workflow actions for Event Context menu
@@ -162,8 +166,12 @@ access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = system
 
 # GenAI scoring custom search command
+# Admin-only: the command reads the admin-restricted
+# ta_gen_ai_cim_genai_scoring.conf and sends event content to the configured
+# LLM provider. The scoring pipelines that call it are admin-owned saved
+# searches (see savedsearches stanzas below), so no non-admin path needs it.
 [commands/genaiscore]
-access = read : [ * ], write : [ admin, sc_admin ]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = system
 
 # GenAI scoring pipeline saved searches must be owned by a real user (admin)
