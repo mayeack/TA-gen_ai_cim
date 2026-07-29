@@ -199,7 +199,7 @@ The TA-gen_ai_cim AI Governance workshop at `/opt/splunk/etc/apps/TA-gen_ai_cim_
 - [`bin/scenarios.py`](/opt/splunk/etc/apps/TA-gen_ai_cim_workshop/bin/scenarios.py) — four planted incidents.
 - [`bin/run_workshop_backfill.sh`](/opt/splunk/etc/apps/TA-gen_ai_cim_workshop/bin/run_workshop_backfill.sh) — bash wrapper.
 
-That kit's field-shape strategy is the model for any new workshop: read `[medadvice3:json]` in `default/props.conf`, list every alias, emit raw underscore for aliased fields, dotted directly for the ML score fields without aliases.
+That kit's field-shape strategy is the model for any new workshop: read `[gen_ai:json]` in `default/props.conf` (the canonical ingest sourcetype; emit generated events with `sourcetype=gen_ai:json`), list every alias, emit raw underscore for aliased fields, dotted directly for the ML score fields without aliases.
 
 ## Templates
 

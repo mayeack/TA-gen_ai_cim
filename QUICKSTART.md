@@ -78,9 +78,11 @@ Or use the included install script:
 
 ---
 
-## Step 2: Configure Your Index
+## Step 2: Configure Your Index and Sourcetype
 
-**Important:** The app assumes the index `gen_ai_log` exists.
+**Important:** the app assumes the index `gen_ai_log` exists, and it normalizes
+on the sourcetype **`gen_ai:json`**. Both must be set — an index alone is not
+enough, because props.conf cannot scope field extractions by index.
 
 ### Option A: Create the Index (Recommended)
 
@@ -89,19 +91,29 @@ Or use the included install script:
 $SPLUNK_HOME/bin/splunk add index gen_ai_log
 ```
 
-### Option B: Use Your Existing Index
+### Set the sourcetype on your sender
 
-If your AI telemetry is in a different index, update `default/props.conf`:
+Ship events with `sourcetype = gen_ai:json` (HEC field, OpenTelemetry Collector
+`splunk_hec` exporter setting, or `inputs.conf`). See the README section
+"Configure Data Inputs" for full HEC and OTel examples.
+
+If your data already arrives under a different sourcetype and you cannot change
+the sender, attach it to the canonical one in `local/props.conf`. This is a
+search-time setting, so it also fixes already-indexed events:
 
 ```ini
-# Change from:
-[index::gen_ai_log]
-
-# To your index name:
-[index::your_ai_index_name]
+[your_existing_sourcetype]
+rename = gen_ai:json
 ```
 
-Then update the saved searches in `default/savedsearches.conf`:
+After a rename, search the data as `sourcetype=gen_ai:json`
+(`_sourcetype=your_existing_sourcetype` still returns the original name).
+
+### Option B: Use Your Existing Index
+
+If your AI telemetry is in a different index, update the searches that reference
+it — find and replace across `default/savedsearches.conf`, `default/macros.conf`,
+and `default/eventtypes.conf`:
 
 ```
 # Find and replace all occurrences of:
@@ -118,12 +130,17 @@ index=your_ai_index_name
 Run this search to verify normalization is working:
 
 ```spl
-index=gen_ai_log earliest=-1h
+index=gen_ai_log sourcetype=gen_ai:json earliest=-1h
 | head 10
 | table gen_ai.operation.name gen_ai.provider.name gen_ai.request.model gen_ai.usage.total_tokens
 ```
 
-You should see populated `gen_ai.*` fields.
+You should see populated `gen_ai.*` fields. If they are all blank, check the
+sourcetype first:
+
+```spl
+index=gen_ai_log | stats count by sourcetype, _sourcetype
+```
 
 ---
 
@@ -306,8 +323,14 @@ No Splunk restart is needed — the test spawns the interpreter fresh each time.
 
 ### No Normalized Fields Appearing
 
-1. Verify your data is in the correct index
-2. Check that `KV_MODE = json` is set for your sourcetype
+Symptom: raw flat fields (`provider_name`, `session_id`) resolve fine, but every
+`gen_ai.*` field is null and dashboards show zeros. This is a sourcetype problem
+— Splunk's default `KV_MODE = auto` parses the JSON regardless, which is why the
+data looks healthy.
+
+1. Run `index=gen_ai_log | stats count by sourcetype, _sourcetype`. Your
+   sourcetype must be `gen_ai:json`, or rename onto it (see Step 2)
+2. Verify your data is in the correct index
 3. Restart Splunk after making configuration changes
 
 ```bash

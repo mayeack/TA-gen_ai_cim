@@ -204,7 +204,7 @@ assuming a path). When applying this skill, study within that kit:
 - `bin/scenarios.py` — four planted incidents.
 - `bin/run_workshop_backfill.sh` — bash wrapper.
 
-That kit's field-shape strategy is the model for any new workshop: read `[medadvice3:json]` in `default/props.conf`, list every alias, emit raw underscore for aliased fields, dotted directly for the ML score fields without aliases.
+That kit's field-shape strategy is the model for any new workshop: read `[gen_ai:json]` in `default/props.conf` (the canonical ingest sourcetype; emit generated events with `sourcetype=gen_ai:json`), list every alias, emit raw underscore for aliased fields, dotted directly for the ML score fields without aliases.
 
 ## Templates
 

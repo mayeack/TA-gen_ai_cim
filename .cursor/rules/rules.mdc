@@ -51,8 +51,9 @@ All normalized fields use the `gen_ai.*` dotted namespace (e.g. `gen_ai.provider
 The primary index is `gen_ai_log`. All eventtypes, saved searches, and macros should reference this index unless there is a specific reason not to.
 
 ### Normalization Strategy
-- **Index-based stanza** `[index::gen_ai_log]` is the primary normalization layer applying to all events in the index.
-- **Sourcetype stanzas** (`[medadvice3:json]`, `[medadvice:json]`) handle format-specific normalization for known sourcetypes.
+- **props.conf has NO `index::` scope.** A stanza may only be `<sourcetype>`, `host::`, `source::`, `rule::`, or `delayedrule::`. `[index::gen_ai_log]` parses as a literal sourcetype name and never fires — one existed and was inert until v1.4.0.
+- **Canonical sourcetype stanza** `[gen_ai:json]` is the single primary normalization layer. All new GenAI feeds must ship with `sourcetype=gen_ai:json`.
+- **Legacy sourcetypes** (`[medadvice3:json]`, `[toyapp:json]`) attach to it via `rename = gen_ai:json`; `[medadvice:json]` keeps its own stanza for the nested `event.*` schema on `ai_log2`.
 - Use `FIELDALIAS` for simple 1:1 field renames. Use `EVAL` for computed fields, coalescing fallbacks, or boolean normalization.
 
 ### Boolean Normalization
