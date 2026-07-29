@@ -4,7 +4,7 @@
 
 **Splunk Technology Add-on for Generative AI Common Information Model**
 
-Version: 1.3.1  
+Version: 1.4.0  
 Author: Splunk AI Governance Team  
 License: Apache 2.0
 
@@ -228,16 +228,120 @@ $SPLUNK_HOME/bin/splunk display app TA-gen_ai_cim
 Expected output:
 ```
 TA-gen_ai_cim
-  Version: 1.3.1
+  Version: 1.4.0
   Status: enabled
 ```
 
 #### 3. Configure Data Inputs
 
-Ensure your AI telemetry is flowing into the designated index:
-- `index=gen_ai_log`
+The TA normalizes on **sourcetype**, not on index. Both of these must be set by
+whatever ships your telemetry:
 
-Or update `props.conf` stanzas to match your index naming.
+| Setting | Required value |
+|---|---|
+| `index` | `gen_ai_log` |
+| `sourcetype` | **`gen_ai:json`** |
+
+> **Why the sourcetype matters.** props.conf has no `index::` scope — a stanza
+> may only be `<sourcetype>`, `host::`, `source::`, `rule::`, or
+> `delayedrule::`. If your events land under some other sourcetype with no
+> stanza, Splunk's default `KV_MODE = auto` still parses the JSON, so flat
+> fields like `provider_name` resolve and the data *looks* fine — but every
+> `gen_ai.*` field is null and every dashboard renders zeros.
+
+##### Sending via HEC
+
+Post the flat governance event as a JSON **object** in `event` (not a
+pre-serialized string):
+
+```bash
+curl -k https://<splunk-host>:8088/services/collector/event \
+  -H "Authorization: Splunk <HEC_TOKEN>" \
+  -d '{
+        "index": "gen_ai_log",
+        "sourcetype": "gen_ai:json",
+        "event": {
+          "timestamp": "2026-07-29T12:00:00.000000+0000",
+          "event_id": "e-456",
+          "operation_name": "chat",
+          "provider_name": "openai",
+          "request_model": "gpt-4o",
+          "response_model": "gpt-4o",
+          "session_id": "s-123",
+          "input_messages": [{"role": "user", "content": "..."}],
+          "output_messages": [{"role": "assistant", "content": "..."}],
+          "usage_input_tokens": 812,
+          "usage_output_tokens": 771,
+          "safety_violated": false,
+          "pii_detected": false,
+          "service_name": "demobot",
+          "enduser_id": "jdoe"
+        }
+      }'
+```
+
+Field names in the payload are the **raw underscore** names that the field
+aliases consume (`provider_name`, `usage_input_tokens`, …). The TA maps those
+to the dotted `gen_ai.*` CIM namespace — see [Normalized Schema](#normalized-schema).
+
+##### Sending via the OpenTelemetry Collector
+
+```yaml
+exporters:
+  splunk_hec/genai:
+    token: "${env:SPLUNK_HEC_TOKEN}"
+    endpoint: "https://<splunk-host>:8088/services/collector"
+    index: "gen_ai_log"
+    sourcetype: "gen_ai:json"
+    source: "otel"
+
+service:
+  pipelines:
+    logs/genai:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [splunk_hec/genai]
+```
+
+The log record **body** must be the flat JSON object shown above. If you emit
+the fields as OTel resource/scope attributes instead, they arrive as
+`attributes.*` and none of the field aliases fire.
+
+##### Ingest-tier settings (indexers / heavy forwarders / Cloud IDM)
+
+This TA is **search-time only** and deliberately ships no index-time settings,
+so they cannot be applied from here. Apply these on the ingest tier:
+
+```ini
+[gen_ai:json]
+SHOULD_LINEMERGE = false
+LINE_BREAKER = ([\r\n]+)
+TIME_PREFIX = "timestamp":\s*"
+TIME_FORMAT = %Y-%m-%dT%H:%M:%S.%6N%z
+MAX_TIMESTAMP_LOOKAHEAD = 40
+TRUNCATE = 150000
+```
+
+`TRUNCATE = 150000` matters: prompt and response payloads routinely exceed the
+default 10,000-byte line limit and would otherwise be cut off.
+
+##### Attaching an existing sourcetype
+
+If your data already lands under a different sourcetype and you cannot change
+the sender, point it at the canonical sourcetype in `local/props.conf`. This is
+search-time, so it also fixes **already-indexed** events with no re-ingest:
+
+```ini
+[my_existing_sourcetype]
+rename = gen_ai:json
+```
+
+Note that after a rename, `sourcetype=my_existing_sourcetype` no longer matches
+in searches — use `sourcetype=gen_ai:json`, or `_sourcetype=my_existing_sourcetype`
+to recover the original name.
+
+The legacy sourcetypes `medadvice3:json` and `toyapp:json` ship with exactly
+this rename applied.
 
 #### 4. Test Normalization
 
@@ -668,16 +772,24 @@ index=gen_ai_log gen_ai.client.operation.duration>0 gen_ai.usage.total_tokens>0
 
 ## Configuration
 
-### Customize Index Mapping
+### Customize Index / Sourcetype Mapping
 
-Edit `$SPLUNK_HOME/etc/apps/TA-gen_ai_cim/default/props.conf`:
+Normalization is keyed on the **sourcetype** `gen_ai:json`, not on the index.
+To attach data that arrives under a different sourcetype, add a rename stanza in
+`local/props.conf` (never edit `default/`, and never add index-time settings such
+as `INDEXED_EXTRACTIONS` — this is a search-time TA):
 
 ```ini
-# Add your custom index
-[source::*/my_custom_ai_index/*]
-KV_MODE = json
-INDEXED_EXTRACTIONS = json
-# ... (rest of configuration)
+[my_existing_sourcetype]
+rename = gen_ai:json
+```
+
+To use a different **index**, update the searches that reference it:
+
+```
+# Find and replace across default/savedsearches.conf, default/macros.conf,
+# and default/eventtypes.conf:
+index=gen_ai_log   ->   index=my_custom_ai_index
 ```
 
 ### Add Custom Provider Mappings
@@ -732,17 +844,29 @@ For details, see the Splunk docs on
 
 ### Issue: No Normalized Fields Appearing
 
+This is almost always a **sourcetype** problem: raw flat fields resolve (because
+Splunk's default `KV_MODE = auto` parses JSON on its own) while every
+`gen_ai.*` field is null, so dashboards render zeros and "No search results
+returned".
+
 **Diagnosis:**
 ```spl
-index=gen_ai_log | head 1 | table *
+index=gen_ai_log | stats count by sourcetype, _sourcetype
 ```
 
-Check if raw fields (e.g., `operation_name`, `provider_name`) exist.
+If your sourcetype is not `gen_ai:json` — and has no `rename = gen_ai:json` —
+no `gen_ai.*` field will ever resolve. Confirm the raw fields are present:
+
+```spl
+index=gen_ai_log | head 1 | table provider_name request_model usage_input_tokens
+```
 
 **Resolution:**
-- Verify index name matches props.conf stanzas
-- Check `KV_MODE = json` is set
-- Restart Splunk after TA installation
+- Set `sourcetype = gen_ai:json` on the sender (see
+  [Configure Data Inputs](#3-configure-data-inputs)), or add a
+  `rename = gen_ai:json` stanza for your existing sourcetype in `local/props.conf`
+- Verify the index name matches the searches (`index=gen_ai_log` by default)
+- Restart Splunk, or reload search-time config, after TA installation
 
 ### Issue: ML Models Not Found
 
@@ -1018,6 +1142,64 @@ The TA supports compliance requirements for:
 ---
 
 ## Version History
+
+### v1.4.0 (2026-07-29)
+
+**Fix: normalization never applied — canonical `gen_ai:json` ingest sourcetype**
+
+- FIX: `default/props.conf` carried the primary normalization layer (`KV_MODE`,
+  52 field aliases, 9 calculated fields, 5 multi-value extractions) in a stanza
+  named `[index::gen_ai_log]`. **props.conf has no `index::` scope** — per
+  `props.conf.spec` a stanza may only be `<sourcetype>`, `host::`, `source::`,
+  `rule::`, or `delayedrule::`, so Splunk parsed `index::gen_ai_log` as a
+  literal *sourcetype name* and the stanza never matched a single event.
+  The failure was silent: Splunk's default `KV_MODE = auto` still parses JSON,
+  so flat fields (`provider_name`, `session_id`) resolved and the data looked
+  correct, while every `gen_ai.*` field was null. Because
+  `[gen_ai_inference]` in `eventtypes.conf` gates on `gen_ai.provider.name=*`,
+  the entire eventtype → tag → data model → dashboard chain collapsed to zero
+  for any deployment whose sourcetype had no stanza of its own.
+- NEW: **`gen_ai:json` is now the canonical, documented ingest sourcetype.**
+  It owns the single copy of the normalization layer. Send GenAI telemetry to
+  `index=gen_ai_log` with `sourcetype=gen_ai:json`; see
+  "Installation → Configure Data Inputs" for HEC and OpenTelemetry Collector
+  (`splunk_hec` exporter) examples, and for the ingest-tier index-time settings
+  that this search-time TA deliberately does not ship.
+- **BREAKING:** `medadvice3:json` and `toyapp:json` are now one-line
+  `rename = gen_ai:json` stanzas, removing ~200 lines of duplicated aliases.
+  Searches filtering on `sourcetype=medadvice3:json` or `sourcetype=toyapp:json`
+  **no longer match** — use `sourcetype=gen_ai:json`, or `_sourcetype=` to
+  recover the original name. Note that `| tstats ... by sourcetype` and
+  `| metadata type=sourcetypes` read index-time metadata and continue to report
+  the original names. Any site-local *search-time* config under those stanza
+  names is discarded by the rename; move it to a `[gen_ai:json]` stanza.
+  If you built `AI_Inference` / `AI_Safety` / `AI_Evaluation` data model
+  datasets in the UI with a `sourcetype=medadvice3:json` constraint, update
+  them or they will silently return no results.
+- FIX: `error.message` is now mapped (`error_message AS error.message`). It was
+  present only in the dead stanza, so it has always been null. Deployments that
+  enable `GenAI - Model Failure Alert` will see its `error_messages` field begin
+  to populate — review for PII/PHI exposure in provider error strings before
+  enabling.
+- IMPROVED: boolean normalization uses the two-step `*_raw` pattern (alias the
+  source value to `gen_ai.<x>_raw`, then compute the canonical field from the
+  underscore source) rather than an `EVAL` that reads and rewrites the field it
+  defines. Values such as `"TRUE"` now normalize to `"true"` instead of null,
+  so safety/guardrail/PII eventtypes may match slightly more events.
+- IMPROVED: `gen_ai.user.id` and `gen_ai.app.name` now coalesce three sources
+  (`enduser_id, user_id, user` and `service_name, app_name, app`) instead of
+  two, so more events resolve an application name. `gen_ai.app.name` is the key
+  into `gen_ai_app_asset_map`, so newly-resolving names can create additional
+  ServiceNow AI System asset rows on the next inventory sync.
+- FIX: removed the same dead `[index::gen_ai_log]` stanza from `local/props.conf`,
+  where it additionally carried `TRUNCATE` — an index-time setting that cannot be
+  scoped this way under any stanza spec.
+- NEW: declared the four `gen_ai.*_raw` boolean fields in `fields.conf`.
+- DOCS: README and QUICKSTART now document the required sourcetype. The previous
+  QUICKSTART instruction to retarget the TA by editing `[index::gen_ai_log]` to
+  `[index::your_index]` could never have worked and has been replaced;
+  "Customize Index Mapping" no longer recommends `INDEXED_EXTRACTIONS` in a
+  search-time TA.
 
 ### v1.3.1 (2026-07-18)
 

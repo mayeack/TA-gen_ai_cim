@@ -40,11 +40,17 @@ ML detections, and a ServiceNow AI Case Management integration.
 - Every `.conf` gets a header comment block (filename, app, purpose,
   "Compatible with: Splunk Enterprise 9.0+, Splunk Cloud") and
   banner-style `###` section separators.
-- Primary index: `gen_ai_log`. Normalization: `[index::gen_ai_log]` stanza
-  is the base layer; sourcetype stanzas (`[medadvice3:json]`, …) handle
-  format-specific mapping. `FIELDALIAS` for 1:1 renames
-  (`FIELDALIAS-idx_*` in the index stanza, `FIELDALIAS-genai_*` in
-  sourcetype stanzas); `EVAL` for computed/coalesced/boolean fields.
+- Primary index: `gen_ai_log`. **props.conf has NO `index::` scope** — a stanza
+  may only be `<sourcetype>`, `host::`, `source::`, `rule::`, `delayedrule::`.
+  An `[index::gen_ai_log]` stanza parses as a literal sourcetype name and never
+  fires; one existed and was inert until v1.4.0. Normalization is keyed on the
+  canonical sourcetype `[gen_ai:json]`, which owns the single copy of the alias
+  set. Attach other ingest sourcetypes with `rename = gen_ai:json`
+  (`[medadvice3:json]`, `[toyapp:json]` do exactly this); `[medadvice:json]`
+  keeps its own stanza because its nested `event.*` schema differs.
+  `FIELDALIAS-genai_*` for 1:1 renames; `EVAL` for computed/coalesced/boolean
+  fields. Booleans use the two-step `*_raw` pattern: alias the source to
+  `gen_ai.<x>_raw`, then `EVAL` the canonical name from the underscore source.
 - Booleans normalize to lowercase string `"true"`/`"false"` via
   `EVAL ... case(...)`.
 - JSON arrays → multi-value fields via `REPORT` transforms with

@@ -32,10 +32,10 @@ This document provides a comprehensive reference for all indices, fields, and th
 | Index Name | Purpose | Sourcetypes |
 |------------|---------|-------------|
 | `gen_ai_cim` | Primary index for normalized GenAI events following the CIM schema. All events are normalized to the `gen_ai.*` namespace. | Any JSON-formatted GenAI logs |
-| `gen_ai_log` | Main operational index used in alerts, dashboards, and saved searches. Contains raw and enriched GenAI events. | `medadvice3:json`, `ai_cim:tfidf:ml_scoring`, `ai_cim:pii:ml_scoring` |
+| `gen_ai_log` | Main operational index used in alerts, dashboards, and saved searches. Contains raw and enriched GenAI events. | `gen_ai:json` (canonical), `genai_scoring`, `ai_cim:prompt_injection:ml_scoring`, `ai_cim:tfidf:ml_scoring`, `ai_cim:pii:ml_scoring` |
 
 **Index References:**
-- `props.conf`: Index-based normalization stanza `[index::gen_ai_log]`
+- `props.conf`: normalization is keyed on the canonical **sourcetype** `[gen_ai:json]`. props.conf has no `index::` scope — a prior `[index::gen_ai_log]` stanza was inert and was removed in v1.4.0.
 - `savedsearches.conf`: All alerts and scheduled searches reference `index=gen_ai_log`
 - `ai_governance_overview.xml`: All dashboard queries reference `index=gen_ai_log`
 - `macros.conf`: Cost and anomaly detection macros reference `index=gen_ai_cim` and `index=gen_ai_log`
@@ -462,8 +462,10 @@ These sourcetypes are used for ingesting GenAI events into Splunk:
 
 | Sourcetype | Description | Index | Configuration |
 |------------|-------------|-------|---------------|
-| `medadvice3:json` | Medadvice v3 format - Primary JSON format for GenAI events with flat field structure (e.g., `request_model`, `usage_input_tokens`, `safety_violated`) | `gen_ai_log` | `props.conf` - Full field normalization to `gen_ai.*` namespace with boolean normalization, multi-value extraction, and review enrichment |
-| `medadvice:json` | Medadvice v2 format - Legacy JSON format with nested `event.*` structure (e.g., `event.model_id`, `event.input_size_tokens`) | `ai_log2` | `props.conf` - Field aliasing from nested structure to `gen_ai.*` namespace |
+| `gen_ai:json` | **Canonical ingest sourcetype.** Flat JSON GenAI events (e.g., `request_model`, `usage_input_tokens`, `safety_violated`). All new feeds should use this. | `gen_ai_log` | `props.conf` - Full field normalization to `gen_ai.*` namespace with boolean normalization and multi-value extraction |
+| `medadvice3:json` | Legacy alias of the canonical format. `rename = gen_ai:json` (search-time); search it as `sourcetype=gen_ai:json`. | `gen_ai_log` | `props.conf` - `rename` only |
+| `toyapp:json` | Legacy alias of the canonical format. `rename = gen_ai:json` (search-time). | `gen_ai_log` | `props.conf` - `rename` only |
+| `medadvice:json` | Medadvice v2 format - Legacy JSON format with nested `event.*` structure (e.g., `event.model_id`, `event.input_size_tokens`). Distinct schema; not renamed. | `ai_log2` | `props.conf` - Field aliasing from nested structure to `gen_ai.*` namespace |
 
 #### Generated Sourcetypes
 
@@ -485,11 +487,12 @@ These source patterns are defined in `props.conf` to apply normalization regardl
 | `source::*/gen_ai_log/*` | Files in gen_ai_log directories - applies JSON parsing and review enrichment lookup | `props.conf` - `KV_MODE=json`, review findings lookup |
 | `source::*/ai_log2/*` | Files in ai_log2 directories - applies JSON parsing and review enrichment lookup | `props.conf` - `KV_MODE=json`, review findings lookup |
 
-#### Index-Based Stanzas
-
-| Stanza | Description | Configuration |
-|--------|-------------|---------------|
-| `index::gen_ai_log` | Primary index stanza - applies full CIM normalization to all events in the gen_ai_log index regardless of sourcetype | `props.conf` - Complete field aliasing, EVAL transforms, boolean normalization, multi-value extractions |
+> **Removed in v1.4.0 — index-based stanzas.** Earlier revisions documented an
+> `[index::gen_ai_log]` stanza as the primary normalization layer. props.conf has
+> no `index::` scope (a stanza may only be `<sourcetype>`, `host::`, `source::`,
+> `rule::`, or `delayedrule::`), so that stanza was parsed as a literal
+> sourcetype name and never matched an event. Normalization is keyed on the
+> canonical sourcetype `gen_ai:json`.
 
 #### Generated Sources
 
@@ -504,12 +507,13 @@ These sources are created by scheduled saved searches:
 
 ### Sourcetype Configuration Details
 
-#### medadvice3:json
+#### gen_ai:json
 
-The primary input sourcetype for GenAI events. Key configuration includes:
+The canonical input sourcetype for GenAI events (`medadvice3:json` and
+`toyapp:json` are renamed onto it). Key configuration includes:
 
 - **JSON Parsing**: `KV_MODE=json` enables automatic JSON field extraction
-- **Field Normalization**: 40+ field aliases map raw fields to the `gen_ai.*` namespace
+- **Field Normalization**: 52 field aliases map raw fields to the `gen_ai.*` namespace
 - **Boolean Normalization**: Safety/guardrail/PII/policy boolean fields normalized to consistent `"true"`/`"false"` strings
 - **Multi-value Extraction**: JSON arrays for safety categories, guardrail IDs, PII types, finish reasons, and stop sequences
 - **Review Enrichment**: Automatic lookup enrichment via `gen_ai_review_findings_lookup`
