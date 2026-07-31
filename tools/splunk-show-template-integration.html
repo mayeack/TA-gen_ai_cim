@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Splunk Show Template Integration — Cisco AI Defense → ES Agentic SOC Demo</title>
+<style>
+:root {
+  --bg: #ffffff; --fg: #1c1e21; --muted: #5c6370; --border: #d7dae0;
+  --code-bg: #f5f6f8; --accent: #0b5fff; --thead: #f0f2f5;
+  --quote-bg: #fff8e6; --quote-br: #e0a800;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a; --fg: #e4e6eb; --muted: #9aa0a6; --border: #333740;
+    --code-bg: #1c1f24; --accent: #5b9bff; --thead: #1f232a;
+    --quote-bg: #2a2415; --quote-br: #c99a00;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14161a; --fg: #e4e6eb; --muted: #9aa0a6; --border: #333740;
+  --code-bg: #1c1f24; --accent: #5b9bff; --thead: #1f232a;
+  --quote-bg: #2a2415; --quote-br: #c99a00;
+}
+:root[data-theme="light"] {
+  --bg: #ffffff; --fg: #1c1e21; --muted: #5c6370; --border: #d7dae0;
+  --code-bg: #f5f6f8; --accent: #0b5fff; --thead: #f0f2f5;
+  --quote-bg: #fff8e6; --quote-br: #e0a800;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); margin: 0;
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+  padding: 2.5rem 1.25rem 5rem;
+}
+main { max-width: 62rem; margin: 0 auto; }
+h1, h2, h3, h4 { line-height: 1.25; margin: 2.2rem 0 .85rem; font-weight: 650; }
+h1 { font-size: 2rem; margin-top: 0; letter-spacing: -.02em; }
+h2 { font-size: 1.45rem; padding-bottom: .35rem; border-bottom: 1px solid var(--border); }
+h3 { font-size: 1.15rem; }
+h4 { font-size: 1rem; color: var(--muted); }
+p, ul, ol { margin: 0 0 1rem; }
+li { margin: .3rem 0; }
+a { color: var(--accent); }
+hr { border: 0; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+code {
+  background: var(--code-bg); padding: .15em .4em; border-radius: 4px;
+  font: .875em/1.5 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: .9rem 1rem; overflow-x: auto; margin: 0 0 1.2rem;
+}
+pre code { background: none; padding: 0; font-size: .85em; }
+.table-wrap { overflow-x: auto; margin: 0 0 1.3rem; }
+table { border-collapse: collapse; width: 100%; font-size: .93em; }
+th, td { border: 1px solid var(--border); padding: .5rem .7rem; text-align: left; vertical-align: top; }
+th { background: var(--thead); font-weight: 620; }
+blockquote {
+  margin: 0 0 1.2rem; padding: .75rem 1rem; background: var(--quote-bg);
+  border-left: 4px solid var(--quote-br); border-radius: 0 6px 6px 0;
+}
+blockquote p:last-child { margin-bottom: 0; }
+img { max-width: 100%; }
+input[type=checkbox] { margin-right: .5rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>Splunk Show Template Integration — Cisco AI Defense → ES Agentic SOC Demo</h1>
+<p>How the <code>TA-gen_ai_cim</code> v1.5.0 tarball and the post-deploy script combine to configure a Splunk Show instance for the eight-step demo, what each artifact is responsible for, and what to do if the Show Template cannot run scripts.</p>
+<hr />
+<h2>1. The eight-step flow and what carries each step</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Step</th>
+<th>Carried by</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>Detect</strong> — AI Defense blocks, verdict reaches Splunk</td>
+<td>DemoBot live integration → HEC</td>
+<td>Works today</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Operationalize</strong> — signal becomes an ES detection</td>
+<td>TA ships 3 registered detections</td>
+<td>Detection ships; the <em>Detection Builder agent</em> is a separate ES entitlement</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Alert</strong> — Finding on risk threshold</td>
+<td>Correlation rule + ES risk rule</td>
+<td>Works; see §5 for which raises the Finding</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Triage</strong> — agent dispositions the Finding</td>
+<td>Post-deploy enables it</td>
+<td>Needs ES 8.6 + Premier + Cloud + paired SOAR</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>Investigate</strong> — AI IR Plan auto-applies</td>
+<td>Response plan asset + investigation type</td>
+<td><strong>No SOAR required</strong></td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>Respond</strong> — containment executed</td>
+<td>Simulated response actions</td>
+<td>Real SOAR optional; see §4</td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>Resolve</strong> — close with audit trail</td>
+<td>ES investigation + action audit records</td>
+<td>Works</td>
+</tr>
+<tr>
+<td>8</td>
+<td><strong>Improve</strong> — detection tuning</td>
+<td>Post-Incident phase tasks</td>
+<td>Manual; the <em>Detection Builder agent</em> is a separate entitlement</td>
+</tr>
+</tbody>
+</table></div>
+<p>Steps 4 and 6's <em>agents</em> depend on stack entitlements, not on these artifacts. Everything the artifacts control is covered.</p>
+<hr />
+<h2>2. Artifact responsibilities</h2>
+<p>The split is not stylistic — it follows from two hard constraints.</p>
+<p><strong>Splunk Cloud apps cannot create indexes</strong>, so <code>indexes.conf</code> cannot ship. <strong>Conf layering is per-app</strong>, so the TA cannot override a saved search owned by <code>SA-ThreatIntelligence</code> or settings owned by <code>missioncontrol</code> — a same-named stanza in the TA creates a <em>new</em> object in the TA's namespace instead.</p>
+<h3>2.1 The tarball — <code>TA-gen_ai_cim-1.5.0.tgz</code></h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Ships</th>
+<th>Detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Normalization</td>
+<td><code>gen_ai:json</code> search-time field extraction into the <code>gen_ai.*</code> CIM</td>
+</tr>
+<tr>
+<td>Detections</td>
+<td>3 <code>AI Governance - *</code> rules, registered ES correlation searches — <strong>shipped <code>disabled = 1</code></strong> per repo convention</td>
+</tr>
+<tr>
+<td>Response actions</td>
+<td><code>ai_defense_suspend_user</code>, <code>ai_defense_revoke_session</code>, <code>ai_defense_tighten_guardrail</code></td>
+</tr>
+<tr>
+<td>Response plan asset</td>
+<td><code>default/data/response_plans/ai_incident_response_plan.json</code></td>
+</tr>
+<tr>
+<td>Identities</td>
+<td><code>medadvice_identities.csv</code> / <code>medadvice_assets.csv</code>, registered as ES asset/identity sources</td>
+</tr>
+<tr>
+<td>Ingest contract</td>
+<td>Documented in <code>README.md</code> — HEC <code>/services/collector/event</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3>2.2 The post-deploy script — <code>tools/show_postdeploy.py</code></h3>
+<p>Excluded from the tarball (<code>package.sh</code> drops <code>tools/</code>). Run it after the TA is installed.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Why it cannot be in the tarball</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. Create <code>gen_ai_log</code></td>
+<td>Cloud apps cannot ship <code>indexes.conf</code></td>
+</tr>
+<tr>
+<td>2. Create HEC token</td>
+<td>Provisioning, not app content</td>
+</tr>
+<tr>
+<td>3. Enable the 3 detections</td>
+<td>TA ships everything disabled by design</td>
+</tr>
+<tr>
+<td>4. Seed the response plan</td>
+<td><code>missioncontrol</code> KV namespace</td>
+</tr>
+<tr>
+<td>5. Investigation type → plan</td>
+<td><code>missioncontrol</code> KV namespace</td>
+</tr>
+<tr>
+<td>6. Create the AI findings queue</td>
+<td><code>missioncontrol</code> KV namespace</td>
+</tr>
+<tr>
+<td>7. <code>ai_triage_enabled = 1</code></td>
+<td><code>missioncontrol</code> conf namespace</td>
+</tr>
+<tr>
+<td>8. Demo timing</td>
+<td>Partly TA-owned, partly <code>SA-ThreatIntelligence</code>-owned — and TA-owned demo tuning must not ship to real customers</td>
+</tr>
+<tr>
+<td>9. Verify</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<pre><code class="language-bash">export SPLUNK_ADMIN_PASSWORD='...'
+export SPLUNK_ACS_TOKEN='...'
+python3 tools/show_postdeploy.py --stack https://esp-shw-xxxx.splunkcloud.com --dry-run
+</code></pre>
+<p>Drop <code>--dry-run</code> to apply. It is idempotent — re-running updates in place.</p>
+<blockquote>
+<p><strong>Verification status.</strong> Steps 3, 4, 7 and 8 use endpoints and KV schemas confirmed against a live ES 8.6 stack. Steps 1, 2, 5 and 6 are built from Splunk's documented ACS API and from <code>missioncontrol/default/collections.conf</code>, but were <strong>not</strong> executed end-to-end — the reference stacks became unreachable partway through development. Run <code>--dry-run</code> first and read the per-step report.</p>
+</blockquote>
+<h3>2.3 DemoBot</h3>
+<p>Streams live over HEC. The spray toggle is specified in <code>demobot-spray-attack-spec.md</code> — <strong>specification only, no implementation.</strong></p>
+<hr />
+<h2>3. Deployment order</h2>
+<ol>
+<li>Provision the Show instance — ES 8.6, <strong>Premier</strong>, SOAR paired <em>(steps 4 and 6 need this; 1–3, 5, 7 do not)</em>.</li>
+<li>Install <code>TA-gen_ai_cim-1.5.0.tgz</code>.</li>
+<li>Run <code>show_postdeploy.py</code>; it prints the HEC endpoint and token.</li>
+<li>Point DemoBot at that token.</li>
+<li>Fire one spray to warm the demo, confirm a Finding appears, then reset.</li>
+</ol>
+<hr />
+<h2>4. Response actions — simulated by default</h2>
+<p>The three AI Defense response actions <strong>call nothing externally</strong>. Each records a structured audit event in <code>gen_ai_log</code> under sourcetype <code>ai_cim:response:action</code> carrying <code>"simulated": true</code>, and reports success.</p>
+<p>They exist so a stack with no paired SOAR still produces a real adaptive-response entry and a complete audit trail — indistinguishable on screen from a SOAR action, runnable both from a Finding and from a Containment task.</p>
+<p><strong>Be straight about this with an audience if asked.</strong> The <code>simulated</code> flag is in every record precisely so the distinction survives into the data. If the stack has SOAR paired and you want genuine containment, replace these with SOAR playbook actions on the Containment tasks.</p>
+<p>Audit trail:</p>
+<pre><code>index=gen_ai_log sourcetype=ai_cim:response:action
+| table _time, action_label, target_type, target, status, simulated, executed_by, execution_id
+| sort - _time
+</code></pre>
+<hr />
+<h2>5. Demo timing</h2>
+<p>Verified against ES 8.6 / Splunk Cloud 10.2.</p>
+<h3>5.1 The chain</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Latency</th>
+<th>Owner</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DemoBot turn → HEC → indexed</td>
+<td>seconds</td>
+<td>DemoBot</td>
+</tr>
+<tr>
+<td>Correlation rule fires</td>
+<td>0–60s after tuning (<code>cron */1</code>)</td>
+<td>TA — tuned by post-deploy</td>
+</tr>
+<tr>
+<td>Finding raised</td>
+<td>immediate — rule sets <code>action.notable = 1</code></td>
+<td>TA</td>
+</tr>
+<tr>
+<td>Triage distributor picks it up</td>
+<td>0–30s (<code>interval = 30</code>, already default)</td>
+<td><code>missioncontrol</code></td>
+</tr>
+<tr>
+<td>Triage agent reasons</td>
+<td>tens of seconds</td>
+<td>LLM</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Realistic end to end: 60–90 seconds.</strong> Not 30 — Splunk's cron granularity is one minute, so no scheduled detection can fire faster.</p>
+<h3>5.2 Bypass the RBA hop for the live loop</h3>
+<p><code>Risk - 24 Hour Risk Threshold Exceeded - Rule</code> searches <code>-2h@h</code> → <code>-10m@m</code>. That <code>-10m@m</code> bound makes recent events invisible for ten minutes — an unavoidable floor if the Finding depends on it.</p>
+<p>The correlation rule already sets <code>action.notable = 1</code> and raises the Finding itself, so <strong>drive the live demo off the correlation rule.</strong> Post-deploy also sets the risk rule's <code>latest</code> to <code>now</code> and its cron to <code>*/1</code> (skip with <code>--keep-risk-timing</code>), which pulls the RBA narrative into the fast loop too.</p>
+<p>Risk math for the narrative: threshold is <code>100</code>, each blocked injection carries <code>risk_score: 60</code> — <strong>two events cross it</strong>; the default 15-event spray gives 900.</p>
+<h3>5.3 The suppression trap</h3>
+<p>The correlation rule ships:</p>
+<pre><code>alert.suppress = 1
+alert.suppress.fields = actor
+alert.suppress.period = 86400s
+</code></pre>
+<p><strong>One finding per actor per 24 hours.</strong> Rehearse twice as <code>t.nguyen</code> and the second run silently produces nothing — no error, no finding. Post-deploy step 8 disables it. If you configure a stack by hand, do not skip this.</p>
+<hr />
+<h2>6. Manual fallback</h2>
+<p>If the Show Template cannot run arbitrary post-deploy scripts, these are the equivalent manual steps. Order matters.</p>
+<ol>
+<li><strong>Create index <code>gen_ai_log</code></strong> — Settings → Indexes, or ACS.</li>
+<li><strong>Create a HEC token</strong> — default index <code>gen_ai_log</code>, default sourcetype <code>gen_ai:json</code>. Record the token.</li>
+<li><strong>Enable the detections</strong> — ES → Security content → Content management, search <code>AI Governance</code>, enable all three.</li>
+<li><strong>Tune the primary detection</strong> — on <code>AI Governance - Prompt Injection Attack Correlation - Rule</code>: cron <code>*/1 * * * *</code>, earliest <code>-15m</code>, latest <code>now</code>, and <strong>turn throttling/suppression OFF</strong>.</li>
+<li><strong>Tune the risk rule</strong> <em>(optional)</em> — <code>Risk - 24 Hour Risk Threshold Exceeded - Rule</code> in <code>SA-ThreatIntelligence</code>: latest <code>now</code>, cron <code>*/1 * * * *</code>.</li>
+<li><strong>Create the response plan</strong> — ES → Security content → Response plans → Create. Transcribe the four phases and fifteen tasks from <code>default/data/response_plans/ai_incident_response_plan.json</code>. <em>(Tedious — the script exists for this reason.)</em></li>
+<li><strong>Create the investigation type</strong> and associate the response plan, so it auto-applies.</li>
+<li><strong>Create a queue</strong> for AI findings.</li>
+<li><strong>Enable the Triage agent</strong> — ES → Configure → All configurations → Security AI Assistant settings; turn on AI triage and enable it for <code>AI Governance - Prompt Injection Attack Correlation - Rule</code>.</li>
+<li><strong>Point DemoBot</strong> at the HEC token.</li>
+</ol>
+<p>Steps 1–4 and 10 are the minimum for a working demo of steps 1–3. Steps 6–7 add step 5. Step 9 adds step 4.</p>
+<hr />
+<h2>7. Demo runbook</h2>
+<ol>
+<li><strong>Set the scene</strong> — ES Analyst Queue, empty. Show the detection in Content management: ATLAS <code>AML.T0051</code>, OWASP-LLM <code>LLM01</code>.</li>
+<li><strong>Fire the spray</strong> — flip the DemoBot toggle.</li>
+<li><strong>Show the raw verdicts</strong> — <code>index=gen_ai_log enduser_id="t.nguyen"</code>; point out <code>guardrail_ids: ["cisco_ai_defense"]</code> and <code>policy_blocked: true</code>.</li>
+<li><strong>Wait ~60–90 seconds</strong> — the raw-events search fills this naturally.</li>
+<li><strong>Finding appears</strong> in the queue, attributed to <code>t.nguyen</code> — the identity lookup ships <code>t.nguyen</code> and <code>x.collins</code>, so entity attribution resolves.</li>
+<li><strong>Triage agent disposition</strong> — rationale and recommended next steps, grounded in the AI IR Plan.</li>
+<li><strong>Escalate to an Investigation</strong> — the AI IR Plan auto-applies via the investigation type.</li>
+<li><strong>Work Identification</strong> — especially <em>Review prompts that were NOT blocked</em>: the ~15% that got through are why this escalates rather than closing.</li>
+<li><strong>Run Containment actions</strong> — Suspend User, Revoke Session, Tighten Guardrail. Show <strong>View results</strong>.</li>
+<li><strong>Close it out</strong> — show the audit trail from §4.</li>
+</ol>
+<hr />
+<h2>8. Known gaps</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Gap</th>
+<th>Impact</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ACS and <code>missioncontrol</code> KV writes not executed end-to-end</td>
+<td>Steps 1, 2, 5, 6 unproven</td>
+<td><code>--dry-run</code>, read the per-step report, §6 fallback</td>
+</tr>
+<tr>
+<td>Response plan tasks carry no native embedded search/action</td>
+<td>SPL and action references live in task descriptions</td>
+<td><code>mc_response_templates</code> declares only <code>name</code>/<code>order</code>/<code>description</code>/<code>owner</code> — attach natively in the UI if wanted</td>
+</tr>
+<tr>
+<td>Response actions are simulated</td>
+<td>Not real containment</td>
+<td>By design; <code>"simulated": true</code> in every record</td>
+</tr>
+<tr>
+<td>Triage and Guided Response agents need Premier + Cloud + SOAR</td>
+<td>Steps 4 and 6 blocked on entitlement</td>
+<td>Provision accordingly; the rest of the flow is unaffected</td>
+</tr>
+<tr>
+<td>60–90s, not 30s</td>
+<td>Live pacing</td>
+<td>Cron floor is 1 minute; fill with the raw-events search</td>
+</tr>
+</tbody>
+</table></div>
+</main>
+</body>
+</html>

@@ -228,9 +228,55 @@ $SPLUNK_HOME/bin/splunk display app TA-gen_ai_cim
 Expected output:
 ```
 TA-gen_ai_cim
-  Version: 1.4.0
+  Version: 1.5.0
   Status: enabled
 ```
+
+### Ingest contract: HEC (supported path for Splunk Cloud)
+
+This TA is **search-time only** and targets search heads. It deliberately ships
+no index-time parsing (`LINE_BREAKER`, `TIME_PREFIX`, `TIME_FORMAT`,
+`TRUNCATE`) — on Splunk Cloud that parsing happens on the indexer tier, which
+the TA does not reach.
+
+Send events to the **`/services/collector/event`** endpoint with an explicit
+`time` and the event object under `event`:
+
+```json
+{
+  "time": 1785232127.977,
+  "index": "gen_ai_log",
+  "sourcetype": "gen_ai:json",
+  "source": "demobot:hec",
+  "host": "demobot-v3",
+  "event": {
+    "event_id": "0a05bc6a-f2f7-4d1f-8910-0492c64ed095",
+    "enduser_id": "t.nguyen",
+    "app_name": "demobot-v3",
+    "model_name": "dolphin3:8b",
+    "prompt_category": "prompt_injection",
+    "policy_blocked": true,
+    "policy_action": "block",
+    "guardrail_triggered": true,
+    "guardrail_ids": ["cisco_ai_defense"],
+    "business_outcome": "blocked_by_ai_defense",
+    "risk_score": 60
+  }
+}
+```
+
+Because the payload is a structured object with an explicit `time`, HEC needs
+**no index-time settings at all**. Search-time normalization in
+`default/props.conf [gen_ai:json]` then applies unchanged, and every
+`gen_ai.*` field resolves as documented in [Normalized Schema](#normalized-schema).
+
+> **Do not use `/services/collector/raw`.** The raw endpoint reintroduces the
+> index-time parsing dependency this TA cannot ship, and timestamps will fall
+> back to ingest time.
+
+Create the index and a matching HEC token before sending. On Splunk Cloud
+apps cannot create indexes, so both are provisioning steps — see the Show
+post-deploy script in `tools/` (dev-only, not packaged).
 
 #### 3. Configure Data Inputs
 
@@ -922,6 +968,45 @@ The TA includes integration with ServiceNow AI Case Management for one-click esc
 
 ---
 
+## AI Defense Response Actions
+
+Three adaptive response actions for GenAI incident containment, runnable from a
+finding in the ES analyst queue or from a Containment task in the **AI Incident
+Response Plan**:
+
+| Action | Acts on | Resolves from |
+|---|---|---|
+| Suspend User (AI Defense) | identity | `enduser_id`, `gen_ai.user.id`, `user`, `risk_object`, `actor` |
+| Revoke Session / API Key | session | `session_id`, `gen_ai.session.id`, `conversation_id` |
+| Tighten Guardrail Policy | application | `app_name`, `gen_ai.app.name`, `app`, `service_name` |
+
+> **These actions are SIMULATED.** They call nothing external — no IdP, no token
+> service, no Cisco AI Defense policy API. Each records a structured audit event
+> in `gen_ai_log` under sourcetype `ai_cim:response:action` carrying
+> `"simulated": true`, and reports success. That flag is the only thing
+> distinguishing a demo containment record from a real one; never strip it.
+
+They exist so a deployment **without a paired SOAR instance** can still show a
+real adaptive-response entry and a complete audit trail. Once SOAR is paired,
+replace them with the equivalent playbook actions.
+
+Review the audit trail with:
+
+```spl
+index=gen_ai_log sourcetype=ai_cim:response:action
+| table _time, action_label, target_type, target, status, simulated, executed_by, execution_id
+| sort - _time
+```
+
+The `exclude_scoring_sourcetypes` macro excludes `ai_cim:response:*`, so these
+records never contaminate inference metrics, dashboards, or detections.
+
+Shared logic lives in `bin/ai_defense_response.py`; the three scripts are thin
+wrappers over it. The response plan seed asset that references them ships at
+`default/data/response_plans/ai_incident_response_plan.json`.
+
+---
+
 ## File Structure
 
 ```
@@ -931,6 +1016,10 @@ TA-gen_ai_cim/
 ├── app.manifest                   # Splunk Cloud ACS package manifest
 ├── package.sh                     # AppInspect-clean package builder (dev only)
 ├── bin/
+│   ├── ai_defense_response.py     # Shared logic for the AI Defense response actions
+│   ├── ai_defense_revoke_session.py    # Alert action: Revoke Session / API Key
+│   ├── ai_defense_suspend_user.py      # Alert action: Suspend User (AI Defense)
+│   ├── ai_defense_tighten_guardrail.py # Alert action: Tighten Guardrail Policy
 │   ├── aicase.py                  # ServiceNow AI Case custom command
 │   ├── create_snow_case.py        # ServiceNow case alert action
 │   ├── genaiscore.py              # GenAI LLM scoring custom command
@@ -1142,6 +1231,37 @@ The TA supports compliance requirements for:
 ---
 
 ## Version History
+
+### v1.5.0 (2026-07-31)
+
+**AI Defense incident response: simulated containment actions + response plan**
+
+- NEW: three adaptive response actions for GenAI incident containment —
+  `ai_defense_suspend_user`, `ai_defense_revoke_session`,
+  `ai_defense_tighten_guardrail`. Each records a structured audit event in
+  `gen_ai_log` under sourcetype `ai_cim:response:action` and reports success.
+  See [AI Defense Response Actions](#ai-defense-response-actions).
+  **These are SIMULATED** — every record carries `"simulated": true` and no
+  external system is called. They let a deployment with no paired SOAR
+  instance still produce a real adaptive-response entry and audit trail.
+- NEW: `bin/ai_defense_response.py` holds the shared payload parsing, field
+  resolution and audit emission; the three action scripts are thin wrappers.
+  Per repo convention the shared logic is imported, never duplicated.
+- NEW: `default/data/response_plans/ai_incident_response_plan.json` — an
+  **AI Incident Response Plan** seed for the Mission Control
+  `mc_response_templates` collection. Four phases (Identification,
+  Containment, Eradication and Recovery, Post-Incident) with embedded
+  drilldown SPL and references to the actions above. Values are plain text;
+  Mission Control stores them URL-encoded, so the loader encodes on write.
+  This plan also grounds the ES Triage agent, which reasons against the plan
+  assigned to the investigation.
+- CHANGED: `exclude_scoring_sourcetypes` now also excludes
+  `ai_cim:response:*`, keeping response-action audit records out of inference
+  metrics, dashboards and detections. Existing exclusions are unchanged.
+- NEW: documented HEC ingest contract — send to `/services/collector/event`
+  with an explicit `time` and a structured `event` object, which removes any
+  index-time parsing dependency. `/services/collector/raw` is explicitly
+  unsupported. See "Installation → Ingest contract".
 
 ### v1.4.0 (2026-07-29)
 

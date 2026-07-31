@@ -20,15 +20,25 @@ ML detections, and a ServiceNow AI Case Management integration.
 ## Layout
 
 - `bin/` — Python only (custom commands `aicase`, `genaiscore`; alert
-  actions `create_snow_case`, `sync_snow_asset`, `pull_snow_inventory`;
-  REST handler `ta_gen_ai_cim_account_handler`; CLI `snow_setup`).
+  actions `create_snow_case`, `sync_snow_asset`, `pull_snow_inventory`,
+  `ai_defense_suspend_user`, `ai_defense_revoke_session`,
+  `ai_defense_tighten_guardrail`; REST handler
+  `ta_gen_ai_cim_account_handler`; CLI `snow_setup`).
   The shared ServiceNow client (config/OAuth/HTTP) lives in
-  `sync_snow_asset.py` — never duplicate it; import it.
+  `sync_snow_asset.py` — never duplicate it; import it. Likewise the shared
+  AI Defense response logic (payload parsing, field resolution, audit
+  emission) lives in `ai_defense_response.py`; the three `ai_defense_*`
+  actions are thin wrappers that call `run_action`.
 - `lib/splunklib/` — vendored Splunk SDK (keep ≥ 2.1.1: older versions'
   `six` shim breaks under Python 3.13, which `python.required = 3.13`
   selects on Splunk 9.4+).
-- `tools/` — dev-only scripts (never packaged). The MLTK model loaders
-  live here, not in `bin/`, because they write into another app's dir.
+- `tools/` — dev-only scripts and docs (never packaged). The MLTK model
+  loaders live here, not in `bin/`, because they write into another app's
+  dir. Also `show_postdeploy.py` (configures a Splunk Show stack for the
+  AI Defense demo — everything the tarball structurally cannot do) plus
+  `demobot-spray-attack-spec.md` and
+  `splunk-show-template-integration.md`, each with a parallel
+  self-contained `.html`.
 - `elements/`, `README/` — internal docs, excluded from the package.
 - `package.sh` — builds the shippable tarball; keep its exclude list in
   sync when adding assistant/dev files.
@@ -61,7 +71,23 @@ ML detections, and a ServiceNow AI Case Management integration.
 - ML scoring events are written back to `gen_ai_log` with sourcetypes
   `ai_cim:<name>:ml_scoring` / `ai_cim:<name>:gen_ai_scoring`; always
   exclude them from operational queries (`exclude_scoring_sourcetypes`
-  macro).
+  macro). The AI Defense response actions likewise write back under
+  `ai_cim:response:action`, and that pattern is excluded by the same macro —
+  anything else written back into `gen_ai_log` must be added there too, or it
+  contaminates every inference metric and detection.
+- The AI Defense response actions are **simulated**: they call nothing
+  external and every audit record they write carries `"simulated": true`.
+  That flag is the only thing separating a demo containment record from a
+  real one — never strip it, and never let one of these actions imply real
+  enforcement.
+- `default/data/response_plans/*.json` are seed assets for the ES Mission
+  Control `mc_response_templates` KV collection, stored **plain text** so
+  they stay reviewable in git. Mission Control stores the strings
+  URL-encoded (`encodeURIComponent` semantics — parens stay literal);
+  `tools/show_postdeploy.py` encodes on write. The collection declares only
+  `name`/`order`/`description`/`owner` on a task — there is no structural key
+  for an embedded search or action, so SPL and action references go in the
+  task description.
 - KV store: underscore field names (dots break REST), `replicate = true`,
   `accelerated_fields` for hot queries, typed `field.<name>` declarations.
 - Macros: `genai_*` (cost/analytics) vs `gen_ai_*` (review/workflow);

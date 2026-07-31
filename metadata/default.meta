@@ -225,3 +225,28 @@ export = system
 [datamodels]
 access = read : [ * ], write : [ admin, sc_admin ]
 export = system
+
+###############################################################################
+# AI DEFENSE RESPONSE ACTION PERMISSIONS
+#
+# Simulated containment actions run by analysts from a finding or from a
+# Containment task in the AI Incident Response Plan. Readable by all so the
+# actions appear in the adaptive response menu; writable by admins only so
+# analysts cannot retarget or reconfigure them.
+###############################################################################
+
+[alert_actions]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = system
+
+[alert_actions/ai_defense_suspend_user]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = system
+
+[alert_actions/ai_defense_revoke_session]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = system
+
+[alert_actions/ai_defense_tighten_guardrail]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = system
