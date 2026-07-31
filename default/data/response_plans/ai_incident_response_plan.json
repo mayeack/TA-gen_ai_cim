@@ -1,0 +1,157 @@
+{
+  "_comment": [
+    "AI Incident Response Plan - seed asset for the ES Mission Control",
+    "mc_response_templates KV Store collection.",
+    "",
+    "VALUES HERE ARE PLAIN TEXT. Mission Control stores response plan strings",
+    "URL-ENCODED (e.g. 'Identification%20(Detection%20and%20Analysis)'). The",
+    "Show post-deploy script encodes name/description on write - do not",
+    "pre-encode this file, it is kept readable so it stays reviewable in git.",
+    "",
+    "SCHEMA: verified against missioncontrol/default/collections.conf, which",
+    "declares for mc_response_templates: id, version, updated_by, creator,",
+    "is_default, name, description, template_status, create_time, update_time,",
+    "template_id, active, used, ai_generated, source_attachment_id, and",
+    "phases{name, order, tasks{name, order, description, owner}}.",
+    "",
+    "The collection declares NO structural key for an embedded search or an",
+    "embedded response action on a task - only name/order/description/owner.",
+    "SPL and action references are therefore written into the task description",
+    "as explicit analyst instructions, which always render. Attach native",
+    "searches/actions afterwards in the ES UI if richer wiring is wanted.",
+    "",
+    "Placeholder tokens <actor>, <app> and <session> are replaced by the analyst",
+    "(or by the Triage agent) with values from the finding."
+  ],
+  "_key": "ai_incident_response_plan",
+  "id": "ai_incident_response_plan",
+  "template_id": "b7c3f1a2-5d84-4e97-a1c6-3f9e02d47b58",
+  "name": "AI Incident Response Plan",
+  "description": "Response plan for GenAI/LLM security incidents surfaced by Cisco AI Defense - prompt injection, jailbreak, guardrail bypass and AI-mediated data exposure. Phases follow NIST 800-61 adapted for AI systems. Also used to ground the ES Triage agent: the agent reasons against the plan assigned to the investigation.",
+  "is_default": false,
+  "active": true,
+  "version": 1,
+  "ai_generated": false,
+  "origin": "TA-gen_ai_cim",
+  "template_status": "published",
+  "source_attachment_id": null,
+  "creator": "nobody",
+  "updated_by": "nobody",
+  "used": false,
+  "phases": [
+    {
+      "name": "Identification (Detection and Analysis)",
+      "order": 0,
+      "tasks": [
+        {
+          "name": "Validate the AI Defense verdict",
+          "order": 0,
+          "description": "Confirm the block was a genuine policy violation rather than a false positive. Review the guardrail that fired, the policy name, and the classification returned by Cisco AI Defense.\n\nSearch:\nindex=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.user.id=\"<actor>\" gen_ai.policy.blocked=\"true\"\n| table _time, gen_ai.session.id, gen_ai.app.name, gen_ai.request.model, prompt_category, gen_ai.policy.name, gen_ai.guardrail.ids, risk_score\n| sort - _time\n\nRecord in the task notes whether the verdict is confirmed, and the injection technique observed.",
+          "owner": ""
+        },
+        {
+          "name": "Scope the campaign",
+          "order": 1,
+          "description": "Establish breadth before containment. Determine how many attempts the actor made, across how many sessions, applications and models, and over what period.\n\nSearch:\nindex=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\")\n| stats count AS attempts, dc(gen_ai.session.id) AS sessions, dc(gen_ai.app.name) AS apps, dc(gen_ai.request.model) AS models, values(prompt_category) AS techniques, min(_time) AS first_seen, max(_time) AS last_seen BY gen_ai.user.id\n\nIf multiple applications or models were targeted, treat this as a deliberate campaign rather than an isolated attempt and escalate severity accordingly.",
+          "owner": ""
+        },
+        {
+          "name": "Review prompts that were NOT blocked",
+          "order": 2,
+          "description": "HIGHEST PRIORITY EVIDENCE. Any injection attempt from this actor that AI Defense allowed through is a guardrail gap - it reached the model and produced a real response. These determine whether this incident is contained or ongoing.\n\nSearch:\nindex=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\") gen_ai.policy.blocked=\"false\"\n| table _time, gen_ai.session.id, gen_ai.app.name, gen_ai.request.model, prompt_category, gen_ai.safety.violated, gen_ai.pii.detected\n| sort - _time\n\nIf this returns results, do not close as benign. Continue to Containment.",
+          "owner": ""
+        },
+        {
+          "name": "Assess data exposure",
+          "order": 3,
+          "description": "Determine whether any response in the affected sessions returned sensitive data. Check PII/PHI detection and safety violation flags across the actor's full session set.\n\nSearch:\nindex=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\")\n| stats sum(eval(if('gen_ai.pii.detected'=\"true\",1,0))) AS pii_events, sum(eval(if('gen_ai.safety.violated'=\"true\",1,0))) AS safety_violations, values(gen_ai.pii.types) AS pii_types BY gen_ai.session.id\n| where pii_events > 0 OR safety_violations > 0\n\nIf PII or PHI was returned, trigger the organisation's data breach notification process in parallel with this plan.",
+          "owner": ""
+        }
+      ]
+    },
+    {
+      "name": "Containment",
+      "order": 1,
+      "tasks": [
+        {
+          "name": "Suspend the offending identity",
+          "order": 0,
+          "description": "Stop further attempts from this actor.\n\nRun the adaptive response action: Suspend User (AI Defense)\n\nThe action resolves the identity from the finding automatically. It records an auditable containment entry in gen_ai_log under sourcetype ai_cim:response:action.\n\nNOTE: this action is SIMULATED - every record it writes carries \"simulated\": true. It does not call an IdP. On a deployment with a paired SOAR instance, replace it with the equivalent SOAR playbook action and note the substitution here.",
+          "owner": ""
+        },
+        {
+          "name": "Revoke active sessions and API credentials",
+          "order": 1,
+          "description": "Invalidate anything the actor could reuse, including tokens issued before the suspension.\n\nRun the adaptive response action: Revoke Session / API Key\n\nRepeat per session if the Identification phase found more than one. The same \"simulated\": true caveat applies as for user suspension.",
+          "owner": ""
+        },
+        {
+          "name": "Tighten the guardrail profile",
+          "order": 2,
+          "description": "Close the gap for the specific technique observed, so the same prompt family is blocked for every user, not just this one.\n\nRun the adaptive response action: Tighten Guardrail Policy\n\nScope it to the application identified in the finding. If the Identification phase found prompts that were allowed through, this task is mandatory before the incident can move to Recovery.",
+          "owner": ""
+        },
+        {
+          "name": "Confirm containment took effect",
+          "order": 3,
+          "description": "Verify the actions were recorded and that no new activity is arriving from the actor.\n\nSearch (audit trail of actions taken):\nindex=gen_ai_log sourcetype=ai_cim:response:action target=\"<actor>\"\n| table _time, action_label, target_type, target, status, simulated, executed_by, execution_id\n\nSearch (confirm activity has stopped):\nindex=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\") earliest=-15m\n| stats count\n\nA non-zero count means containment has not held - return to the suspension task.",
+          "owner": ""
+        }
+      ]
+    },
+    {
+      "name": "Eradication and Recovery",
+      "order": 2,
+      "tasks": [
+        {
+          "name": "Update the AI Defense policy",
+          "order": 0,
+          "description": "Work with the AI platform owner to make the guardrail change permanent rather than incident-scoped. Capture the policy name and the classification that should now fire, so the change is reviewable.\n\nRecord the policy version before and after in the task notes.",
+          "owner": ""
+        },
+        {
+          "name": "Tune prompt filters and detection thresholds",
+          "order": 1,
+          "description": "Feed the observed technique back into detection. If the injection used a pattern the correlation rule did not match, update the regex in AI Governance - Prompt Injection Attack Correlation - Rule.\n\nIf the campaign produced excessive findings for a single actor, review alert.suppress settings on that detection rather than weakening the pattern.",
+          "owner": ""
+        },
+        {
+          "name": "Verify no residual access",
+          "order": 2,
+          "description": "Re-run the scope search from the Identification phase over a window that starts after containment. Confirm zero blocked and zero allowed events for the actor, across every application identified.\n\nSearch:\nindex=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\")\n| stats count BY gen_ai.app.name, gen_ai.policy.blocked",
+          "owner": ""
+        },
+        {
+          "name": "Restore normal access",
+          "order": 3,
+          "description": "If the actor is a legitimate user whose account was misused rather than the attacker themselves, coordinate credential reset and restore access. Document the justification in the task notes.\n\nIf the actor is confirmed malicious, leave the suspension in place and record the decision instead.",
+          "owner": ""
+        }
+      ]
+    },
+    {
+      "name": "Post-Incident Activity",
+      "order": 3,
+      "tasks": [
+        {
+          "name": "Map the incident to AI threat frameworks",
+          "order": 0,
+          "description": "Classify against OWASP LLM Top 10 and MITRE ATLAS so the incident aggregates with comparable events.\n\nBaseline mapping for prompt injection:\n- OWASP LLM Top 10: LLM01 (Prompt Injection)\n- MITRE ATLAS: AML.T0051 (LLM Prompt Injection)\n\nAdjust if the campaign also achieved data exposure or model exfiltration, and record the final mapping.",
+          "owner": ""
+        },
+        {
+          "name": "Feed lessons learned into detection",
+          "order": 1,
+          "description": "Close the loop on detection fidelity. Note which signal fired first, whether the risk threshold was crossed on the intended actor, and whether any attempt evaded the correlation rule entirely.\n\nIf a technique was missed, capture the exact prompt pattern so it can be added to the detection and to the prompt injection training corpus.",
+          "owner": ""
+        },
+        {
+          "name": "Complete the incident record",
+          "order": 2,
+          "description": "Confirm the audit trail is complete before closing: every containment action recorded, every task noted, disposition set, and the response actions' simulated/real status stated explicitly.\n\nSearch (full action audit for the incident):\nindex=gen_ai_log sourcetype=ai_cim:response:action target=\"<actor>\"\n| table _time, action, action_label, target_type, target, status, simulated, executed_by, search_name, execution_id\n| sort _time",
+          "owner": ""
+        }
+      ]
+    }
+  ]
+}
