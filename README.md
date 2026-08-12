@@ -426,6 +426,14 @@ on the corresponding `gen_ai:json` events, so reusing them here would
 double-count in content-based detections and copy prompt/response content
 (potentially PII/PHI) into a second namespace.
 
+Those two fields and `gen_ai.escalation.symptoms` come from JSON arrays and are
+**multivalue**. They are defined with `EVAL` rather than `FIELDALIAS` on purpose:
+multivalue behaviour through a field alias is not something the field-alias
+documentation defines either way, and this TA ships to Splunk 9.0+ and Splunk
+Cloud, so relying on undocumented behaviour is not safe. An eval assignment
+preserves multivalue by definition. If you add further array-valued fields, use
+`EVAL` (or a `REPORT` transform with `MV_ADD = true`), not `FIELDALIAS`.
+
 #### 4. Test Normalization
 
 Run this search to verify field extraction:
