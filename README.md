@@ -4,7 +4,7 @@
 
 **Splunk Technology Add-on for Generative AI Common Information Model**
 
-Version: 1.4.0  
+Version: 1.6.1  
 Author: Splunk AI Governance Team  
 License: Apache 2.0
 
@@ -228,7 +228,7 @@ $SPLUNK_HOME/bin/splunk display app TA-gen_ai_cim
 Expected output:
 ```
 TA-gen_ai_cim
-  Version: 1.5.0
+  Version: 1.6.1
   Status: enabled
 ```
 
@@ -1276,6 +1276,69 @@ The TA supports compliance requirements for:
 ---
 
 ## Version History
+
+### v1.6.1 (2026-08-12)
+
+**Fix: escalation array fields defined with `EVAL` so multivalue is preserved**
+
+- FIX: the three `demobot:escalation` fields sourced from JSON arrays —
+  `conversation_history{}.role`, `conversation_history{}.content` and
+  `symptoms{}` — were mapped with `FIELDALIAS`. They are now `EVAL` calculated
+  fields. Testing on Splunk 10.4 confirmed the alias form *did* preserve
+  multivalue (`gen_ai.escalation.roles` and `.messages` both resolved as
+  3-value fields), so this is not a live-defect fix on that version. The Splunk
+  field-alias documentation, however, does not define multivalue behaviour
+  through an alias in either direction, and this TA targets Splunk 9.0+ and
+  Splunk Cloud — depending on behaviour that is neither guaranteed nor
+  described is a portability risk across versions. An eval assignment preserves
+  multivalue by definition.
+- DOCS: `props.conf` and README both record why these three use `EVAL`, so the
+  mapping is not "simplified" back into `FIELDALIAS`. For any future
+  array-valued field use `EVAL`, or a `REPORT` transform with `MV_ADD = true`.
+
+### v1.6.0 (2026-08-12)
+
+**DemoBot session-audit and human-escalation normalization**
+
+- NEW: search-time normalization for the `demobot:audit` (session/user
+  lifecycle) and `demobot:escalation` (human review) sourcetypes. Both were
+  landing raw — no `gen_ai.*` fields, no eventtypes, no tags — while the
+  inference stream on the canonical `gen_ai:json` sourcetype normalized
+  correctly.
+- Neither sourcetype is renamed onto `gen_ai:json`, deliberately. Neither
+  carries a provider, model, token or cost field, so a rename would add them to
+  the `gen_ai_inference` eventtype (which gates on `gen_ai.provider.name=*`)
+  and inflate every inference count and every per-request cost, token and
+  latency average. **If you attach your own audit or workflow stream, do not
+  rename it onto `gen_ai:json` either** — give it its own stanza and leave
+  `gen_ai.provider.name` unmapped.
+- Each stanza instead normalizes the shared correlation keys
+  (`gen_ai.session.id`, `gen_ai.request.id`, `gen_ai.event.id`, `enduser.id`,
+  `gen_ai.user.id`) so audit and escalation events **join** to the inference
+  events for the same session, then adds its own fields under
+  `gen_ai.audit.*` and `gen_ai.escalation.*`.
+- NEW: escalations populate the `gen_ai.review.*` namespace already shared with
+  the review-queue KV store (`gen_ai.review.status`, `.reviewer`, `.notes`,
+  `.updated_at`), so escalations and review findings line up.
+- Escalated conversation turns are exposed as `gen_ai.escalation.messages` /
+  `.roles`, **not** `gen_ai.input.messages` / `.output.messages`. The same turns
+  already carry the inference field names on the corresponding `gen_ai:json`
+  events; reusing them would double-count in content-based detections and copy
+  prompt/response content (potentially PII/PHI) into a second namespace.
+- FIX: correlation keys use `mvdedup()`. Events ingested before 2026-07-31
+  carry `session_id` and `enduser_id` as HEC *indexed* fields as well as in the
+  JSON body, so search-time extraction resolved both copies and the key became
+  a 2-value multivalue — which silently breaks `join`, `dedup` and `stats by`
+  on that subset. `mvdedup` collapses it and is a no-op on single-valued
+  payloads.
+- NEW: eventtypes `gen_ai_session_audit`, `gen_ai_human_escalation`,
+  `gen_ai_escalation_critical` (severity `emergency` or `critical`) and
+  `gen_ai_escalation_pending_review`, plus matching tags. These key on the
+  normalized `gen_ai.audit.*` / `gen_ai.escalation.*` fields rather than on a
+  sourcetype, so any emitter that normalizes to them participates.
+- DOCS: README gains a "When NOT to rename" section covering non-inference
+  governance events and how to verify with
+  `index=gen_ai_log eventtype=gen_ai_inference | stats count by sourcetype`.
 
 ### v1.5.0 (2026-07-31)
 
