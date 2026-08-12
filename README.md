@@ -389,6 +389,43 @@ to recover the original name.
 The legacy sourcetypes `medadvice3:json` and `toyapp:json` ship with exactly
 this rename applied.
 
+##### When NOT to rename: non-inference governance events
+
+Only rename a sourcetype onto `gen_ai:json` if its events really are **inference**
+events. The `gen_ai_inference` eventtype matches on `gen_ai.provider.name=*`, so
+renaming an event stream that has no provider, model, token or cost fields adds
+rows that inflate every inference count and skew every per-request cost, token
+and latency average.
+
+Session-audit and human-escalation records are the common case here. They ship
+with their own stanzas instead:
+
+| Sourcetype | Contents | Eventtype |
+|---|---|---|
+| `demobot:audit` | Session/user lifecycle audit records | `gen_ai_session_audit` |
+| `demobot:escalation` | Human-review escalation records | `gen_ai_human_escalation` |
+
+Both normalize the shared correlation keys — `gen_ai.session.id`,
+`gen_ai.request.id`, `gen_ai.event.id`, `enduser.id`, `gen_ai.user.id` — so they
+join to the inference events, then add their own domain fields under
+`gen_ai.audit.*` and `gen_ai.escalation.*`. Escalations also populate the
+`gen_ai.review.*` namespace shared with the review-queue KV store.
+
+Neither stanza aliases `gen_ai.provider.name`; that is precisely what keeps them
+out of `gen_ai_inference`. Follow the same pattern for your own audit or
+workflow streams, and verify with:
+
+```
+index=gen_ai_log eventtype=gen_ai_inference | stats count by sourcetype
+```
+
+Escalated conversation turns are exposed as `gen_ai.escalation.messages` /
+`gen_ai.escalation.roles` rather than `gen_ai.input.messages` /
+`gen_ai.output.messages`. The same turns already carry the inference field names
+on the corresponding `gen_ai:json` events, so reusing them here would
+double-count in content-based detections and copy prompt/response content
+(potentially PII/PHI) into a second namespace.
+
 #### 4. Test Normalization
 
 Run this search to verify field extraction:
