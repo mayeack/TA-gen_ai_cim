@@ -152,7 +152,7 @@ input[type=checkbox] { margin-right: .5rem; }
 </tr>
 <tr>
 <td>Detections</td>
-<td>3 <code>AI Governance - *</code> rules, registered ES correlation searches — <strong>shipped <code>disabled = 1</code></strong> per repo convention</td>
+<td>3 <code>AI Governance - *</code> rules, registered ES correlation searches. <code>Prompt Injection Attack Correlation</code> ships <strong>enabled</strong> (v1.6.2+, the documented exception); the other two ship <code>disabled = 1</code> per repo convention</td>
 </tr>
 <tr>
 <td>Response actions</td>
@@ -192,7 +192,7 @@ input[type=checkbox] { margin-right: .5rem; }
 </tr>
 <tr>
 <td>3. Enable the 3 detections</td>
-<td>TA ships everything disabled by design</td>
+<td>The primary correlation rule ships enabled (v1.6.2+); the other two ship disabled by design. The step is idempotent</td>
 </tr>
 <tr>
 <td>4. Seed the response plan</td>
@@ -307,7 +307,7 @@ alert.suppress.period = 86400s
 <ol>
 <li><strong>Create index <code>gen_ai_log</code></strong> — Settings → Indexes, or ACS.</li>
 <li><strong>Create a HEC token</strong> — default index <code>gen_ai_log</code>, default sourcetype <code>gen_ai:json</code>. Record the token.</li>
-<li><strong>Enable the detections</strong> — ES → Security content → Content management, search <code>AI Governance</code>, enable all three.</li>
+<li><strong>Enable the detections</strong> — ES → Security content → Content management, search <code>AI Governance</code>. <code>Prompt Injection Attack Correlation</code> is already enabled (v1.6.2+); enable the other two.</li>
 <li><strong>Tune the primary detection</strong> — on <code>AI Governance - Prompt Injection Attack Correlation - Rule</code>: cron <code>*/1 * * * *</code>, earliest <code>-15m</code>, latest <code>now</code>, and <strong>turn throttling/suppression OFF</strong>.</li>
 <li><strong>Tune the risk rule</strong> <em>(optional)</em> — <code>Risk - 24 Hour Risk Threshold Exceeded - Rule</code> in <code>SA-ThreatIntelligence</code>: latest <code>now</code>, cron <code>*/1 * * * *</code>.</li>
 <li><strong>Create the response plan</strong> — ES → Security content → Response plans → Create. Transcribe the four phases and fifteen tasks from <code>default/data/response_plans/ai_incident_response_plan.json</code>. <em>(Tedious — the script exists for this reason.)</em></li>
