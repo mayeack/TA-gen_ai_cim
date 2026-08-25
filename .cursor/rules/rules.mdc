@@ -73,15 +73,22 @@ Use a descriptive prefix per stanza to avoid collisions:
 - Sourcetype stanzas: `FIELDALIAS-genai_<short_name>`
 
 ### Multi-Value Field Extraction
-JSON arrays are extracted as multi-value fields via `REPORT` transforms using `MV_ADD = true`:
+`KV_MODE = json` already auto-extracts a JSON array as a multi-value field, but under
+the **braced** name (`safety_categories{}`), never the bare name. Map it with an `EVAL`
+in `props.conf` that reads the braced name first and falls back to the bare name for
+scalar-string emitters:
 
 ```
-[extract_safety_categories]
-SOURCE_KEY = safety_categories
-REGEX = "([^"]+)"
-FORMAT = gen_ai.safety.categories::$1
-MV_ADD = true
+EVAL-gen_ai.safety.categories = case( \
+    isnotnull('safety_categories{}'), 'safety_categories{}', \
+    isnotnull(safety_categories), safety_categories, \
+    1=1, null())
 ```
+
+Do NOT use `FIELDALIAS` (multivalue behaviour through an alias is undocumented) and do
+NOT use a `REPORT` transform with `SOURCE_KEY = <bare name>` — that key never resolves
+under `KV_MODE = json`, which is why five CIM array fields were silently null until
+v1.6.2.
 
 ### Eventtype Design
 - Base eventtype (`gen_ai_inference`) uses `priority = 5` and filters out scoring sourcetypes via `sourcetype!=ai_cim:*:ml_scoring ...`
