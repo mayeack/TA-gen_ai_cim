@@ -1308,6 +1308,45 @@ The TA supports compliance requirements for:
   `disabled = 1`. Override this one in `local/savedsearches.conf` to turn it
   off.
 
+**Fix: JSON-array CIM fields never populated (braced multi-value field names)**
+
+- FIX: `gen_ai.safety.categories`, `gen_ai.guardrail.ids`, `gen_ai.pii.types`,
+  `gen_ai.response.finish_reasons` and `gen_ai.request.stop_sequences` were
+  always null for `gen_ai:json` events. Emitters send these as JSON arrays, and
+  `KV_MODE = json` auto-extracts a JSON array under the **braced** field name
+  (`safety_categories{}`), not the bare name. Both mapping paths targeted the
+  bare name — a `FIELDALIAS` in `props.conf` and a `SOURCE_KEY` in the
+  `transforms.conf` `REPORT` — so neither ever matched. All five are now `EVAL`
+  calculated fields that read the braced name first and fall back to the bare
+  name, so array and scalar emitters both normalize. Verified live on the
+  Splunk Cloud Show stack: an event carrying
+  `safety_categories{}` = "AI Defense unavailable (fail-closed): HTTP 401:
+  Unauthorized" produced a null `gen_ai.safety.categories`.
+- FIX: same defect on `[medadvice:json]` — `extract_guardrail_ids_alt` keyed off
+  `event.guardrails_triggered` instead of `event.guardrails_triggered{}`, so
+  `gen_ai.guardrail.ids` never populated there either. Replaced with an `EVAL`.
+- IMPACT: `AI Governance - Prompt Injection Attack Correlation - Rule` has three
+  `is_injection` branches; the `like('gen_ai.safety.categories', "%Prompt
+  Injection%")` branch could never fire. Measured across 10 live spray-campaign
+  events: `via_safety_categories` = 0, `via_prompt_category` = 0, `via_regex` =
+  3 — the detection rested entirely on the regex branch. Also affected the
+  safety-violation severity classification, the guardrail trigger summary and
+  every PII-types breakdown in `savedsearches.conf` and the safety dashboard.
+- CLEANUP: removed the six now-dead `transforms.conf` stanzas
+  (`extract_safety_categories`, `extract_guardrail_ids`,
+  `extract_guardrail_ids_alt`, `extract_pii_types`, `extract_finish_reasons`,
+  `extract_stop_sequences`) and their `REPORT-` references in `props.conf`. A
+  `REPORT` cannot coexist with a calculated field on the same target — the
+  `EVAL` runs later and wins — and under `KV_MODE = json` there is no remaining
+  case for them to handle. New array-valued fields should use `EVAL` in
+  `props.conf`, not a `REPORT` transform.
+- KNOWN ISSUE (not changed here): on `[medadvice:json]`,
+  `FIELDALIAS-genai_guardrail_triggered` maps the *array*
+  `event.guardrails_triggered` onto the *boolean* `gen_ai.guardrail.triggered`.
+  It has the same bare-name problem, but fixing it means deciding that "array
+  is non-empty" implies `"true"`, which is a semantic change rather than a
+  mapping repair. Left for a separate change.
+
 ### v1.6.1 (2026-08-12)
 
 **Fix: escalation array fields defined with `EVAL` so multivalue is preserved**
