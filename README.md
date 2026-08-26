@@ -4,7 +4,7 @@
 
 **Splunk Technology Add-on for Generative AI Common Information Model**
 
-Version: 1.6.1  
+Version: 1.6.2  
 Author: Splunk AI Governance Team  
 License: Apache 2.0
 
@@ -228,7 +228,7 @@ $SPLUNK_HOME/bin/splunk display app TA-gen_ai_cim
 Expected output:
 ```
 TA-gen_ai_cim
-  Version: 1.6.1
+  Version: 1.6.2
   Status: enabled
 ```
 
@@ -538,11 +538,20 @@ The TA extracts and normalizes **60+ fields** across these categories:
 
 The TA includes **15+ pre-configured alerts** in `savedsearches.conf`:
 
-> **All shipped searches are disabled by default.** Following Splunk Cloud
-> best practice, every scheduled search, alert, report, and correlation rule
-> ships with `disabled = 1` so a fresh install never sends email, calls
-> ServiceNow, or consumes scheduler slots until you opt in. See
+> **Shipped searches are disabled by default, with one exception.** Following
+> Splunk Cloud best practice, every scheduled search, alert, report, and
+> correlation rule ships with `disabled = 1` so a fresh install never sends
+> email, calls ServiceNow, or consumes scheduler slots until you opt in. See
 > [Enabling the shipped searches](#enabling-the-shipped-searches) below.
+>
+> The one exception is **AI Governance - Prompt Injection Attack Correlation -
+> Rule** (label *GenAI - Prompt Injection Attack Correlation*), which ships
+> `disabled = 0` as of v1.6.2 so a fresh install lights up the
+> dashboard → correlation search → Mission Control Finding path with no manual
+> enablement step. It is read-only — no email, no ServiceNow, no outbound call —
+> runs every 30 minutes over a 24-hour window, and suppresses per actor for 24
+> hours. Turn it off in `local/savedsearches.conf` if you do not want it
+> scheduled.
 
 ### Safety & Compliance
 - **GenAI - Safety Violation Alert** - Detects safety policy violations
@@ -583,8 +592,9 @@ The TA includes **15+ pre-configured alerts** in `savedsearches.conf`:
 
 ### Enabling the shipped searches
 
-Every scheduled search ships `disabled = 1`. Enable only what your
-environment needs — never by editing `default/`:
+Every scheduled search ships `disabled = 1` except
+`AI Governance - Prompt Injection Attack Correlation - Rule` (see above).
+Enable only what your environment needs — never by editing `default/`:
 
 - **Splunk Web:** Settings → Searches, reports, and alerts → filter on the
   TA-gen_ai_cim app → Edit → Enable.
@@ -1093,7 +1103,9 @@ TA-gen_ai_cim/
 │   ├── macros.conf                # Search macros
 │   ├── props.conf                 # Field normalization (search-time only)
 │   ├── restmap.conf               # REST endpoint mapping
-│   ├── savedsearches.conf         # Alerts/reports/rules (ALL ship disabled)
+│   ├── savedsearches.conf         # Alerts/reports/rules (ship disabled;
+│   │                              #   prompt-injection correlation is the
+│   │                              #   one enabled-by-default exception)
 │   ├── server.conf                # SHC replication for custom confs
 │   ├── ta_gen_ai_cim_*.conf(.spec)  # Custom config files and specs
 │   ├── transforms.conf            # Extractions, CSV + KV store lookups
@@ -1276,6 +1288,64 @@ The TA supports compliance requirements for:
 ---
 
 ## Version History
+
+### v1.6.2 (2026-08-25)
+
+**Prompt injection correlation detection ships enabled**
+
+- CHANGED: `AI Governance - Prompt Injection Attack Correlation - Rule` (ES
+  Content Management label *GenAI - Prompt Injection Attack Correlation*) now
+  ships `disabled = 0`. It is the entry-point detection for the Agentic Trust
+  workshop and the AI Defense demo: with it enabled out of the box, a fresh
+  install walks dashboard → correlation search → Finding in Mission Control
+  without an operator first enabling the rule by hand.
+- This is a deliberate, documented exception to the "everything ships disabled"
+  convention introduced in v1.2.2. The search is read-only (no email, no
+  ServiceNow, no outbound call), runs on a `*/30` cron over `-24h`, and
+  suppresses per `actor` for 24 hours. Its only adaptive responses are the ES
+  notable and risk actions, which no-op on a stack without Enterprise Security.
+- Every other search in `default/savedsearches.conf` still ships
+  `disabled = 1`. Override this one in `local/savedsearches.conf` to turn it
+  off.
+
+**Fix: JSON-array CIM fields never populated (braced multi-value field names)**
+
+- FIX: `gen_ai.safety.categories`, `gen_ai.guardrail.ids`, `gen_ai.pii.types`,
+  `gen_ai.response.finish_reasons` and `gen_ai.request.stop_sequences` were
+  always null for `gen_ai:json` events. Emitters send these as JSON arrays, and
+  `KV_MODE = json` auto-extracts a JSON array under the **braced** field name
+  (`safety_categories{}`), not the bare name. Both mapping paths targeted the
+  bare name — a `FIELDALIAS` in `props.conf` and a `SOURCE_KEY` in the
+  `transforms.conf` `REPORT` — so neither ever matched. All five are now `EVAL`
+  calculated fields that read the braced name first and fall back to the bare
+  name, so array and scalar emitters both normalize. Verified live on the
+  Splunk Cloud Show stack: an event carrying
+  `safety_categories{}` = "AI Defense unavailable (fail-closed): HTTP 401:
+  Unauthorized" produced a null `gen_ai.safety.categories`.
+- FIX: same defect on `[medadvice:json]` — `extract_guardrail_ids_alt` keyed off
+  `event.guardrails_triggered` instead of `event.guardrails_triggered{}`, so
+  `gen_ai.guardrail.ids` never populated there either. Replaced with an `EVAL`.
+- IMPACT: `AI Governance - Prompt Injection Attack Correlation - Rule` has three
+  `is_injection` branches; the `like('gen_ai.safety.categories', "%Prompt
+  Injection%")` branch could never fire. Measured across 10 live spray-campaign
+  events: `via_safety_categories` = 0, `via_prompt_category` = 0, `via_regex` =
+  3 — the detection rested entirely on the regex branch. Also affected the
+  safety-violation severity classification, the guardrail trigger summary and
+  every PII-types breakdown in `savedsearches.conf` and the safety dashboard.
+- CLEANUP: removed the six now-dead `transforms.conf` stanzas
+  (`extract_safety_categories`, `extract_guardrail_ids`,
+  `extract_guardrail_ids_alt`, `extract_pii_types`, `extract_finish_reasons`,
+  `extract_stop_sequences`) and their `REPORT-` references in `props.conf`. A
+  `REPORT` cannot coexist with a calculated field on the same target — the
+  `EVAL` runs later and wins — and under `KV_MODE = json` there is no remaining
+  case for them to handle. New array-valued fields should use `EVAL` in
+  `props.conf`, not a `REPORT` transform.
+- KNOWN ISSUE (not changed here): on `[medadvice:json]`,
+  `FIELDALIAS-genai_guardrail_triggered` maps the *array*
+  `event.guardrails_triggered` onto the *boolean* `gen_ai.guardrail.triggered`.
+  It has the same bare-name problem, but fixing it means deciding that "array
+  is non-empty" implies `"true"`, which is a semantic change rather than a
+  mapping repair. Left for a separate change.
 
 ### v1.6.1 (2026-08-12)
 

@@ -63,8 +63,12 @@ ML detections, and a ServiceNow AI Case Management integration.
   `gen_ai.<x>_raw`, then `EVAL` the canonical name from the underscore source.
 - Booleans normalize to lowercase string `"true"`/`"false"` via
   `EVAL ... case(...)`.
-- JSON arrays → multi-value fields via `REPORT` transforms with
-  `MV_ADD = true`.
+- JSON arrays → multi-value fields via `EVAL` in props.conf reading the
+  **braced** auto-extracted name (`safety_categories{}`), with a bare-name
+  fallback for scalar emitters. Never `FIELDALIAS` (multivalue through an
+  alias is undocumented) and never a `REPORT` with `SOURCE_KEY = <bare
+  name>` — that key never resolves under `KV_MODE = json`, which left five
+  CIM array fields silently null until v1.6.2.
 - Eventtypes: base `gen_ai_inference` (priority 5) excludes scoring
   sourcetypes; provider eventtypes chain from it (priority 4); tags flow
   one direction only (eventtypes → tags.conf).
@@ -96,6 +100,13 @@ ML detections, and a ServiceNow AI Case Management integration.
   ships `disabled = 1`** — enablement is per-environment via `local/`
   (this box's enablement is in `local/savedsearches.conf`; keep the
   btool before/after diff clean when touching default enablement).
+  **One documented exception (v1.6.2+):**
+  `AI Governance - Prompt Injection Attack Correlation - Rule` ships
+  `disabled = 0` because it is the entry-point detection for the Agentic
+  Trust workshop / AI Defense demo — a fresh install must reach a Mission
+  Control Finding with no manual enablement. It is read-only (no email, no
+  ServiceNow, no outbound call). Do not add further exceptions without the
+  same rationale comment in the stanza and a README changelog entry.
 - Data models: `AI_Inference`, `AI_Safety`, `AI_Evaluation`
   (acceleration off by default).
 - Custom confs (`ta_gen_ai_cim_*`) need: reload triggers in

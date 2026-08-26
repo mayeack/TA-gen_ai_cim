@@ -88,8 +88,8 @@ Configuration parameters sent with AI requests.
 | `gen_ai.request.top_p` | `request_top_p`, `event.top_p` | Nucleus sampling parameter | `props.conf`, `fields.conf` |
 | `gen_ai.request.frequency_penalty` | `request_frequency_penalty` | Penalty for repeated tokens | `props.conf`, `fields.conf` |
 | `gen_ai.request.presence_penalty` | `request_presence_penalty` | Penalty for tokens already present | `props.conf`, `fields.conf` |
-| `gen_ai.request.stop_sequences` | `request_stop_sequences` | Stop sequences that halt generation (multi-value) | `props.conf`, `fields.conf`, `transforms.conf` (extract_stop_sequences) |
-| `gen_ai.response.finish_reasons` | `response_finish_reasons` | Reasons why generation stopped (multi-value) | `props.conf`, `fields.conf`, `transforms.conf` (extract_finish_reasons) |
+| `gen_ai.request.stop_sequences` | `request_stop_sequences{}` | Stop sequences that halt generation (multi-value) | `props.conf` (EVAL on braced name), `fields.conf` |
+| `gen_ai.response.finish_reasons` | `response_finish_reasons{}` | Reasons why generation stopped (multi-value) | `props.conf` (EVAL on braced name), `fields.conf` |
 | `gen_ai.request.choice.count` | `request_choice_count` | Number of response choices requested | `props.conf`, `fields.conf` |
 | `gen_ai.request.seed` | `request_seed` | Random seed for reproducibility | `props.conf`, `fields.conf` |
 
@@ -121,12 +121,12 @@ Fields for compliance, safety monitoring, and policy enforcement.
 | Field | Source Field(s) | Purpose | References |
 |-------|-----------------|---------|------------|
 | `gen_ai.safety.violated` | `safety_violated`, `event.safety_violated` | Boolean: whether safety policies were violated | `props.conf` (EVAL for normalization), `fields.conf`, `macros.conf` (gen_ai_high_risk_filter, gen_ai_calc_risk_score), `savedsearches.conf` (Safety Violation Alert, Critical Safety Alert, Review Candidates), `ai_governance_overview.xml` (safety violations KPI, compliance summary, status distribution) |
-| `gen_ai.safety.categories` | `safety_categories` | Categories of safety violations (multi-value) | `props.conf`, `fields.conf`, `transforms.conf` (extract_safety_categories), `savedsearches.conf` (Safety Violation Alert severity classification) |
+| `gen_ai.safety.categories` | `safety_categories{}` | Categories of safety violations (multi-value) | `props.conf` (EVAL on braced name), `fields.conf`, `savedsearches.conf` (Safety Violation Alert severity classification, Prompt Injection Attack Correlation) |
 | `gen_ai.safety.score` | `event.safety_score` | Numeric safety score | `props.conf`, `fields.conf` |
 | `gen_ai.guardrail.triggered` | `guardrail_triggered`, `event.guardrails_triggered` | Boolean: whether guardrails were activated | `props.conf` (EVAL for normalization), `fields.conf`, `macros.conf` (gen_ai_high_risk_filter, gen_ai_calc_risk_score), `savedsearches.conf` (Guardrail Trigger Summary, Review Candidates), `ai_governance_overview.xml` (guardrails triggered KPI) |
-| `gen_ai.guardrail.ids` | `guardrail_ids`, `event.guardrails_triggered` | IDs of triggered guardrails (multi-value) | `props.conf`, `fields.conf`, `transforms.conf` (extract_guardrail_ids, extract_guardrail_ids_alt), `savedsearches.conf` (Guardrail Trigger Summary, Critical Safety Alert) |
+| `gen_ai.guardrail.ids` | `guardrail_ids{}`, `event.guardrails_triggered{}` | IDs of triggered guardrails (multi-value) | `props.conf` (EVAL on braced name, both stanzas), `fields.conf`, `savedsearches.conf` (Guardrail Trigger Summary, Critical Safety Alert) |
 | `gen_ai.pii.detected` | `pii_detected`, `event.pii_detected` | Boolean: whether PII was detected | `props.conf` (EVAL for normalization), `fields.conf`, `macros.conf` (gen_ai_high_risk_filter, gen_ai_calc_risk_score, genai_pii_combined_score), `savedsearches.conf` (PII Detection Alert, PII High Volume Alert, Review Candidates), `ai_governance_overview.xml` (PII detected KPI, compliance summary) |
-| `gen_ai.pii.types` | `pii_types` | Types of PII detected (multi-value: SSN, EMAIL, PHONE, etc.) | `props.conf`, `fields.conf`, `transforms.conf` (extract_pii_types), `macros.conf` (genai_pii_classify_types), `savedsearches.conf` (PII Detection Alert, PII ML alerts), `ai_governance_overview.xml` |
+| `gen_ai.pii.types` | `pii_types{}` | Types of PII detected (multi-value: SSN, EMAIL, PHONE, etc.) | `props.conf` (EVAL on braced name), `fields.conf`, `macros.conf` (genai_pii_classify_types), `savedsearches.conf` (PII Detection Alert, PII ML alerts), `ai_governance_overview.xml` |
 | `gen_ai.policy.blocked` | `policy_blocked` | Boolean: whether request was blocked by policy | `props.conf` (EVAL for normalization), `fields.conf`, `macros.conf` (gen_ai_high_risk_filter, gen_ai_calc_risk_score), `savedsearches.conf` (Policy Block Alert, Review Candidates), `ai_governance_overview.xml` (policy blocked KPI, status distribution) |
 
 ### Evaluation / TEVV / Drift
@@ -525,7 +525,7 @@ Legacy sourcetype with nested event structure. Key differences from v3:
 
 - **Nested Fields**: Fields like `event.model_id`, `event.input`, `event.output`
 - **Latency Conversion**: Converts `event.latency_ms` to seconds for `gen_ai.client.operation.duration`
-- **Simplified Extraction**: Uses `extract_guardrail_ids_alt` for nested guardrail array
+- **Simplified Extraction**: `gen_ai.guardrail.ids` comes from an `EVAL` on the braced `event.guardrails_triggered{}` nested guardrail array
 
 #### ai_cim:tfidf:ml_scoring
 

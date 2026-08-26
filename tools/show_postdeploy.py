@@ -10,7 +10,9 @@ TA tarball. Install TA-gen_ai_cim first, then run this.
 Does everything the TA tarball structurally cannot:
   1. create the gen_ai_log index                 (Cloud apps cannot ship indexes.conf)
   2. create a HEC token for DemoBot              (and print it)
-  3. enable the three AI Governance detections   (the TA ships everything disabled)
+  3. enable the three AI Governance detections   (the primary correlation rule
+                                                  ships enabled as of v1.6.2; the
+                                                  other two ship disabled)
   4. seed the AI Incident Response Plan          (missioncontrol namespace)
   5. create an investigation type bound to it    (makes the plan auto-apply)
   6. create the AI findings queue                (missioncontrol namespace)
@@ -64,8 +66,9 @@ HEC_SOURCETYPE = 'gen_ai:json'
 QUEUE_TITLE = 'AI Findings'
 INVESTIGATION_TYPE = 'AI Security Incident'
 
-# The demo centrepiece. Triage is enabled for this one; the other two are
-# enabled so the analyst queue has corroborating findings.
+# The demo centrepiece. Ships enabled as of TA v1.6.2 (re-POSTing disabled=0 is
+# idempotent, so this step stays). Triage is enabled for this one; the other two
+# are enabled here so the analyst queue has corroborating findings.
 PRIMARY_DETECTION = 'AI Governance - Prompt Injection Attack Correlation - Rule'
 DETECTIONS = [
     PRIMARY_DETECTION,

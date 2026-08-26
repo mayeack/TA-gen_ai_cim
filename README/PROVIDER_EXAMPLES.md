@@ -107,7 +107,7 @@ client.address = "127.0.0.1"
 | `provider_name` | `gen_ai.provider.name` | FIELDALIAS (direct) |
 | `request_model` | `gen_ai.request.model` | FIELDALIAS (direct) |
 | `safety_violated` | `gen_ai.safety.violated` | EVAL (boolean normalization to "true"/"false") |
-| `safety_categories` | `gen_ai.safety.categories` | REPORT (JSON array extraction) |
+| `safety_categories{}` | `gen_ai.safety.categories` | EVAL (JSON array, braced name) |
 | `usage_total_tokens` | `gen_ai.usage.total_tokens` | Already present OR EVAL (sum of input+output) |
 
 ---
@@ -369,7 +369,7 @@ error.message = null
 | `event.model_id` | `gen_ai.request.model` | FIELDALIAS |
 | `event.inference_id` | `gen_ai.response.id` | FIELDALIAS |
 | `event.latency_ms` | `gen_ai.client.operation.duration` | EVAL (convert ms to seconds) |
-| `event.guardrails_triggered` | `gen_ai.guardrail.ids` | REPORT (JSON array) |
+| `event.guardrails_triggered{}` | `gen_ai.guardrail.ids` | EVAL (JSON array, braced name) |
 | `event.app` | `service.name` | FIELDALIAS |
 
 ---
