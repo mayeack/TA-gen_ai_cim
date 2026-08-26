@@ -1308,6 +1308,28 @@ The TA supports compliance requirements for:
   `disabled = 1`. Override this one in `local/savedsearches.conf` to turn it
   off.
 
+**Prompt injection correlation regex aligned with the proven scoring patterns**
+
+- FIX: the `is_injection` pattern fallback in `AI Governance - Prompt Injection
+  Attack Correlation - Rule` was a single regex requiring a trigger verb
+  followed by `\s+` and then an object noun. It missed most real injections:
+  punctuation after the verb defeated it (`SYSTEM OVERRIDE:` never matched),
+  it had no roleplay/persona verbs at all, and `safety`/`filter`/`restriction`
+  were absent from the object group. It is now six `match()` calls, one per
+  technique family, deliberately aligned with the per-technique regexes already
+  proven in `GenAI - Prompt Injection Scoring - Prompt Analysis`
+  (`has_ignore_instruction`, `has_bypass_request`, `has_roleplay_injection`,
+  `has_jailbreak_terms`, `has_reveal_request`, `has_encoding`).
+- Two deliberate departures from the scoring search's copies, because this rule
+  raises a notable and RBA risk so precision matters more: the verb/object gap
+  is bounded (`.{0,60}`) rather than unbounded, and the object groups that are
+  ambiguous in ordinary technical or clinical English are gated.
+- MEASURED against `lookups/prompt_injection_training_examples.csv` (501
+  labelled injections / 554 clean prompts): recall 6.4% → **70.3%**, precision
+  97.0% → **98.3%**. Validated live on the Splunk Cloud Show stack against an
+  indexed DemoBot spray campaign: **8 of 8** genuine injections across all
+  actors (was 3), with 0 of 6 benign / reconnaissance turns flagged.
+
 **Fix: JSON-array CIM fields never populated (braced multi-value field names)**
 
 - FIX: `gen_ai.safety.categories`, `gen_ai.guardrail.ids`, `gen_ai.pii.types`,
