@@ -32,7 +32,7 @@ The split is not stylistic — it follows from two hard constraints.
 | Ships | Detail |
 |---|---|
 | Normalization | `gen_ai:json` search-time field extraction into the `gen_ai.*` CIM |
-| Detections | 3 `AI Governance - *` rules, registered ES correlation searches — **shipped `disabled = 1`** per repo convention |
+| Detections | 3 `AI Governance - *` rules, registered ES correlation searches. `Prompt Injection Attack Correlation` ships **enabled** (v1.6.2+, the documented exception); the other two ship `disabled = 1` per repo convention |
 | Response actions | `ai_defense_suspend_user`, `ai_defense_revoke_session`, `ai_defense_tighten_guardrail` |
 | Response plan asset | `default/data/response_plans/ai_incident_response_plan.json` |
 | Identities | `medadvice_identities.csv` / `medadvice_assets.csv`, registered as ES asset/identity sources |
@@ -46,7 +46,7 @@ Excluded from the tarball (`package.sh` drops `tools/`). Run it after the TA is 
 |---|---|
 | 1. Create `gen_ai_log` | Cloud apps cannot ship `indexes.conf` |
 | 2. Create HEC token | Provisioning, not app content |
-| 3. Enable the 3 detections | TA ships everything disabled by design |
+| 3. Enable the 3 detections | The primary correlation rule ships enabled (v1.6.2+); the other two ship disabled by design. The step is idempotent |
 | 4. Seed the response plan | `missioncontrol` KV namespace |
 | 5. Investigation type → plan | `missioncontrol` KV namespace |
 | 6. Create the AI findings queue | `missioncontrol` KV namespace |
@@ -142,7 +142,7 @@ If the Show Template cannot run arbitrary post-deploy scripts, these are the equ
 
 1. **Create index `gen_ai_log`** — Settings → Indexes, or ACS.
 2. **Create a HEC token** — default index `gen_ai_log`, default sourcetype `gen_ai:json`. Record the token.
-3. **Enable the detections** — ES → Security content → Content management, search `AI Governance`, enable all three.
+3. **Enable the detections** — ES → Security content → Content management, search `AI Governance`. `Prompt Injection Attack Correlation` is already enabled (v1.6.2+); enable the other two.
 4. **Tune the primary detection** — on `AI Governance - Prompt Injection Attack Correlation - Rule`: cron `*/1 * * * *`, earliest `-15m`, latest `now`, and **turn throttling/suppression OFF**.
 5. **Tune the risk rule** *(optional)* — `Risk - 24 Hour Risk Threshold Exceeded - Rule` in `SA-ThreatIntelligence`: latest `now`, cron `*/1 * * * *`.
 6. **Create the response plan** — ES → Security content → Response plans → Create. Transcribe the four phases and fifteen tasks from `default/data/response_plans/ai_incident_response_plan.json`. *(Tedious — the script exists for this reason.)*
