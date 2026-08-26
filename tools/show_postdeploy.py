@@ -31,11 +31,13 @@ Steps 1-2 need ACS (Splunk Cloud only). Supply --acs-token, or pass
 --skip-acs and create the index and HEC token by hand. Steps 3-9 use the
 splunkd REST API on :8089.
 
-VERIFICATION STATUS: steps 3, 4, 7 and 8 use endpoints and collection schemas
-confirmed against a live ES 8.6 stack. Steps 1, 2, 5 and 6 are built from
-Splunk's documented ACS API and from missioncontrol/default/collections.conf;
-they were NOT executed end-to-end against a live stack. Run with --dry-run
-first and read the per-step report.
+VERIFICATION STATUS: steps 3, 4 and 8 use endpoints confirmed against a live ES
+8.6 stack. Steps 5, 6 and 7 were corrected against the missioncontrol source of
+truth - the Python data models and REST handlers, not collections.conf, which
+only declares scalar types and omits nested objects. Steps 1 and 2 are built
+from Splunk's documented ACS API and were NOT executed end-to-end. Step 7 is a
+no-op without the Triage agent entitlement and now reports SKIP rather than a
+misleading OK. Run with --dry-run first and read the per-step report.
 
 Copyright 2026 Splunk Inc.
 Licensed under Apache License 2.0
@@ -64,7 +66,16 @@ INDEX_NAME = 'gen_ai_log'
 HEC_TOKEN_NAME = 'demobot-ai-defense'
 HEC_SOURCETYPE = 'gen_ai:json'
 QUEUE_TITLE = 'AI Findings'
-INVESTIGATION_TYPE = 'AI Security Incident'
+APP_NAME = 'TA-gen_ai_cim'
+
+# LOWERCASE IS MANDATORY. missioncontrol/bin/blueridge/incident_types.py
+# validate_incident_type() rejects any uppercase character: "Role API is
+# case-insensitive, while the collection API is not. This causes chaos. The only
+# practical solution is to only allow lowercase names." Spaces are legal (they
+# are not in SPECIAL_CHARACTERS); the limit is 100 characters. This string must
+# match action.notable.param.investigation_type in default/savedsearches.conf
+# exactly, or the response plan will not attach to the investigation.
+INVESTIGATION_TYPE = 'ai security incident'
 
 # The demo centrepiece. Ships enabled as of TA v1.6.2 (re-POSTing disabled=0 is
 # idempotent, so this step stays). Triage is enabled for this one; the other two
@@ -373,7 +384,11 @@ def step_investigation_type(client, rep, template_id):
     record = {
         '_key': INVESTIGATION_TYPE,
         'description': 'GenAI/LLM security incidents surfaced by Cisco AI Defense.',
-        'response_template_ids': template_id,
+        # An ARRAY, not a scalar. incident_types_handler.py documents the field
+        # as <array> and incident_types_cleanup.py iterates it with `in` and a
+        # list comprehension - a bare string would match on substrings and be
+        # rewritten into a character list on cleanup.
+        'response_template_ids': [template_id],
         'create_time': int(time.time()),
         'update_time': int(time.time()),
     }
@@ -397,7 +412,48 @@ def step_queue(client, rep):
               '6. queue "{}"'.format(QUEUE_TITLE))
 
 
+TRIAGE_REQUIREMENTS = ('requires ES 8.6 Premier + Splunk Platform 10.1+ + AWS '
+                       'Cloud + a paired SOAR instance')
+
+
+def triage_agent_available(client):
+    """Is the Triage agent actually able to run on this stack?
+
+    ai_triage_enabled is a no-op unless allow_ai_triage is true - see
+    missioncontrol/README/es_ai_settings.conf.spec ("ai_triage_enabled is only
+    effective if allow_ai_triage is true"). allow_ai_triage is not admin-facing;
+    it is entitlement-gated and ships false. Without this check the POSTs below
+    return 200 on any stack and the step reports a green OK that means nothing.
+
+    Returns (available, detail).
+    """
+    code, text = client.splunkd(
+        '/servicesNS/nobody/missioncontrol/configs/conf-mc_sa_spl_context/settings',
+        'GET')
+    if code != 200:
+        return None, 'could not read mc_sa_spl_context (HTTP {})'.format(code)
+    try:
+        content = json.loads(text)['entry'][0]['content']
+    except (ValueError, KeyError, IndexError):
+        return None, 'could not parse mc_sa_spl_context'
+    raw = content.get('allow_ai_triage')
+    allowed = str(raw).strip().lower() in ('1', 'true', 'yes', 'on')
+    return allowed, 'allow_ai_triage = {}'.format(raw)
+
+
 def step_triage_agent(client, rep):
+    available, detail = triage_agent_available(client)
+    if available is False:
+        rep.skip('7. triage agent',
+                 '{} on this stack - {}. Detections and the response plan are '
+                 'still seeded; the agent lights up when the entitlement is '
+                 'present.'.format(detail, TRIAGE_REQUIREMENTS))
+        return
+    if available is None:
+        rep.skip('7. triage agent',
+                 '{} - cannot confirm entitlement; {}'.format(detail, TRIAGE_REQUIREMENTS))
+        return
+
     base = '/servicesNS/nobody/missioncontrol/configs/conf-es_ai_settings'
     code, text = client.splunkd('{}/settings'.format(base), 'POST', {
         'ai_triage_enabled': '1',
@@ -408,8 +464,13 @@ def step_triage_agent(client, rep):
     else:
         rep.fail('7. ai_triage_enabled', 'HTTP {} {}'.format(code, text[:160]))
 
-    # Value is a JSON dict of detection name -> null (JSON has no set type).
-    enabled = json.dumps({PRIMARY_DETECTION: None})
+    # Value is a JSON dict of detection key -> null (JSON has no set type).
+    # The KEY IS "<search name>+<app name>", not the bare search name -
+    # missioncontrol/bin/blueridge/utils/triage_agent_utils.py:93 builds
+    # f"{modaction.search_name}+{modaction.search_app_name}" and tests membership
+    # against this list. A bare name never matches and the agent silently skips
+    # every finding.
+    enabled = json.dumps({'{}+{}'.format(PRIMARY_DETECTION, APP_NAME): None})
     code, text = client.splunkd('{}/ai_triage_detections'.format(base), 'POST',
                                 {'enabled': enabled})
     if code in (200, 201):

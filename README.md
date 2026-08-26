@@ -613,8 +613,9 @@ Enable only what your environment needs — never by editing `default/`:
 Before enabling, review each search's cadence and actions: the ML scoring
 searches run every minute, the ServiceNow sync searches make outbound API
 calls hourly, most alerts send email (configure `action.email.to` first),
-and the two `AI Governance - * - Rule` correlation searches require
-Splunk Enterprise Security for their notable/risk actions.
+and the three `AI Governance - * - Rule` correlation searches require
+Splunk Enterprise Security for their notable/risk actions (see
+[Enterprise Security integration](#enterprise-security-integration)).
 
 **Customize alerts:** override thresholds and actions in
 `local/savedsearches.conf` (upgrade-safe) — never edit `default/`.
@@ -1287,7 +1288,143 @@ The TA supports compliance requirements for:
 
 ---
 
+## Enterprise Security integration
+
+The three `AI Governance - * - Rule` correlation searches register themselves
+with ES automatically — `action.correlationsearch.enabled = 1` plus
+`export = system` in `metadata/default.meta` is all ES needs to list them under
+**Configure → Content → Content Management**. No registration file is required.
+
+Attaching the shipped **AI Incident Response Plan** to the resulting
+investigation takes two more steps, because both halves of the binding live in
+the `missioncontrol` app and Splunk conf layering is per-app — a TA physically
+cannot ship into another app's namespace.
+
+### How a response plan binds to a detection
+
+It does not bind to the detection. The chain is three hops:
+
+```
+default/savedsearches.conf
+  action.notable.param.investigation_type = ai security incident   <- shipped
+        |
+        v   KV: mc_incident_types      (_key = the investigation type name)
+  response_template_ids = ["b7c3f1a2-5d84-4e97-a1c6-3f9e02d47b58"]
+        |
+        v   KV: mc_response_templates  (_key = ai_incident_response_plan)
+  template_id = b7c3f1a2-5d84-4e97-a1c6-3f9e02d47b58
+```
+
+The TA ships hop 1 and the plan itself
+(`default/data/response_plans/ai_incident_response_plan.json`). You supply hops
+2 and 3 once, per stack.
+
+> **Investigation type names must be lowercase.** Mission Control rejects any
+> uppercase character (its Role API is case-insensitive while the collection API
+> is not). If you rename the type, change it in **both** places — the value in
+> `savedsearches.conf` must match the `mc_incident_types` `_key` exactly, or the
+> plan silently fails to attach.
+
+### Option A — scripted
+
+On a Splunk Show stack, `tools/show_postdeploy.py` performs every step
+(the `tools/` directory is dev-only and is not in the shipped tarball):
+
+```bash
+python3 tools/show_postdeploy.py --stack https://<stack>.splunkcloud.com --dry-run
+```
+
+### Option B — manual, in the ES UI
+
+1. **Import the response plan.** *Configure → Content → Response plans →
+   Create*, then transcribe the four phases and fifteen tasks from
+   `default/data/response_plans/ai_incident_response_plan.json`. Seven of the
+   tasks carry embedded SPL under `suggestions.searches` — add those in the
+   task's **Searches** section so an analyst (or the Triage agent) can run them
+   from the task itself. Publish the plan.
+2. **Create the investigation type.** *Configure → Findings and investigations →
+   Investigation types → Create*, named exactly `ai security incident`.
+3. **Assign the plan.** On that type, *Investigation type associations →
+   Response plans → Assign response plan*. Only **published** plans appear. The
+   first plan in the list is the default for the type, and additions apply only
+   to **newly started** investigations.
+
+### Verify
+
+Let the correlation search fire, open the Finding, escalate it to an
+investigation, and confirm the four phases populate.
+
+> **Repeat runs:** the correlation rule ships with
+> `alert.suppress.period = 86400s` keyed on `actor`. That is one Finding per
+> actor per day — a second demo run against the same actor produces nothing and
+> looks like a broken pipeline. Set `alert.suppress = 0` in
+> `local/savedsearches.conf` while rehearsing.
+
+### AI Triage agent (optional)
+
+The Triage agent reads the response plan assigned to the investigation and uses
+its task descriptions and embedded searches to ground its reasoning, which is
+why the embedded SPL in step 1 above is worth the effort.
+
+Turning it on is operator-side configuration in the `missioncontrol` app —
+nothing this TA can ship. Under *Configure → All configurations → Triage agent →
+Detections*, enable **GenAI - Prompt Injection Attack Correlation**. Only
+event-based detections that are already turned on are eligible; finding groups
+and risk-based detections are not.
+
+Prerequisites are strict, and on a stack that does not meet them the toggle is a
+no-op rather than an error:
+
+| Requirement | Notes |
+|---|---|
+| ES 8.6+, **Premier** edition | Not available on Essentials |
+| Splunk Platform 10.1+ | |
+| Splunk Cloud on AWS | |
+| Splunk SOAR paired with ES | |
+| AI Assistant turned on | Role needs `es_ai_edit_settings` |
+
+Everything else in this section — the response plan, the investigation type, the
+findings and the risk scoring — works on ES 8.x without the agent.
+
+---
+
 ## Version History
+
+### v1.6.3 (2026-08-26)
+
+**ES response plan now attaches to the prompt injection investigation**
+
+- FIXED: all three `AI Governance - * - Rule` correlation searches now set
+  `action.notable.param.investigation_type = ai security incident`. Without it
+  a Finding escalated to an investigation opened with **no response plan
+  attached** — a response plan binds through the investigation type, never
+  directly to a detection, and that key was missing entirely.
+- FIXED: `default/data/response_plans/ai_incident_response_plan.json` set
+  `origin` to a bare string. Mission Control's `ResponseTemplate` model calls
+  `ResponseTemplateOrigin(**origin)`, so a string raised `TypeError` and broke
+  every read through the `/response_templates` REST handler the ES UI uses. It
+  is now the `{id, name, version}` object the model expects.
+- ADDED: seven response plan tasks now carry native embedded searches under
+  `suggestions.searches`, lifted out of the task prose. Earlier versions
+  asserted that `mc_response_templates` had no structural key for an embedded
+  search; that was inferred from `collections.conf`, which only declares scalar
+  types and omits nested objects. `ResponseTask.suggestions` holds
+  `searches[] {name, description, spl}` and is the documented mechanism for
+  grounding the ES Triage agent.
+- ADDED: `action.correlationsearch.annotations` (ATLAS `AML.T0051`, OWASP
+  `LLM01`) to `AI Governance - Prompt Injection Attempt Detected - Rule`,
+  matching its two siblings.
+- ADDED: an **Enterprise Security integration** section to this README covering
+  the binding chain, the manual UI steps, the suppression foot-gun, and the
+  Triage agent prerequisites. `tools/` and `README/` are excluded from the
+  tarball, so this was previously undocumented for anyone installing the app.
+- FIXED (dev tooling, `tools/show_postdeploy.py`): the investigation type was
+  `AI Security Incident`, which Mission Control rejects for containing
+  uppercase; `response_template_ids` was written as a scalar where the handler
+  expects an array; and the Triage agent allowlist keyed on the bare search
+  name where the agent keys on `"<search name>+<app name>"`, so the entry never
+  matched. Step 7 now reports SKIP with the entitlement requirements instead of
+  a green OK on stacks where the agent cannot run.
 
 ### v1.6.2 (2026-08-25)
 

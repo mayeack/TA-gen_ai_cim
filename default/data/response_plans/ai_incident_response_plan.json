@@ -5,20 +5,40 @@
     "",
     "VALUES HERE ARE PLAIN TEXT. Mission Control stores response plan strings",
     "URL-ENCODED (e.g. 'Identification%20(Detection%20and%20Analysis)'). The",
-    "Show post-deploy script encodes name/description on write - do not",
-    "pre-encode this file, it is kept readable so it stays reviewable in git.",
+    "Show post-deploy script encodes every string on write, including the SPL in",
+    "suggestions.searches - do not pre-encode this file, it is kept readable so",
+    "it stays reviewable in git.",
     "",
-    "SCHEMA: verified against missioncontrol/default/collections.conf, which",
-    "declares for mc_response_templates: id, version, updated_by, creator,",
-    "is_default, name, description, template_status, create_time, update_time,",
-    "template_id, active, used, ai_generated, source_attachment_id, and",
-    "phases{name, order, tasks{name, order, description, owner}}.",
+    "SCHEMA: the authoritative source is the Python model at",
+    "missioncontrol/bin/blueridge/data_models/models/response_template.py, NOT",
+    "collections.conf - the latter only declares scalar/indexed types and omits",
+    "nested objects entirely, so its silence proves nothing.",
+    "  ResponseTemplate: id, template_id, name, description, template_status,",
+    "    creator, updated_by, is_default, active, used, version, ai_generated,",
+    "    source_attachment_id, create_time, update_time, origin, phases[]",
+    "  origin is a DICT {id, name, version} - a bare string raises TypeError in",
+    "    ResponseTemplateOrigin(**origin) and breaks every read through the",
+    "    /response_templates REST handler the ES UI uses.",
+    "  ResponsePhase: name, order, tasks[]   (phase names must be unique)",
+    "  ResponseTask: name, order, description, owner, tag, status,",
+    "    is_note_required, notes[], files[], suggestions",
+    "  suggestions: {searches[], actions[], playbooks[]}",
+    "    searches[]  = {name, description, spl}  - native Splunk SPL, no SOAR",
+    "    actions[]   = SOAR actions {app_id, asset, parameters, ...}",
+    "    playbooks[] = SOAR playbooks {playbook_id, repo, ...}",
+    "  Limits: name <= 250 chars, description <= 7000 chars.",
     "",
-    "The collection declares NO structural key for an embedded search or an",
-    "embedded response action on a task - only name/order/description/owner.",
-    "SPL and action references are therefore written into the task description",
-    "as explicit analyst instructions, which always render. Attach native",
-    "searches/actions afterwards in the ES UI if richer wiring is wanted.",
+    "Tasks DO carry embedded searches - that is what suggestions.searches is for,",
+    "and it is how the ES Triage agent is grounded in specific tooling rather",
+    "than prose. actions[] and playbooks[] are left empty here because they are",
+    "SOAR objects; the three simulated ai_defense_* adaptive response actions are",
+    "named in the task descriptions instead.",
+    "",
+    "BINDING: a response plan does NOT attach to a detection. The chain is",
+    "savedsearches.conf action.notable.param.investigation_type -> KV",
+    "mc_incident_types (_key = that name, response_template_ids = [template_id])",
+    "-> this record. Investigation type names must be LOWERCASE",
+    "(missioncontrol/bin/blueridge/incident_types.py rejects uppercase).",
     "",
     "Placeholder tokens <actor>, <app> and <session> are replaced by the analyst",
     "(or by the Triage agent) with values from the finding."
@@ -32,7 +52,11 @@
   "active": true,
   "version": 1,
   "ai_generated": false,
-  "origin": "TA-gen_ai_cim",
+  "origin": {
+    "id": "TA-gen_ai_cim",
+    "name": "TA-gen_ai_cim",
+    "version": 1
+  },
   "template_status": "published",
   "source_attachment_id": null,
   "creator": "nobody",
@@ -46,26 +70,70 @@
         {
           "name": "Validate the AI Defense verdict",
           "order": 0,
-          "description": "Confirm the block was a genuine policy violation rather than a false positive. Review the guardrail that fired, the policy name, and the classification returned by Cisco AI Defense.\n\nSearch:\nindex=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.user.id=\"<actor>\" gen_ai.policy.blocked=\"true\"\n| table _time, gen_ai.session.id, gen_ai.app.name, gen_ai.request.model, prompt_category, gen_ai.policy.name, gen_ai.guardrail.ids, risk_score\n| sort - _time\n\nRecord in the task notes whether the verdict is confirmed, and the injection technique observed.",
-          "owner": ""
+          "description": "Confirm the block was a genuine policy violation rather than a false positive. Review the guardrail that fired, the policy name, and the classification returned by Cisco AI Defense.\n\nRecord in the task notes whether the verdict is confirmed, and the injection technique observed.",
+          "owner": "",
+          "suggestions": {
+            "searches": [
+              {
+                "name": "Blocked prompts for this actor",
+                "description": "Every AI Defense block for the actor, with the guardrail, policy and classification that fired.",
+                "spl": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.user.id=\"<actor>\" gen_ai.policy.blocked=\"true\"\n| table _time, gen_ai.session.id, gen_ai.app.name, gen_ai.request.model, prompt_category, gen_ai.policy.name, gen_ai.guardrail.ids, risk_score\n| sort - _time"
+              }
+            ],
+            "actions": [],
+            "playbooks": []
+          }
         },
         {
           "name": "Scope the campaign",
           "order": 1,
-          "description": "Establish breadth before containment. Determine how many attempts the actor made, across how many sessions, applications and models, and over what period.\n\nSearch:\nindex=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\")\n| stats count AS attempts, dc(gen_ai.session.id) AS sessions, dc(gen_ai.app.name) AS apps, dc(gen_ai.request.model) AS models, values(prompt_category) AS techniques, min(_time) AS first_seen, max(_time) AS last_seen BY gen_ai.user.id\n\nIf multiple applications or models were targeted, treat this as a deliberate campaign rather than an isolated attempt and escalate severity accordingly.",
-          "owner": ""
+          "description": "Establish breadth before containment. Determine how many attempts the actor made, across how many sessions, applications and models, and over what period.\n\nIf multiple applications or models were targeted, treat this as a deliberate campaign rather than an isolated attempt and escalate severity accordingly.",
+          "owner": "",
+          "suggestions": {
+            "searches": [
+              {
+                "name": "Campaign scope for this actor",
+                "description": "Attempt count, distinct sessions, apps, models and first/last seen for the actor.",
+                "spl": "index=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\")\n| stats count AS attempts, dc(gen_ai.session.id) AS sessions, dc(gen_ai.app.name) AS apps, dc(gen_ai.request.model) AS models, values(prompt_category) AS techniques, min(_time) AS first_seen, max(_time) AS last_seen BY gen_ai.user.id"
+              }
+            ],
+            "actions": [],
+            "playbooks": []
+          }
         },
         {
           "name": "Review prompts that were NOT blocked",
           "order": 2,
-          "description": "HIGHEST PRIORITY EVIDENCE. Any injection attempt from this actor that AI Defense allowed through is a guardrail gap - it reached the model and produced a real response. These determine whether this incident is contained or ongoing.\n\nSearch:\nindex=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\") gen_ai.policy.blocked=\"false\"\n| table _time, gen_ai.session.id, gen_ai.app.name, gen_ai.request.model, prompt_category, gen_ai.safety.violated, gen_ai.pii.detected\n| sort - _time\n\nIf this returns results, do not close as benign. Continue to Containment.",
-          "owner": ""
+          "description": "HIGHEST PRIORITY EVIDENCE. Any injection attempt from this actor that AI Defense allowed through is a guardrail gap - it reached the model and produced a real response. These determine whether this incident is contained or ongoing.\n\nIf the attached search returns any results, do not close as benign. Continue to Containment.",
+          "owner": "",
+          "suggestions": {
+            "searches": [
+              {
+                "name": "Injection attempts that were NOT blocked",
+                "description": "Prompts from this actor that AI Defense allowed through - the guardrail gap.",
+                "spl": "index=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\") gen_ai.policy.blocked=\"false\"\n| table _time, gen_ai.session.id, gen_ai.app.name, gen_ai.request.model, prompt_category, gen_ai.safety.violated, gen_ai.pii.detected\n| sort - _time"
+              }
+            ],
+            "actions": [],
+            "playbooks": []
+          }
         },
         {
           "name": "Assess data exposure",
           "order": 3,
-          "description": "Determine whether any response in the affected sessions returned sensitive data. Check PII/PHI detection and safety violation flags across the actor's full session set.\n\nSearch:\nindex=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\")\n| stats sum(eval(if('gen_ai.pii.detected'=\"true\",1,0))) AS pii_events, sum(eval(if('gen_ai.safety.violated'=\"true\",1,0))) AS safety_violations, values(gen_ai.pii.types) AS pii_types BY gen_ai.session.id\n| where pii_events > 0 OR safety_violations > 0\n\nIf PII or PHI was returned, trigger the organisation's data breach notification process in parallel with this plan.",
-          "owner": ""
+          "description": "Determine whether any response in the affected sessions returned sensitive data. Check PII/PHI detection and safety violation flags across the actor's full session set.\n\nIf PII or PHI was returned, trigger the organisation's data breach notification process in parallel with this plan.",
+          "owner": "",
+          "suggestions": {
+            "searches": [
+              {
+                "name": "Data exposure by session",
+                "description": "PII/PHI detections and safety violations across the actor's sessions.",
+                "spl": "index=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\")\n| stats sum(eval(if('gen_ai.pii.detected'=\"true\",1,0))) AS pii_events, sum(eval(if('gen_ai.safety.violated'=\"true\",1,0))) AS safety_violations, values(gen_ai.pii.types) AS pii_types BY gen_ai.session.id\n| where pii_events > 0 OR safety_violations > 0"
+              }
+            ],
+            "actions": [],
+            "playbooks": []
+          }
         }
       ]
     },
@@ -94,8 +162,24 @@
         {
           "name": "Confirm containment took effect",
           "order": 3,
-          "description": "Verify the actions were recorded and that no new activity is arriving from the actor.\n\nSearch (audit trail of actions taken):\nindex=gen_ai_log sourcetype=ai_cim:response:action target=\"<actor>\"\n| table _time, action_label, target_type, target, status, simulated, executed_by, execution_id\n\nSearch (confirm activity has stopped):\nindex=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\") earliest=-15m\n| stats count\n\nA non-zero count means containment has not held - return to the suspension task.",
-          "owner": ""
+          "description": "Verify the actions were recorded and that no new activity is arriving from the actor.\n\nRun both attached searches. A non-zero count from \"Confirm activity has stopped\" means containment has not held - return to the suspension task.",
+          "owner": "",
+          "suggestions": {
+            "searches": [
+              {
+                "name": "Containment audit trail",
+                "description": "Response actions recorded against this actor, including their simulated/real status.",
+                "spl": "index=gen_ai_log sourcetype=ai_cim:response:action target=\"<actor>\"\n| table _time, action_label, target_type, target, status, simulated, executed_by, execution_id"
+              },
+              {
+                "name": "Confirm activity has stopped",
+                "description": "Event count for the actor in the last 15 minutes. Non-zero means containment has not held.",
+                "spl": "index=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\") earliest=-15m\n| stats count"
+              }
+            ],
+            "actions": [],
+            "playbooks": []
+          }
         }
       ]
     },
@@ -118,8 +202,19 @@
         {
           "name": "Verify no residual access",
           "order": 2,
-          "description": "Re-run the scope search from the Identification phase over a window that starts after containment. Confirm zero blocked and zero allowed events for the actor, across every application identified.\n\nSearch:\nindex=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\")\n| stats count BY gen_ai.app.name, gen_ai.policy.blocked",
-          "owner": ""
+          "description": "Run the attached search over a window that starts after containment. Confirm zero blocked and zero allowed events for the actor, across every application identified in the Identification phase.",
+          "owner": "",
+          "suggestions": {
+            "searches": [
+              {
+                "name": "Residual access check",
+                "description": "Blocked and allowed event counts per application for the actor after containment.",
+                "spl": "index=gen_ai_log `exclude_scoring_sourcetypes` (gen_ai.user.id=\"<actor>\" OR enduser.id=\"<actor>\")\n| stats count BY gen_ai.app.name, gen_ai.policy.blocked"
+              }
+            ],
+            "actions": [],
+            "playbooks": []
+          }
         },
         {
           "name": "Restore normal access",
@@ -148,8 +243,19 @@
         {
           "name": "Complete the incident record",
           "order": 2,
-          "description": "Confirm the audit trail is complete before closing: every containment action recorded, every task noted, disposition set, and the response actions' simulated/real status stated explicitly.\n\nSearch (full action audit for the incident):\nindex=gen_ai_log sourcetype=ai_cim:response:action target=\"<actor>\"\n| table _time, action, action_label, target_type, target, status, simulated, executed_by, search_name, execution_id\n| sort _time",
-          "owner": ""
+          "description": "Confirm the audit trail is complete before closing: every containment action recorded, every task noted, disposition set, and the response actions' simulated/real status stated explicitly.",
+          "owner": "",
+          "suggestions": {
+            "searches": [
+              {
+                "name": "Full response action audit for the incident",
+                "description": "Complete action audit trail for the incident record.",
+                "spl": "index=gen_ai_log sourcetype=ai_cim:response:action target=\"<actor>\"\n| table _time, action, action_label, target_type, target, status, simulated, executed_by, search_name, execution_id\n| sort _time"
+              }
+            ],
+            "actions": [],
+            "playbooks": []
+          }
         }
       ]
     }

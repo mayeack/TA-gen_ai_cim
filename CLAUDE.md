@@ -88,10 +88,31 @@ ML detections, and a ServiceNow AI Case Management integration.
   Control `mc_response_templates` KV collection, stored **plain text** so
   they stay reviewable in git. Mission Control stores the strings
   URL-encoded (`encodeURIComponent` semantics — parens stay literal);
-  `tools/show_postdeploy.py` encodes on write. The collection declares only
-  `name`/`order`/`description`/`owner` on a task — there is no structural key
-  for an embedded search or action, so SPL and action references go in the
-  task description.
+  `tools/show_postdeploy.py` encodes on write, recursively, including the SPL.
+  The authoritative schema is the Python model at
+  `missioncontrol/bin/blueridge/data_models/models/response_template.py`, **not
+  `collections.conf`** — the latter declares only scalar/indexed types and omits
+  nested objects, so its silence about a field proves nothing. Tasks **do**
+  support embedded SPL via `suggestions.searches[] {name, description, spl}`
+  (`actions[]`/`playbooks[]` are SOAR objects, not Splunk alert actions).
+  `origin` must be a `{id, name, version}` **dict** — a bare string raises
+  `TypeError` in `ResponseTemplateOrigin(**origin)` and breaks every read
+  through the `/response_templates` REST handler the ES UI uses.
+- A response plan **never binds to a detection**. The chain is
+  `action.notable.param.investigation_type` → KV `mc_incident_types`
+  (`_key` = that name, `response_template_ids` = **array**) → KV
+  `mc_response_templates`. Investigation type names must be **lowercase**
+  (`missioncontrol/bin/blueridge/incident_types.py` rejects uppercase), and the
+  conf value must match the `_key` exactly or the plan silently fails to attach.
+  Both collections live in the `missioncontrol` app, so the TA ships the
+  `investigation_type` key and the plan asset; the KV records come from
+  `tools/show_postdeploy.py` or the manual steps in `README.md`.
+- The ES **Triage agent** gates on an allowlist, not on annotations, risk, or
+  severity: `es_ai_settings.conf [ai_triage_detections] enabled` keyed on
+  `"<search name>+<app name>"` (see `triage_agent_utils.py`), plus
+  `ai_triage_enabled` and the entitlement flag `allow_ai_triage`. It needs ES
+  8.6 Premier + Platform 10.1+ + AWS Cloud + paired SOAR; this dev box is ES
+  8.5.1, so it cannot be verified here.
 - KV store: underscore field names (dots break REST), `replicate = true`,
   `accelerated_fields` for hot queries, typed `field.<name>` declarations.
 - Macros: `genai_*` (cost/analytics) vs `gen_ai_*` (review/workflow);
