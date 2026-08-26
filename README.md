@@ -1390,6 +1390,37 @@ findings and the risk scoring — works on ES 8.x without the agent.
 
 ## Version History
 
+### v1.6.4 (2026-08-26)
+
+**Packaging and notable-content fixes from the publish review**
+
+- FIXED: `package.sh` built the tarball with a bare `bsdtar`, stamping
+  `LIBARCHIVE.xattr.com.apple.provenance` onto every member. GNU tar — which
+  the Artifactory publish and mapping jobs use — then emitted *Ignoring unknown
+  extended header keyword* for each of the 127 entries. The build now sets
+  `COPYFILE_DISABLE=1` and adds `--no-xattrs`, probed for rather than assumed so
+  a non-macOS build host still works.
+- FIXED (privacy): `AI Governance - Prompt Injection Attack Correlation - Rule`
+  interpolated `$injection_prompts$` — raw input message text — into
+  `action.notable.param.rule_description`. Because the rule ships enabled, any
+  PII, PHI or secret inside an attack prompt was copied into ES/Mission Control
+  notables, which carry their own retention and access path. This contradicted
+  the app's own rule that content is DEBUG-only and never logged at INFO.
+
+  The search no longer carries prompt text at all. The `is_injection` OR-chain
+  is now a `case()` that labels which pattern fired — `instruction_override`,
+  `guardrail_bypass`, `persona_jailbreak`, `jailbreak_mode`,
+  `system_prompt_disclosure`, `obfuscated_payload`, `classifier_flagged` — and
+  `stats` collects that label as `techniques` instead of the prompt body. The
+  notable reports techniques and points the analyst at the drilldown to read the
+  prompt in `gen_ai_log`, where index-level access controls apply. `techniques`
+  is added to `nes_fields`.
+
+  **Detection behaviour is unchanged.** All six regexes are reused byte-for-byte
+  and `case()` is non-null exactly when the old OR-chain was true. Verified
+  across the 1,055-row labelled corpus: **0 disagreements**, precision 98.3%
+  matching the documented v1.6.2 figure.
+
 ### v1.6.3 (2026-08-26)
 
 **ES response plan now attaches to the prompt injection investigation**
