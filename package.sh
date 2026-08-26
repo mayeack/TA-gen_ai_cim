@@ -88,7 +88,18 @@ fi
 
 # NOTE: --exclude options must precede the path argument so this works on
 # both GNU tar and BSD/macOS tar.
-tar -czvf "${OUTPUT}" \
+#
+# COPYFILE_DISABLE / --no-xattrs keep macOS metadata out of the archive. Without
+# them bsdtar embeds LIBARCHIVE.xattr.com.apple.provenance headers on every
+# member; GNU tar (which the Artifactory publish and mapping jobs use) then
+# spews "Ignoring unknown extended header keyword" for each one. --no-xattrs is
+# bsdtar-only, so probe for it rather than assuming the build host is a Mac.
+TAR_XATTR_FLAG=()
+if tar --no-xattrs --version >/dev/null 2>&1; then
+    TAR_XATTR_FLAG=(--no-xattrs)
+fi
+
+COPYFILE_DISABLE=1 tar "${TAR_XATTR_FLAG[@]}" -czvf "${OUTPUT}" \
     --exclude='.git' \
     --exclude='.gitignore' \
     --exclude='.gitattributes' \
