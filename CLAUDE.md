@@ -96,6 +96,13 @@ ML detections, and a ServiceNow AI Case Management integration.
   ships `disabled = 1`** — enablement is per-environment via `local/`
   (this box's enablement is in `local/savedsearches.conf`; keep the
   btool before/after diff clean when touching default enablement).
+  **One documented exception (v1.6.2+):**
+  `AI Governance - Prompt Injection Attack Correlation - Rule` ships
+  `disabled = 0` because it is the entry-point detection for the Agentic
+  Trust workshop / AI Defense demo — a fresh install must reach a Mission
+  Control Finding with no manual enablement. It is read-only (no email, no
+  ServiceNow, no outbound call). Do not add further exceptions without the
+  same rationale comment in the stanza and a README changelog entry.
 - Data models: `AI_Inference`, `AI_Safety`, `AI_Evaluation`
   (acceleration off by default).
 - Custom confs (`ta_gen_ai_cim_*`) need: reload triggers in

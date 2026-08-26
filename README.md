@@ -4,7 +4,7 @@
 
 **Splunk Technology Add-on for Generative AI Common Information Model**
 
-Version: 1.6.1  
+Version: 1.6.2  
 Author: Splunk AI Governance Team  
 License: Apache 2.0
 
@@ -228,7 +228,7 @@ $SPLUNK_HOME/bin/splunk display app TA-gen_ai_cim
 Expected output:
 ```
 TA-gen_ai_cim
-  Version: 1.6.1
+  Version: 1.6.2
   Status: enabled
 ```
 
@@ -538,11 +538,20 @@ The TA extracts and normalizes **60+ fields** across these categories:
 
 The TA includes **15+ pre-configured alerts** in `savedsearches.conf`:
 
-> **All shipped searches are disabled by default.** Following Splunk Cloud
-> best practice, every scheduled search, alert, report, and correlation rule
-> ships with `disabled = 1` so a fresh install never sends email, calls
-> ServiceNow, or consumes scheduler slots until you opt in. See
+> **Shipped searches are disabled by default, with one exception.** Following
+> Splunk Cloud best practice, every scheduled search, alert, report, and
+> correlation rule ships with `disabled = 1` so a fresh install never sends
+> email, calls ServiceNow, or consumes scheduler slots until you opt in. See
 > [Enabling the shipped searches](#enabling-the-shipped-searches) below.
+>
+> The one exception is **AI Governance - Prompt Injection Attack Correlation -
+> Rule** (label *GenAI - Prompt Injection Attack Correlation*), which ships
+> `disabled = 0` as of v1.6.2 so a fresh install lights up the
+> dashboard → correlation search → Mission Control Finding path with no manual
+> enablement step. It is read-only — no email, no ServiceNow, no outbound call —
+> runs every 30 minutes over a 24-hour window, and suppresses per actor for 24
+> hours. Turn it off in `local/savedsearches.conf` if you do not want it
+> scheduled.
 
 ### Safety & Compliance
 - **GenAI - Safety Violation Alert** - Detects safety policy violations
@@ -583,8 +592,9 @@ The TA includes **15+ pre-configured alerts** in `savedsearches.conf`:
 
 ### Enabling the shipped searches
 
-Every scheduled search ships `disabled = 1`. Enable only what your
-environment needs — never by editing `default/`:
+Every scheduled search ships `disabled = 1` except
+`AI Governance - Prompt Injection Attack Correlation - Rule` (see above).
+Enable only what your environment needs — never by editing `default/`:
 
 - **Splunk Web:** Settings → Searches, reports, and alerts → filter on the
   TA-gen_ai_cim app → Edit → Enable.
@@ -1093,7 +1103,9 @@ TA-gen_ai_cim/
 │   ├── macros.conf                # Search macros
 │   ├── props.conf                 # Field normalization (search-time only)
 │   ├── restmap.conf               # REST endpoint mapping
-│   ├── savedsearches.conf         # Alerts/reports/rules (ALL ship disabled)
+│   ├── savedsearches.conf         # Alerts/reports/rules (ship disabled;
+│   │                              #   prompt-injection correlation is the
+│   │                              #   one enabled-by-default exception)
 │   ├── server.conf                # SHC replication for custom confs
 │   ├── ta_gen_ai_cim_*.conf(.spec)  # Custom config files and specs
 │   ├── transforms.conf            # Extractions, CSV + KV store lookups
@@ -1276,6 +1288,25 @@ The TA supports compliance requirements for:
 ---
 
 ## Version History
+
+### v1.6.2 (2026-08-25)
+
+**Prompt injection correlation detection ships enabled**
+
+- CHANGED: `AI Governance - Prompt Injection Attack Correlation - Rule` (ES
+  Content Management label *GenAI - Prompt Injection Attack Correlation*) now
+  ships `disabled = 0`. It is the entry-point detection for the Agentic Trust
+  workshop and the AI Defense demo: with it enabled out of the box, a fresh
+  install walks dashboard → correlation search → Finding in Mission Control
+  without an operator first enabling the rule by hand.
+- This is a deliberate, documented exception to the "everything ships disabled"
+  convention introduced in v1.2.2. The search is read-only (no email, no
+  ServiceNow, no outbound call), runs on a `*/30` cron over `-24h`, and
+  suppresses per `actor` for 24 hours. Its only adaptive responses are the ES
+  notable and risk actions, which no-op on a stack without Enterprise Security.
+- Every other search in `default/savedsearches.conf` still ships
+  `disabled = 1`. Override this one in `local/savedsearches.conf` to turn it
+  off.
 
 ### v1.6.1 (2026-08-12)
 
