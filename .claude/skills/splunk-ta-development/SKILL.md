@@ -7,6 +7,24 @@ description: Build Splunk Technology Add-ons (TAs) by parsing log samples, creat
 
 This skill guides the development of Splunk Technology Add-ons (TAs) following a structured workflow: analyze samples, build configurations, load data, validate extractions, and iterate until complete.
 
+## MANDATORY: validate against VALIDATION_RULES.md
+
+**[VALIDATION_RULES.md](VALIDATION_RULES.md) is a hard gate, not a reference.**
+Read it at the start of any TA work and run its checks before packaging,
+publishing, or opening a merge request. Every rule in it came from a real review
+finding on a real publish MR — the ones already caught include raw prompt text
+leaking into ES notables and macOS extended attributes breaking the Artifactory
+publish jobs.
+
+```bash
+# after `bash package.sh`
+bash .claude/skills/splunk-ta-development/check_package.sh <APP_NAME>-<VERSION>.tgz
+```
+
+The rule set is refreshed on every publish MR to `tmm/domane-unreleased-apps`.
+After submitting an MR, harvest the `codex-ai-mr-bot` findings and fold them
+back in — the maintenance protocol is at the top of VALIDATION_RULES.md.
+
 ## Project Structure
 
 TAs are created in their own subfolder within the workspace. This allows multiple TAs to be developed in the same workspace directory.
@@ -84,14 +102,24 @@ When the TA is complete and validated:
 **1. Create distributable tarball:**
 
 ```bash
-# From the workspace directory containing the TA folder
-tar -czvf <app_name>.tgz <app_name>/ \
+# From the workspace directory containing the TA folder.
+# COPYFILE_DISABLE + --no-xattrs are REQUIRED (R-PKG-001): without them macOS
+# embeds LIBARCHIVE.xattr.com.apple.provenance headers on every member and GNU
+# tar in the publish pipeline warns once per file. --no-xattrs is bsdtar-only,
+# so probe for it.
+TAR_XATTR_FLAG=()
+tar --no-xattrs --version >/dev/null 2>&1 && TAR_XATTR_FLAG=(--no-xattrs)
+
+COPYFILE_DISABLE=1 tar "${TAR_XATTR_FLAG[@]}" -czvf <app_name>.tgz \
   --exclude='.git' \
   --exclude='local' \
   --exclude='local/*' \
   --exclude='metadata/local.meta' \
   --exclude='*.pyc' \
-  --exclude='__pycache__'
+  --exclude='__pycache__' \
+  --exclude='._*' \
+  --exclude='.DS_Store' \
+  <app_name>/
 ```
 
 **2. Validate with AppInspect** (required for Splunkbase/Cloud):
@@ -139,7 +167,8 @@ Task Progress:
 - [ ] Phase 3: Load data into Splunk
 - [ ] Phase 4: Validate extractions via MCP
 - [ ] Phase 5: Iterate until complete
-- [ ] Phase 6: Package and validate with AppInspect (optional)
+- [ ] Phase 6: Package and validate with AppInspect
+- [ ] Phase 7: Run the VALIDATION_RULES.md gate (REQUIRED before any MR)
 ```
 
 **Note:** This skill covers field extraction TAs (props.conf/transforms.conf). For TAs with modular inputs, custom UI, or data collection scripts, consider the [UCC Framework](https://splunk.github.io/addonfactory-ucc-generator/) which follows Splunk's Gold Standard methodology.
@@ -394,6 +423,48 @@ Repeat Phase 3-4 until:
 - [ ] No events lost to line breaking
 - [ ] Field values match raw log content
 
+### Phase 6: Package
+
+```bash
+bash package.sh          # or the tar recipe under "Packaging for Distribution"
+```
+
+### Phase 7: The validation gate (REQUIRED before any MR)
+
+Do not open a publish MR until this passes. See
+[VALIDATION_RULES.md](VALIDATION_RULES.md) for what each rule means and which
+review finding produced it.
+
+```bash
+# Runtime + config
+"$SPLUNK_HOME"/bin/splunk cmd python3.9  -m py_compile bin/*.py
+"$SPLUNK_HOME"/bin/splunk cmd python3.13 -m py_compile bin/*.py
+"$SPLUNK_HOME"/bin/splunk btool check --app=<app_name>
+
+# Package hygiene: R-PKG-001/002/003, R-CONF-002, R-SEC-002
+bash .claude/skills/splunk-ta-development/check_package.sh <app_name>-<version>.tgz
+
+# Data minimization: R-SEC-001
+python3 .claude/skills/splunk-ta-development/check_notable_content.py default/savedsearches.conf
+
+# Cloud certification: R-PKG-004 (0 errors / 0 failures / 0 future-failures,
+# warning set matching the app's documented accepted list exactly)
+splunk-appinspect inspect <app_name>-<version>.tgz --included-tags cloud
+```
+
+Then review by hand what a script cannot judge:
+
+- **R-SEC-001 (beyond the script)** — the checker resolves `$token$`s to their
+  producing term and flags known raw-content fields. It cannot judge a *new*
+  content-bearing field, so when one appears, add it to `RAW` in the checker.
+- **R-CONF-003** — for every field the change claims to populate, confirm
+  `count(<field>) > 0` against real indexed data. `btool check` passing proves
+  syntax, not behavior.
+- **R-DOC-001/002** — changelog entry written; MR body states the AppInspect
+  numbers, the clean `btool check`, both `py_compile` runs, and the live install.
+
+After the MR is reviewed, harvest the findings and update VALIDATION_RULES.md.
+
 ## Extraction Strategy Priority
 
 1. **Auto key-value** - For `key=value` logs:
@@ -436,4 +507,6 @@ index=_internal sourcetype=splunkd component=LineBreakingProcessor OR component=
 ## Additional Resources
 
 - [REFERENCE.md](REFERENCE.md) - Detailed configuration options and common patterns
+- [VALIDATION_RULES.md](VALIDATION_RULES.md) - **Hard gate.** Packaging, security,
+  configuration, and documentation rules harvested from publish-MR review findings
 - [EXAMPLES.md](EXAMPLES.md) - Example configurations for common log formats

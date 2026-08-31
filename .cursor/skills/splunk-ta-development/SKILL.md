@@ -7,6 +7,24 @@ description: Build Splunk Technology Add-ons (TAs) by parsing log samples, creat
 
 This skill guides the development of Splunk Technology Add-ons (TAs) following a structured workflow: analyze samples, build configurations, load data, validate extractions, and iterate until complete.
 
+## MANDATORY: validate against VALIDATION_RULES.md
+
+**[VALIDATION_RULES.md](VALIDATION_RULES.md) is a hard gate, not a reference.**
+Read it at the start of any TA work and run its checks before packaging,
+publishing, or opening a merge request. Every rule in it came from a real review
+finding on a real publish MR — the ones already caught include raw prompt text
+leaking into ES notables and macOS extended attributes breaking the Artifactory
+publish jobs.
+
+```bash
+# after `bash package.sh`
+bash .claude/skills/splunk-ta-development/check_package.sh <APP_NAME>-<VERSION>.tgz
+```
+
+The rule set is refreshed on every publish MR to `tmm/domane-unreleased-apps`.
+After submitting an MR, harvest the `codex-ai-mr-bot` findings and fold them
+back in — the maintenance protocol is at the top of VALIDATION_RULES.md.
+
 ## Project Structure
 
 TAs are created in their own subfolder within the workspace. This allows multiple TAs to be developed in the same workspace directory.
@@ -63,10 +81,10 @@ The TA must be in Splunk's apps directory for Splunk to recognize it. **Create a
 ```bash
 # Create symlink (run once at project start)
 # Note: symlink points to the TA subfolder, not the workspace root
-ln -s "$(pwd)/<app_name>" /Applications/Splunk/etc/apps/<app_name>
+ln -s "$(pwd)/<app_name>" "$SPLUNK_HOME"/etc/apps/<app_name>
 
 # Verify symlink
-ls -la /Applications/Splunk/etc/apps/<app_name>
+ls -la "$SPLUNK_HOME"/etc/apps/<app_name>
 ```
 
 This allows:
@@ -84,14 +102,24 @@ When the TA is complete and validated:
 **1. Create distributable tarball:**
 
 ```bash
-# From the workspace directory containing the TA folder
-tar -czvf <app_name>.tgz <app_name>/ \
+# From the workspace directory containing the TA folder.
+# COPYFILE_DISABLE + --no-xattrs are REQUIRED (R-PKG-001): without them macOS
+# embeds LIBARCHIVE.xattr.com.apple.provenance headers on every member and GNU
+# tar in the publish pipeline warns once per file. --no-xattrs is bsdtar-only,
+# so probe for it.
+TAR_XATTR_FLAG=()
+tar --no-xattrs --version >/dev/null 2>&1 && TAR_XATTR_FLAG=(--no-xattrs)
+
+COPYFILE_DISABLE=1 tar "${TAR_XATTR_FLAG[@]}" -czvf <app_name>.tgz \
   --exclude='.git' \
   --exclude='local' \
   --exclude='local/*' \
   --exclude='metadata/local.meta' \
   --exclude='*.pyc' \
-  --exclude='__pycache__'
+  --exclude='__pycache__' \
+  --exclude='._*' \
+  --exclude='.DS_Store' \
+  <app_name>/
 ```
 
 **2. Validate with AppInspect** (required for Splunkbase/Cloud):
@@ -139,7 +167,8 @@ Task Progress:
 - [ ] Phase 3: Load data into Splunk
 - [ ] Phase 4: Validate extractions via MCP
 - [ ] Phase 5: Iterate until complete
-- [ ] Phase 6: Package and validate with AppInspect (optional)
+- [ ] Phase 6: Package and validate with AppInspect
+- [ ] Phase 7: Run the VALIDATION_RULES.md gate (REQUIRED before any MR)
 ```
 
 **Note:** This skill covers field extraction TAs (props.conf/transforms.conf). For TAs with modular inputs, custom UI, or data collection scripts, consider the [UCC Framework](https://splunk.github.io/addonfactory-ucc-generator/) which follows Splunk's Gold Standard methodology.
@@ -163,10 +192,10 @@ For internal/enterprise use:
 
 ```bash
 # List existing apps to verify name is unique
-ls /Applications/Splunk/etc/apps/ | grep -i "<app_name>"
+ls "$SPLUNK_HOME"/etc/apps/ | grep -i "<app_name>"
 
 # Also check if sourcetype exists (from another app)
-/Applications/Splunk/bin/splunk btool props list <sourcetype_name> --debug 2>/dev/null | head -5
+"$SPLUNK_HOME"/bin/splunk btool props list <sourcetype_name> --debug 2>/dev/null | head -5
 ```
 
 If the app name or sourcetype already exists, choose a different name.
@@ -185,13 +214,13 @@ touch <app_name>/bin/README
 
 ```bash
 # Verify symlink doesn't already exist
-ls -la /Applications/Splunk/etc/apps/<app_name> 2>/dev/null
+ls -la "$SPLUNK_HOME"/etc/apps/<app_name> 2>/dev/null
 
 # Create symlink from TA subfolder to Splunk apps
-ln -s "$(pwd)/<app_name>" /Applications/Splunk/etc/apps/<app_name>
+ln -s "$(pwd)/<app_name>" "$SPLUNK_HOME"/etc/apps/<app_name>
 
 # Verify it was created correctly
-ls -la /Applications/Splunk/etc/apps/<app_name>
+ls -la "$SPLUNK_HOME"/etc/apps/<app_name>
 ```
 
 **5. Update app.conf** with proper metadata (required for AppInspect):
@@ -278,22 +307,22 @@ Before loading, prompt for Splunk credentials.
 **Check if sourcetype exists:**
 
 ```bash
-/Applications/Splunk/bin/splunk btool props list <sourcetype_name> --debug
+"$SPLUNK_HOME"/bin/splunk btool props list <sourcetype_name> --debug
 ```
 
 **Load sequence:**
 
 ```bash
 # Create index (project directory name = index name)
-/Applications/Splunk/bin/splunk add index <project_dir_name> -auth <user>:<pass>
+"$SPLUNK_HOME"/bin/splunk add index <project_dir_name> -auth <user>:<pass>
 
 # Stop, clean, start
-/Applications/Splunk/bin/splunk stop
-/Applications/Splunk/bin/splunk clean eventdata -index <project_dir_name> -f
-/Applications/Splunk/bin/splunk start
+"$SPLUNK_HOME"/bin/splunk stop
+"$SPLUNK_HOME"/bin/splunk clean eventdata -index <project_dir_name> -f
+"$SPLUNK_HOME"/bin/splunk start
 
 # Load sample (use absolute path to sample file)
-/Applications/Splunk/bin/splunk add oneshot <sample_path> \
+"$SPLUNK_HOME"/bin/splunk add oneshot <sample_path> \
   -index <project_dir_name> \
   -sourcetype <sourcetype_name> \
   -auth <user>:<pass>
@@ -302,12 +331,12 @@ Before loading, prompt for Splunk credentials.
 **Subsequent iterations** (config changes only):
 
 ```bash
-/Applications/Splunk/bin/splunk stop
-/Applications/Splunk/bin/splunk clean eventdata -index <project_dir_name> -f
-/Applications/Splunk/bin/splunk start
+"$SPLUNK_HOME"/bin/splunk stop
+"$SPLUNK_HOME"/bin/splunk clean eventdata -index <project_dir_name> -f
+"$SPLUNK_HOME"/bin/splunk start
 
 # Reload sample
-/Applications/Splunk/bin/splunk add oneshot <sample_path> \
+"$SPLUNK_HOME"/bin/splunk add oneshot <sample_path> \
   -index <project_dir_name> \
   -sourcetype <sourcetype_name> \
   -auth <user>:<pass>
@@ -315,7 +344,7 @@ Before loading, prompt for Splunk credentials.
 
 ### Phase 4: Validation via Splunk MCP
 
-Use the **Splunk MCP server** `run_splunk_query` tool for all validation. Use `earliest_time: "0"` (no latest constraint) since samples may have historical timestamps.
+Use the **Splunk MCP server** `splunk_run_query` tool for all validation. Use `earliest_time: "0"` (no latest constraint) since samples may have historical timestamps.
 
 #### 4.1 Validate Line Breaking
 
@@ -394,6 +423,48 @@ Repeat Phase 3-4 until:
 - [ ] No events lost to line breaking
 - [ ] Field values match raw log content
 
+### Phase 6: Package
+
+```bash
+bash package.sh          # or the tar recipe under "Packaging for Distribution"
+```
+
+### Phase 7: The validation gate (REQUIRED before any MR)
+
+Do not open a publish MR until this passes. See
+[VALIDATION_RULES.md](VALIDATION_RULES.md) for what each rule means and which
+review finding produced it.
+
+```bash
+# Runtime + config
+"$SPLUNK_HOME"/bin/splunk cmd python3.9  -m py_compile bin/*.py
+"$SPLUNK_HOME"/bin/splunk cmd python3.13 -m py_compile bin/*.py
+"$SPLUNK_HOME"/bin/splunk btool check --app=<app_name>
+
+# Package hygiene: R-PKG-001/002/003, R-CONF-002, R-SEC-002
+bash .claude/skills/splunk-ta-development/check_package.sh <app_name>-<version>.tgz
+
+# Data minimization: R-SEC-001
+python3 .claude/skills/splunk-ta-development/check_notable_content.py default/savedsearches.conf
+
+# Cloud certification: R-PKG-004 (0 errors / 0 failures / 0 future-failures,
+# warning set matching the app's documented accepted list exactly)
+splunk-appinspect inspect <app_name>-<version>.tgz --included-tags cloud
+```
+
+Then review by hand what a script cannot judge:
+
+- **R-SEC-001 (beyond the script)** — the checker resolves `$token$`s to their
+  producing term and flags known raw-content fields. It cannot judge a *new*
+  content-bearing field, so when one appears, add it to `RAW` in the checker.
+- **R-CONF-003** — for every field the change claims to populate, confirm
+  `count(<field>) > 0` against real indexed data. `btool check` passing proves
+  syntax, not behavior.
+- **R-DOC-001/002** — changelog entry written; MR body states the AppInspect
+  numbers, the clean `btool check`, both `py_compile` runs, and the live install.
+
+After the MR is reviewed, harvest the findings and update VALIDATION_RULES.md.
+
 ## Extraction Strategy Priority
 
 1. **Auto key-value** - For `key=value` logs:
@@ -424,8 +495,8 @@ index=<index> | rex "(?<myfield>pattern)" | table myfield _raw
 
 **Check config issues:**
 ```bash
-/Applications/Splunk/bin/splunk btool props list <sourcetype> --debug
-/Applications/Splunk/bin/splunk btool transforms list --debug
+"$SPLUNK_HOME"/bin/splunk btool props list <sourcetype> --debug
+"$SPLUNK_HOME"/bin/splunk btool transforms list --debug
 ```
 
 **View parsing errors:**
@@ -436,4 +507,6 @@ index=_internal sourcetype=splunkd component=LineBreakingProcessor OR component=
 ## Additional Resources
 
 - [REFERENCE.md](REFERENCE.md) - Detailed configuration options and common patterns
+- [VALIDATION_RULES.md](VALIDATION_RULES.md) - **Hard gate.** Packaging, security,
+  configuration, and documentation rules harvested from publish-MR review findings
 - [EXAMPLES.md](EXAMPLES.md) - Example configurations for common log formats

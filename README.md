@@ -4,7 +4,7 @@
 
 **Splunk Technology Add-on for Generative AI Common Information Model**
 
-Version: 1.6.2  
+Version: 1.6.5  
 Author: Splunk AI Governance Team  
 License: Apache 2.0
 
@@ -228,7 +228,7 @@ $SPLUNK_HOME/bin/splunk display app TA-gen_ai_cim
 Expected output:
 ```
 TA-gen_ai_cim
-  Version: 1.6.2
+  Version: 1.6.5
   Status: enabled
 ```
 
@@ -629,6 +629,7 @@ Pre-built dashboards are **automatically installed** with the TA, providing comp
 | Dashboard | Description | Documentation |
 |-----------|-------------|---------------|
 | **AI Governance Overview** | Main dashboard with KPIs, safety/compliance metrics, trends | [Details](README/DASHBOARDS/AI_GOVERNANCE_OVERVIEW.md) |
+| **Tokenomics** | Token usage, cost attribution, and spend efficiency by provider, model, app, and user; pricing from the `genai_token_cost` KV store (auto-seeded v1.6.5+) | [Details](README/TOKEN_COST_ADMIN.md) |
 | **TF-IDF Anomaly Detection** | ML-based detection of unusual prompts/responses | [Details](README/DASHBOARDS/TFIDF_ANOMALY_DETECTION.md) |
 | **PII Detection** | ML-powered PII detection and monitoring | [Details](README/DASHBOARDS/PII_DETECTION.md) |
 | **Prompt Injection Detection** | Adversarial attack detection and analysis | [Details](README/DASHBOARDS/PROMPT_INJECTION_DETECTION.md) |
@@ -1389,6 +1390,60 @@ findings and the risk scoring — works on ES 8.x without the agent.
 ---
 
 ## Version History
+
+### v1.6.5 (2026-08-26)
+
+**Second pass of the notable data-minimization rule; Tokenomics pricing now self-seeds**
+
+- FIXED (privacy): `AI Governance - Prompt Injection Detected (GenAI Judge) -
+  Rule` interpolated `$explanations$` into
+  `action.notable.param.rule_description`. That field is
+  `gen_ai.prompt_injection.explanation` — unbounded free text the scoring judge
+  writes *about* the prompt, and an explanation of why a prompt is an injection
+  routinely quotes the prompt verbatim. It therefore carried the same PII/PHI
+  and secret exposure into ES/Mission Control notables that `$injection_prompts$`
+  did in the correlation rule fixed in v1.6.4, just one indirection removed.
+
+  The `values(pi_explanation) as explanations` aggregation and the
+  `Rationale: $explanations$` clause are both gone. The notable keeps the
+  structured `$techniques$` (from `gen_ai.prompt_injection.types`) and
+  `$confidences$`, and the existing drilldown already lands on the judge's
+  scoring events in `gen_ai_log`, where the rationale can be read under that
+  index's own access controls and retention. The rule ships `disabled = 1`, so
+  unlike the v1.6.4 case this was opt-in rather than on by default.
+- FIXED (docs): the README version header and the sample `Status: enabled`
+  output still read 1.6.2 after the 1.6.3 and 1.6.4 releases.
+- ADDED (dev tooling): `.claude/skills/splunk-ta-development/VALIDATION_RULES.md`
+  and `check_package.sh` — the review findings from publish MRs are now an
+  append-only, mechanically-checkable gate rather than tribal knowledge. Both
+  fixes above were found by running that gate, not by a reviewer.
+- ADDED (tokenomics): the `genai_token_cost` KV store now self-seeds.
+  `lookups/genai_token_cost_seed.csv` ships current per-1M-token USD pricing
+  for 40 provider/model pairs (80 rows) — every DemoBot static-emission model
+  keyed both under provider `ollama` (static emissions keep
+  `provider_name="ollama"` while spoofing the model) and under its real
+  vendor, the self-hosted `mistral-nemo:12b`/`dolphin3:8b` at $0, and the
+  AWS Bedrock models from the provider examples. A new scheduled search
+  `GenAI - Tokenomics - Seed Token Cost Pricing` copies it into the
+  collection at startup and hourly. The copy is insert-only and idempotent:
+  a (provider, model, direction) triple already in the KV store — seeded,
+  operator-added, or operator-expired — is never touched, so operator price
+  management survives re-runs and upgrades only add new triples. Seeded rows
+  carry null effective windows so backfilled/historical events price
+  correctly. This search is the **second documented exception** to the
+  "everything ships disabled" rule (R-SEC-002, amended): it ships
+  `disabled = 0` + `run_on_startup = 1` so a fresh install renders non-zero
+  costs with no manual step; it reads no event data and writes only shipped
+  constants into the app's own collection. Opt out in
+  `local/savedsearches.conf`.
+- CHANGED (docs): `README/TOKEN_COST_ADMIN.md` gains an "Automatic Seeding"
+  section; the stale "as of January 2024" bulk-insert example is superseded
+  (it priced gpt-4o at 5.00/15.00 — current is 2.50/10.00 — referenced
+  `amazon.titan-text-express` without the `-v1` suffix the events carry, and
+  its `outputlookup` lacked `append=true`, which would have replaced the
+  entire collection).
+- FIXED (docs): the Tokenomics dashboard was missing from the README
+  Dashboards table.
 
 ### v1.6.4 (2026-08-26)
 
