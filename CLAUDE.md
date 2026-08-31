@@ -121,13 +121,19 @@ ML detections, and a ServiceNow AI Case Management integration.
   ships `disabled = 1`** — enablement is per-environment via `local/`
   (this box's enablement is in `local/savedsearches.conf`; keep the
   btool before/after diff clean when touching default enablement).
-  **One documented exception (v1.6.2+):**
-  `AI Governance - Prompt Injection Attack Correlation - Rule` ships
-  `disabled = 0` because it is the entry-point detection for the Agentic
-  Trust workshop / AI Defense demo — a fresh install must reach a Mission
-  Control Finding with no manual enablement. It is read-only (no email, no
-  ServiceNow, no outbound call). Do not add further exceptions without the
-  same rationale comment in the stanza and a README changelog entry.
+  **Two documented exceptions:**
+  (1) `AI Governance - Prompt Injection Attack Correlation - Rule` (v1.6.2+)
+  ships `disabled = 0` because it is the entry-point detection for the
+  Agentic Trust workshop / AI Defense demo — a fresh install must reach a
+  Mission Control Finding with no manual enablement. It is read-only (no
+  email, no ServiceNow, no outbound call).
+  (2) `GenAI - Tokenomics - Seed Token Cost Pricing` (v1.6.5+) ships
+  `disabled = 0` + `run_on_startup = 1` because a fresh install has an empty
+  `genai_token_cost` collection and every cost panel renders $0. It writes
+  only shipped CSV constants (`lookups/genai_token_cost_seed.csv`) into the
+  app's own collection, insert-only and idempotent, and reads no event data.
+  Do not add further exceptions without the same stanza rationale comment, a
+  README changelog entry, and an R-SEC-002 amendment in VALIDATION_RULES.md.
 - Data models: `AI_Inference`, `AI_Safety`, `AI_Evaluation`
   (acceleration off by default).
 - Custom confs (`ta_gen_ai_cim_*`) need: reload triggers in
@@ -157,6 +163,15 @@ gated by `debug_logging` in `ta_gen_ai_cim_genai_scoring.conf [settings]`.
 Never put API keys in URLs (Gemini uses the `x-goog-api-key` header).
 
 ## Verification (run after changes)
+
+The authoritative gate is
+`.claude/skills/splunk-ta-development/VALIDATION_RULES.md` — packaging,
+security, config, and doc rules harvested from the review findings on every
+publish MR to `tmm/domane-unreleased-apps`. It is append-only: after submitting
+an MR there, harvest the `codex-ai-mr-bot` findings and fold them back in
+(protocol at the top of that file), then mirror it to `.cursor/skills/`.
+Run `bash .claude/skills/splunk-ta-development/check_package.sh <pkg>.tgz`
+after `package.sh` to enforce the mechanical rules.
 
 ```bash
 /opt/splunk104/bin/splunk cmd python3.9 -m py_compile bin/*.py   # and python3.13
@@ -192,3 +207,6 @@ custom commands are blocked by the MCP): scheduler health via
 Project skills live in `.claude/skills/` (mirrored for Cursor in
 `.cursor/skills/` — keep edits in sync): `splunk-dashboard-studio`,
 `splunk-ml-detection`, `splunk-ta-development`, `splunk-workshop-design`.
+
+`splunk-ta-development/VALIDATION_RULES.md` is a hard gate rather than a
+reference — read it before any TA change and run its checks before packaging.

@@ -24,11 +24,51 @@ The GenAI Token Cost system enables:
 
 ---
 
+## Automatic Seeding (v1.6.5+)
+
+The KV store no longer starts empty. The shipped CSV
+`lookups/genai_token_cost_seed.csv` is the authoritative **default** price
+list, and the scheduled search `GenAI - Tokenomics - Seed Token Cost Pricing`
+(enabled by default, runs at startup and hourly) copies it into the
+collection. The KV store remains the authoritative **live** price list.
+
+Seeding is **insert-only and idempotent**: a `(provider, model, direction)`
+triple that already exists in the KV store — seeded earlier, operator-added,
+or operator-expired — is never modified or re-inserted, so once every triple
+is present the search is a no-op. Seeded rows carry null
+`effective_start`/`effective_end`, so events of any age (including backfilled
+demo data) match the time-window filters in `genai_token_cost_join`.
+
+Rules of the road:
+
+- **To override a default price**, use the expire-then-insert flow below —
+  the seeder will not undo it.
+- **Do not delete a seeded row to get rid of it**: the seeder re-inserts the
+  missing triple within the hour. Expire it (`effective_end=now()`) instead,
+  or disable the seeder in `local/savedsearches.conf`.
+- **Do not edit the shipped CSV in place** — app upgrades overwrite it. The
+  KV store (and `local/`) are the override paths.
+- **Upgrades** insert triples that are new to the CSV; changed default prices
+  for existing triples are deliberately NOT applied. To adopt a new default,
+  expire the old row and insert the new price (or delete the triple's rows
+  and let the seeder re-insert them).
+- **Zero-price rows** (self-hosted models such as `mistral-nemo:12b` or
+  `dolphin3:8b`) are intentional: the model is *priced at $0* rather than
+  *unpriced*.
+- The seed keys demo traffic under provider `ollama` (DemoBot static
+  emissions keep `provider_name="ollama"` while spoofing the model name) as
+  well as under the real vendor providers (`openai`, `anthropic`,
+  `gcp.gemini`/`gemini`, `aws.bedrock`) for normalized production telemetry.
+
+---
+
 ## Adding and Updating Pricing
 
 ### Insert New Pricing (SPL)
 
-Use `| outputlookup append=true` to add new pricing records:
+Use `| outputlookup append=true` to add new pricing records. Manual inserts
+are safe alongside the seeder — it never re-inserts a triple that already
+exists:
 
 ```spl
 | makeresults
@@ -216,51 +256,38 @@ index=gen_ai_log earliest=-7d
 
 ---
 
-## Sample Data: Initial Pricing Setup
+## Default Seeded Pricing
 
-Run this query to initialize the KV store with common model pricing (as of January 2024):
+The manual bulk-insert that used to live here (a hardcoded "as of January
+2024" list — it priced gpt-4o at its 5.00/15.00 launch rate and referenced
+`amazon.titan-text-express` without the `-v1` suffix the events carry) is
+superseded by the automatic seeder. The price table of record is
+`lookups/genai_token_cost_seed.csv`: per-1M-token USD rates for the DemoBot
+static-emission models (keyed under provider `ollama` and under their real
+vendors), the self-hosted `mistral-nemo:12b`/`dolphin3:8b` at $0, and the
+AWS Bedrock models from the provider examples.
+
+To review what shipped:
 
 ```spl
-| makeresults count=1
-| eval data=mvappend(
-    "openai|gpt-4|input|30.00|2024-01-01",
-    "openai|gpt-4|output|60.00|2024-01-01",
-    "openai|gpt-4-turbo|input|10.00|2024-01-01",
-    "openai|gpt-4-turbo|output|30.00|2024-01-01",
-    "openai|gpt-4o|input|5.00|2024-05-01",
-    "openai|gpt-4o|output|15.00|2024-05-01",
-    "openai|gpt-4o-mini|input|0.15|2024-07-01",
-    "openai|gpt-4o-mini|output|0.60|2024-07-01",
-    "openai|gpt-3.5-turbo|input|0.50|2024-01-01",
-    "openai|gpt-3.5-turbo|output|1.50|2024-01-01",
-    "anthropic|claude-3-opus|input|15.00|2024-03-01",
-    "anthropic|claude-3-opus|output|75.00|2024-03-01",
-    "anthropic|claude-3-sonnet|input|3.00|2024-03-01",
-    "anthropic|claude-3-sonnet|output|15.00|2024-03-01",
-    "anthropic|claude-3-5-sonnet-20241022|input|3.00|2024-10-22",
-    "anthropic|claude-3-5-sonnet-20241022|output|15.00|2024-10-22",
-    "anthropic|claude-3-haiku|input|0.25|2024-03-01",
-    "anthropic|claude-3-haiku|output|1.25|2024-03-01",
-    "aws.bedrock|anthropic.claude-3-sonnet|input|3.00|2024-03-01",
-    "aws.bedrock|anthropic.claude-3-sonnet|output|15.00|2024-03-01",
-    "aws.bedrock|anthropic.claude-3-haiku|input|0.25|2024-03-01",
-    "aws.bedrock|anthropic.claude-3-haiku|output|1.25|2024-03-01",
-    "aws.bedrock|amazon.titan-text-express|input|0.20|2024-01-01",
-    "aws.bedrock|amazon.titan-text-express|output|0.60|2024-01-01",
-    "aws.bedrock|meta.llama3-70b-instruct|input|2.65|2024-04-01",
-    "aws.bedrock|meta.llama3-70b-instruct|output|3.50|2024-04-01"
-)
-| mvexpand data
-| eval parts=split(data, "|"),
-       provider=mvindex(parts, 0),
-       model=mvindex(parts, 1),
-       direction=mvindex(parts, 2),
-       cost_per_million=tonumber(mvindex(parts, 3)),
-       effective_start=strptime(mvindex(parts, 4)." 00:00:00", "%Y-%m-%d %H:%M:%S"),
+| inputlookup genai_token_cost_seed
+```
+
+If you need a model that is not in the seed (for example a fine-tuned
+model), insert it manually — the seeder never touches triples it does not
+own:
+
+```spl
+| makeresults
+| eval provider="openai",
+       model="ft:gpt-4o-mini:acme:support:abc123",
+       direction="input",
+       cost_per_million=0.30,
+       effective_start=now(),
        effective_end=null(),
        currency="USD"
 | table provider, model, direction, cost_per_million, effective_start, effective_end, currency
-| outputlookup genai_token_cost_lookup
+| outputlookup append=true genai_token_cost_lookup
 ```
 
 ---
