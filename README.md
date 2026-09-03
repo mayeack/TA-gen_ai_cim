@@ -4,7 +4,7 @@
 
 **Splunk Technology Add-on for Generative AI Common Information Model**
 
-Version: 1.6.5  
+Version: 1.7.0  
 Author: Splunk AI Governance Team  
 License: Apache 2.0
 
@@ -228,7 +228,7 @@ $SPLUNK_HOME/bin/splunk display app TA-gen_ai_cim
 Expected output:
 ```
 TA-gen_ai_cim
-  Version: 1.6.5
+  Version: 1.7.0
   Status: enabled
 ```
 
@@ -1434,7 +1434,7 @@ findings and the risk scoring — works on ES 8.x without the agent.
 
 ## Version History
 
-### Unreleased
+### v1.7.0 (2026-09-03)
 
 **The ES integration configures itself - response plan, investigation type, queue, finding next steps and the simulated SOAR identity provider ship in the package**
 
