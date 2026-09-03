@@ -549,7 +549,7 @@ The TA includes **15+ pre-configured alerts** in `savedsearches.conf`:
 > `disabled = 0` as of v1.6.2 so a fresh install lights up the
 > dashboard → correlation search → Mission Control Finding path with no manual
 > enablement step. It is read-only — no email, no ServiceNow, no outbound call —
-> runs every 30 minutes over a 24-hour window, and suppresses per actor for 24
+> runs every minute over a 24-hour window, and suppresses per actor for 24
 > hours. Turn it off in `local/savedsearches.conf` if you do not want it
 > scheduled.
 
@@ -1390,6 +1390,24 @@ findings and the risk scoring — works on ES 8.x without the agent.
 ---
 
 ## Version History
+
+### Unreleased
+
+**Prompt injection correlation now runs every minute**
+
+- CHANGED: `AI Governance - Prompt Injection Attack Correlation - Rule` (ES
+  Content Management label *GenAI - Prompt Injection Attack Correlation*) moved
+  from a `*/30` cron to `*/1` — it now runs every minute instead of every 30
+  minutes. The dispatch window is unchanged at `-24h`, as is
+  `alert.suppress.period = 86400s` per `actor`, so an actor still produces at
+  most one notable per day; the shorter cadence only shortens time-to-notable
+  for a *new* actor, which is what the Agentic Trust workshop and the AI Defense
+  demo need (attack → Finding in Mission Control while the audience watches).
+- OPERATIONAL NOTE: this is the one detection that ships `disabled = 0`, so the
+  every-minute schedule is on by default. Each run is a `-24h` search over
+  `gen_ai_log`; on a busy stack that is a materially heavier scheduler and
+  search load than `*/30`. Override `cron_schedule` (or `disabled`) in
+  `local/savedsearches.conf` to dial it back per environment.
 
 ### v1.6.5 (2026-08-26)
 
