@@ -146,6 +146,39 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(rep.failures(), 2)
 
 
+class CommittedPackageTests(unittest.TestCase):
+    """The tarball committed at soar_apps/medadvice_idp.tgz is what an operator
+    uploads to SOAR by hand, so it must not drift from the shipped source."""
+
+    TGZ = os.path.join(REPO, 'soar_apps', 'medadvice_idp.tgz')
+
+    def test_committed_tarball_exists_and_matches_the_source(self):
+        self.assertTrue(os.path.exists(self.TGZ),
+                        'run bash tools/soar/build.sh')
+        with tarfile.open(self.TGZ, 'r:gz') as tar:
+            names = tar.getnames()
+            manifest = json.loads(
+                tar.extractfile('medadvice_idp/medadvice_idp.json').read().decode('utf-8'))
+        self.assertIn('medadvice_idp/medadvice_idp_connector.py', names)
+        self.assertIn('medadvice_idp/medadvice_idp_consts.py', names)
+        self.assertFalse([n for n in names if '__pycache__' in n or n.endswith('.pyc')])
+        self.assertEqual(manifest['app_version'], seed.soar_app_manifest_version(),
+                         'committed tarball is stale; rerun bash tools/soar/build.sh')
+        self.assertEqual(manifest['name'], seed.SOAR_APP_NAME)
+
+    def test_in_memory_package_matches_the_committed_member_list(self):
+        def members(fh_or_path, **kw):
+            with tarfile.open(fh_or_path, 'r:gz', **kw) as tar:
+                return sorted((m.name.rstrip('/'), m.isdir()) for m in tar.getmembers())
+        committed = members(self.TGZ)
+        in_memory = members(None, fileobj=io.BytesIO(seed.build_soar_app_tgz()))
+        self.assertEqual(committed, in_memory,
+                         'the in-product packager and tools/soar/build.sh must produce '
+                         'the same archive shape - only build.sh has been verified to '
+                         'install on SOAR')
+        self.assertIn(('medadvice_idp', True), in_memory)
+
+
 class StepTests(unittest.TestCase):
 
     def test_response_plan_step_writes_encoded_record_with_key(self):

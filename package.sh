@@ -123,6 +123,7 @@ COPYFILE_DISABLE=1 tar "${TAR_XATTR_FLAG[@]}" -czvf "${OUTPUT}" \
     --exclude='lookups/llm_pii_mixed_responses_200k.csv' \
     --exclude='lookups/__mlspl_*.mlmodel' \
     --exclude='*.json.template' \
+    --exclude='soar_apps/*.tgz' \
     --exclude='INSTALL.sh' \
     --exclude='package.sh' \
     --exclude='tools' \

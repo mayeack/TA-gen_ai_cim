@@ -1340,7 +1340,7 @@ writes hops 2 and 3 (update-or-create, hourly and on startup).
 | Investigation type | `mc_incident_types` `_key ai security incident`, this plan first in `response_template_ids` (existing ids kept) | same |
 | Queue | `queues` `_key ai_findings_queue` — *AI Findings*, `search_name="AI Governance*"` | same |
 | SOAR binding | Through Mission Control's pairing proxy (`/v1/soar/...`, no SOAR credential in the TA): if the **MedAdvice Identity Provider** app is installed on the paired SOAR, create its `medadvice_idp` asset and resolve the plan's `soar_binding` entries into real task actions (`disable user`, `clear user sessions`). Otherwise skip and preserve | `bind_soar_actions = true` |
-| Simulator install | Install the app itself from `default/data/soar_apps/medadvice_idp/` when missing. The proxy has no install route, so this needs a `soar` account in `ta_gen_ai_cim_account.conf` (`url`, `auth_type = token` or `basic`, secret stored as the account password) | `install_simulator = false` |
+| Simulator install | Install the app itself from `soar_apps/medadvice_idp/` when missing. The proxy has no install route, so this needs a `soar` account in `ta_gen_ai_cim_account.conf` (`url`, `auth_type = token` or `basic`, secret stored as the account password) | `install_simulator = false` |
 | Triage agent | `ai_triage_enabled = 1` + allowlist the primary detection (no-op without the `allow_ai_triage` entitlement) | `enable_triage_agent = false` |
 
 Run it by hand to see the per-step report, or to test without writing:
@@ -1371,8 +1371,8 @@ python3 tools/show_postdeploy.py --stack https://<stack>.splunkcloud.com \
 ```
 
 With SOAR credentials the script first installs the simulated **MedAdvice
-Identity Provider** app (packaged in memory from `default/data/soar_apps/`, or
-`tools/soar/dist/medadvice_idp.tgz` from `tools/soar/build.sh`), creates its
+Identity Provider** app (packaged in memory from `soar_apps/`, or the committed
+`soar_apps/medadvice_idp.tgz` passed with `--soar-app-tgz`), creates its
 `medadvice_idp` asset, and then binds the plan's tasks with that tenant's
 app/asset ids. `--soar-only` runs just the SOAR steps.
 
@@ -1454,7 +1454,17 @@ findings and the risk scoring — works on ES 8.x without the agent.
   `seed_response_plan`, `bind_soar_actions` (both on), `install_simulator`,
   `enable_triage_agent` (both off - they change something beyond this TA's
   records). `| genaiseedes dry_run=true` prints the per-step report.
-- NEW: `default/data/soar_apps/medadvice_idp/` - the source of a small Splunk
+- NEW: `soar_apps/` - a top-level folder, outside `default/` on purpose,
+  holding SOAR apps rather than Splunk content. SOAR is a separate product,
+  so the folder and the committed, ready-to-upload
+  `soar_apps/medadvice_idp.tgz` can be lifted out of a checkout and
+  installed on the SOAR instance on their own. The source still ships
+  inside the TA tarball so `install_simulator` can package it in memory;
+  `package.sh` excludes only `soar_apps/*.tgz` so the archive holds no
+  nested tarball. `build_soar_app_tgz()` and `tools/soar/build.sh` now
+  produce byte-identical archive structures, asserted by a unit test,
+  because only the `build.sh` output has been verified to install on SOAR.
+- NEW: `soar_apps/medadvice_idp/` - the source of a small Splunk
   SOAR app, **MedAdvice Identity Provider**, with `get user`,
   `list user sessions`, `disable user`, `enable user` and `clear user
   sessions` for the MedAdvice workshop personas. It is a simulator: no network

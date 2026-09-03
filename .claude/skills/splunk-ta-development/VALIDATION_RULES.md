@@ -268,7 +268,7 @@ SOAR — so the writeback clause is narrowed a second time, with these bounds:
 the records are TA-owned (fixed `_key`s: `ai_incident_response_plan`,
 `ai security incident`, `ai_findings_queue`, asset `medadvice_idp`); their
 content ships inside the package (`default/data/response_plans/`,
-`default/data/soar_apps/`); every write is update-or-create, and actions or
+`soar_apps/`); every write is update-or-create, and actions or
 playbooks already attached to a plan task on the live record are preserved
 unless a shipped `soar_binding` replaces them; nothing is written to SOAR
 unless the simulator app is already installed there; and no index or

@@ -66,7 +66,11 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 APP_ROOT = os.path.dirname(_HERE)
 RESPONSE_PLAN_PATH = os.path.join(APP_ROOT, 'default', 'data', 'response_plans',
                                   'ai_incident_response_plan.json')
-SOAR_APP_SRC = os.path.join(APP_ROOT, 'default', 'data', 'soar_apps', 'medadvice_idp')
+# Top level, deliberately outside default/, so the folder can be lifted out of
+# a checkout and uploaded to SOAR on its own. It still ships inside the TA
+# tarball, which is what lets build_soar_app_tgz() package it in memory when
+# install_simulator is on.
+SOAR_APP_SRC = os.path.join(APP_ROOT, 'soar_apps', 'medadvice_idp')
 
 # JavaScript encodeURIComponent() leaves these unescaped; Python's quote() never
 # escapes alphanumerics or -_.~ . Together they make the output byte-identical
@@ -402,6 +406,11 @@ def build_soar_app_tgz(src_dir=SOAR_APP_SRC):
     buf = io.BytesIO()
     top = os.path.basename(src_dir.rstrip('/'))
     with tarfile.open(fileobj=buf, mode='w:gz') as tar:
+        # The top-level directory member is added explicitly. tools/soar/build.sh
+        # produces one via tar(1), and that archive shape is the one verified to
+        # install on SOAR Cloud 8.6 - so the in-product installer must not
+        # produce a subtly different archive (tests assert the two match).
+        tar.add(src_dir, arcname=top, recursive=False)
         for root, dirs, files in os.walk(src_dir):
             dirs[:] = sorted(d for d in dirs if d != '__pycache__')
             for name in sorted(files):
@@ -681,7 +690,7 @@ def step_soar_simulator(soar, rep, install=False, tgz_bytes=None, label='SOAR si
     elif install:
         rep.skip('{} app'.format(label),
                  'not installed; {} cannot install apps - configure the `soar` account '
-                 'in ta_gen_ai_cim_account.conf, upload tools/soar/dist/medadvice_idp.tgz '
+                 'in ta_gen_ai_cim_account.conf, upload soar_apps/medadvice_idp.tgz '
                  'in the SOAR UI, or run tools/show_postdeploy.py'.format(soar.name))
         return None, None
     else:

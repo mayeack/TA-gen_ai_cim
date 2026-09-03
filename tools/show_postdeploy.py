@@ -26,7 +26,7 @@ immediately, from the outside, with explicit credentials:
   8. tune demo timing                            (incl. an ES-owned search)
   9. verify and report
  10. install the simulated "MedAdvice Identity     (paired SOAR, needs SOAR creds)
-     Provider" SOAR app from default/data/soar_apps
+     Provider" SOAR app from soar_apps
  11. configure its asset "medadvice_idp"           (paired SOAR)
  12. list competing identity assets (read-only)    (paired SOAR)
  13. smoke-test the app on a scratch container     (paired SOAR, opt-in flag)
@@ -46,7 +46,7 @@ Usage:
     python3 show_postdeploy.py --stack https://esp-shw-xxxx.splunkcloud.com \\
         [--acs-token <token>] [--username admin] [--keep-risk-timing] \\
         [--soar-url https://sor-xxxx.soar.splunkcloud.com] [--soar-username u] \\
-        [--soar-app-tgz tools/soar/dist/medadvice_idp.tgz] [--soar-smoke-test] \\
+        [--soar-app-tgz soar_apps/medadvice_idp.tgz] [--soar-smoke-test] \\
         [--soar-only] [--skip-triage] [--dry-run]
 
 Steps 1-2 need ACS (Splunk Cloud only). Supply --acs-token, or pass
@@ -93,7 +93,9 @@ DETECTIONS = [
     'AI Governance - Prompt Injection Attempt Detected - Rule',
     'AI Governance - Prompt Injection Detected (GenAI Judge) - Rule',
 ]
-SOAR_APP_TGZ = os.path.join(HERE, 'soar', 'dist', 'medadvice_idp.tgz')
+# The committed, ready-to-upload package. Optional: the seeding core packages
+# soar_apps/medadvice_idp/ in memory when this file is absent.
+SOAR_APP_TGZ = os.path.join(APP_ROOT, 'soar_apps', 'medadvice_idp.tgz')
 SMOKE_TEST_USER = 't.nguyen'
 
 # Demo timing. See the "Demo timing" section of the integration doc for why
@@ -354,7 +356,7 @@ def main():
     group.add_argument('--soar-token', default=os.environ.get('SOAR_AUTH_TOKEN'),
                        help='ph-auth-token; defaults to $SOAR_AUTH_TOKEN')
     group.add_argument('--soar-app-tgz', default=SOAR_APP_TGZ if os.path.exists(SOAR_APP_TGZ) else None,
-                       help='Built app package (default: tools/soar/dist/medadvice_idp.tgz when '
+                       help='Built app package (default: soar_apps/medadvice_idp.tgz when '
                             'present; otherwise the shipped source is packaged in memory)')
     group.add_argument('--soar-smoke-test', action='store_true',
                        help='Run test connectivity / get user / disable user for {} on a scratch '

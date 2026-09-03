@@ -45,7 +45,7 @@
     "and it is how the ES Triage agent is grounded in specific tooling rather",
     "than prose. actions[]/playbooks[] are SOAR objects: the Containment tasks bind",
     "the simulated 'MedAdvice Identity Provider' SOAR app (shipped in",
-    "default/data/soar_apps/) through soar_binding; the three simulated",
+    "soar_apps/) through soar_binding; the three simulated",
     "ai_defense_* adaptive response actions stay named in the task descriptions",
     "as the no-SOAR fallback.",
     "",

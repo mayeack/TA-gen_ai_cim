@@ -1,7 +1,7 @@
 # MedAdvice Identity Provider — simulated SOAR app for the GenAI workshop
 
 The TA ships a small **Splunk SOAR app that pretends to be MedAdvice's identity
-provider** (source in `default/data/soar_apps/medadvice_idp/`; this directory
+provider** (source in `soar_apps/medadvice_idp/`; this directory
 holds its build script, persona generator and offline tests). It exists for one
 reason: Splunk Enterprise Security 8.6 response plans and the **Guided Response
 agent** can only recommend and run actions that are installed on the paired
@@ -21,12 +21,14 @@ enforcement. Nothing in the TA installs it on a SOAR unless an operator asks
 
 | Path | Purpose |
 |---|---|
-| `default/data/soar_apps/medadvice_idp/medadvice_idp.json` | App manifest (classic connector format): six actions, `contains` chosen so the finding's `user` artifact matches |
-| `default/data/soar_apps/medadvice_idp/medadvice_idp_connector.py` | `BaseConnector` implementation, standard library only, Python 3.9 and 3.13 |
-| `default/data/soar_apps/medadvice_idp/medadvice_idp_consts.py` | **Generated** persona table from `lookups/medadvice_identities.csv` plus messages |
+| `soar_apps/medadvice_idp/` | The app source, top level so it can be uploaded on its own. See `soar_apps/README.md` |
+| `soar_apps/medadvice_idp.tgz` | The built package, **committed** so it can be downloaded from GitHub and dropped into SOAR |
+| `soar_apps/medadvice_idp/medadvice_idp.json` | App manifest (classic connector format): six actions, `contains` chosen so the finding's `user` artifact matches |
+| `soar_apps/medadvice_idp/medadvice_idp_connector.py` | `BaseConnector` implementation, standard library only, Python 3.9 and 3.13 |
+| `soar_apps/medadvice_idp/medadvice_idp_consts.py` | **Generated** persona table from `lookups/medadvice_identities.csv` plus messages |
 | `bin/genai_es_seed.py` | Packages the source in memory (`build_soar_app_tgz`), installs it, creates the asset, binds the response plan — shared by `| genaiseedes` and `show_postdeploy.py` |
 | `tools/soar/gen_personas.py` | Regenerates the consts module (`--check` fails when it is stale) |
-| `tools/soar/build.sh` | Packages `tools/soar/dist/medadvice_idp.tgz` (gitignored) for a manual upload |
+| `tools/soar/build.sh` | Rebuilds `soar_apps/medadvice_idp.tgz`; also runs the persona `--check` |
 | `tools/soar/tests/` | Offline unit tests: the connector (60-line stand-in for the `phantom` package) and the seeding core (fake splunkd/SOAR transports) |
 
 ## Actions
@@ -50,9 +52,9 @@ with an explicit message so nobody "disables" a token.
 
 ```bash
 python3 tools/soar/gen_personas.py                 # only after editing the identities CSV
-PYTHONPATH=tools/soar/tests/phantom_shim:default/data/soar_apps/medadvice_idp \
+PYTHONPATH=tools/soar/tests/phantom_shim:soar_apps/medadvice_idp \
   /opt/splunk104/bin/splunk cmd python3.13 -m unittest discover -s tools/soar/tests -v
-bash tools/soar/build.sh                            # -> tools/soar/dist/medadvice_idp.tgz
+bash tools/soar/build.sh                            # -> soar_apps/medadvice_idp.tgz
 ```
 
 ## Install (once per SOAR tenant)

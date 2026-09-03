@@ -53,9 +53,9 @@ Pick one:
   password through the account REST handler) and set
   `install_simulator = true` in `local/ta_gen_ai_cim_es.conf`; the next
   `| genaiseedes` run installs the app and creates the asset.
-- SOAR UI: *Apps → Install App* → upload `tools/soar/dist/medadvice_idp.tgz`
-  (from `tools/soar/build.sh`) → *Configure New Asset* named `medadvice_idp`.
-  The next `| genaiseedes` run binds the plan tasks.
+- SOAR UI: on the **Apps** page choose **Install App** and upload the
+  committed `soar_apps/medadvice_idp.tgz`, then **Configure New Asset** named
+  `medadvice_idp`. The next `| genaiseedes` run binds the plan tasks.
 
 ## E3. Verify the seeding (2 min)
 

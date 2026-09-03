@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # encoding=utf-8
 """
-gen_personas.py - regenerate default/data/soar_apps/medadvice_idp/
+gen_personas.py - regenerate soar_apps/medadvice_idp/
 medadvice_idp_consts.py from the TA's ES identity lookup
 (lookups/medadvice_identities.csv).
 
@@ -28,7 +28,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_ROOT = os.path.dirname(os.path.dirname(HERE))
 CSV_PATH = os.path.join(APP_ROOT, 'lookups', 'medadvice_identities.csv')
-OUT_PATH = os.path.join(APP_ROOT, 'default', 'data', 'soar_apps', 'medadvice_idp',
+OUT_PATH = os.path.join(APP_ROOT, 'soar_apps', 'medadvice_idp',
                         'medadvice_idp_consts.py')
 
 HEADER = '''# encoding=utf-8

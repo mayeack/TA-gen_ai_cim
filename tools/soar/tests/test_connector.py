@@ -4,7 +4,7 @@ Offline tests for the MedAdvice Identity Provider SOAR stub app.
 
 Run from the repo root with either Splunk interpreter:
 
-    PYTHONPATH=tools/soar/tests/phantom_shim:default/data/soar_apps/medadvice_idp \
+    PYTHONPATH=tools/soar/tests/phantom_shim:soar_apps/medadvice_idp \
         /opt/splunk104/bin/splunk cmd python3.13 -m unittest discover -s tools/soar/tests -v
 
 The phantom_shim package stands in for Splunk SOAR's `phantom` modules, so the
@@ -18,7 +18,7 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
-APP_DIR = os.path.join(REPO, 'default', 'data', 'soar_apps', 'medadvice_idp')
+APP_DIR = os.path.join(REPO, 'soar_apps', 'medadvice_idp')
 for path in (os.path.join(HERE, 'phantom_shim'), APP_DIR):
     if path not in sys.path:
         sys.path.insert(0, path)

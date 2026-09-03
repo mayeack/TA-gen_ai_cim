@@ -55,7 +55,7 @@ Since the TA seeds Mission Control on its own (the shipped search *GenAI - ES - 
 | 7. `ai_triage_enabled = 1` | `missioncontrol` conf namespace |
 | 8. Demo timing | Partly TA-owned, partly `SA-ThreatIntelligence`-owned — and TA-owned demo tuning must not ship to real customers |
 | 9. Verify | — |
-| 10. Install the simulated **MedAdvice Identity Provider** SOAR app (source ships in `default/data/soar_apps/`) | Lives on the paired SOAR, not in Splunk; the ES pairing proxy has no install route, so this needs SOAR credentials (`--soar-url` + `$SOAR_PASSWORD`/`$SOAR_AUTH_TOKEN`) |
+| 10. Install the simulated **MedAdvice Identity Provider** SOAR app (source ships in `soar_apps/`) | Lives on the paired SOAR, not in Splunk; the ES pairing proxy has no install route, so this needs SOAR credentials (`--soar-url` + `$SOAR_PASSWORD`/`$SOAR_AUTH_TOKEN`) |
 | 11. Create its `medadvice_idp` asset | Same |
 | 12. List the competing identity assets (read-only) | The demo-mock Okta/Azure/LDAP assets fail for MedAdvice users; deselect them in ES → *Security AI Assistant settings* → Guided Response connectors. The script never edits foreign assets (`POST /rest/asset/<id>` re-saves the whole record and ignores `disabled`) |
 | 13. Smoke test (`--soar-smoke-test`) | Runs test connectivity / get user / disable user for `t.nguyen` on a scratch container and closes it |

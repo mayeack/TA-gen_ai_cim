@@ -53,5 +53,7 @@ README/KEY_FEATURES.md
 # Claude Code local settings (instance-specific)
 .claude/settings.local.json
 
-# Built SOAR app packages (tools/soar/build.sh output) - rebuild, never commit
+# The built SOAR app package (tools/soar/build.sh output) IS committed at
+# soar_apps/medadvice_idp.tgz so it can be downloaded and uploaded to SOAR
+# directly. Only the old scratch location stays ignored.
 tools/soar/dist/

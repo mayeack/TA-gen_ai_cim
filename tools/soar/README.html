@@ -70,7 +70,7 @@ input[type=checkbox] { margin-right: .5rem; }
 <main>
 <h1 id="medadvice-identity-provider-simulated-soar-app-for-the-genai-workshop">MedAdvice Identity Provider — simulated SOAR app for the GenAI workshop</h1>
 <p>The TA ships a small <strong>Splunk SOAR app that pretends to be MedAdvice's identity
-provider</strong> (source in <code>default/data/soar_apps/medadvice_idp/</code>; this directory
+provider</strong> (source in <code>soar_apps/medadvice_idp/</code>; this directory
 holds its build script, persona generator and offline tests). It exists for one
 reason: Splunk Enterprise Security 8.6 response plans and the <strong>Guided Response
 agent</strong> can only recommend and run actions that are installed on the paired
@@ -94,15 +94,23 @@ enforcement. Nothing in the TA installs it on a SOAR unless an operator asks
 </thead>
 <tbody>
 <tr>
-<td><code>default/data/soar_apps/medadvice_idp/medadvice_idp.json</code></td>
+<td><code>soar_apps/medadvice_idp/</code></td>
+<td>The app source, top level so it can be uploaded on its own. See <code>soar_apps/README.md</code></td>
+</tr>
+<tr>
+<td><code>soar_apps/medadvice_idp.tgz</code></td>
+<td>The built package, <strong>committed</strong> so it can be downloaded from GitHub and dropped into SOAR</td>
+</tr>
+<tr>
+<td><code>soar_apps/medadvice_idp/medadvice_idp.json</code></td>
 <td>App manifest (classic connector format): six actions, <code>contains</code> chosen so the finding's <code>user</code> artifact matches</td>
 </tr>
 <tr>
-<td><code>default/data/soar_apps/medadvice_idp/medadvice_idp_connector.py</code></td>
+<td><code>soar_apps/medadvice_idp/medadvice_idp_connector.py</code></td>
 <td><code>BaseConnector</code> implementation, standard library only, Python 3.9 and 3.13</td>
 </tr>
 <tr>
-<td><code>default/data/soar_apps/medadvice_idp/medadvice_idp_consts.py</code></td>
+<td><code>soar_apps/medadvice_idp/medadvice_idp_consts.py</code></td>
 <td><strong>Generated</strong> persona table from <code>lookups/medadvice_identities.csv</code> plus messages</td>
 </tr>
 <tr>
@@ -115,7 +123,7 @@ enforcement. Nothing in the TA installs it on a SOAR unless an operator asks
 </tr>
 <tr>
 <td><code>tools/soar/build.sh</code></td>
-<td>Packages <code>tools/soar/dist/medadvice_idp.tgz</code> (gitignored) for a manual upload</td>
+<td>Rebuilds <code>soar_apps/medadvice_idp.tgz</code>; also runs the persona <code>--check</code></td>
 </tr>
 <tr>
 <td><code>tools/soar/tests/</code></td>
@@ -179,9 +187,9 @@ enforcement. Nothing in the TA installs it on a SOAR unless an operator asks
 with an explicit message so nobody "disables" a token.</p>
 <h2 id="build-and-test">Build and test</h2>
 <pre><code class="language-bash">python3 tools/soar/gen_personas.py                 # only after editing the identities CSV
-PYTHONPATH=tools/soar/tests/phantom_shim:default/data/soar_apps/medadvice_idp \
+PYTHONPATH=tools/soar/tests/phantom_shim:soar_apps/medadvice_idp \
   /opt/splunk104/bin/splunk cmd python3.13 -m unittest discover -s tools/soar/tests -v
-bash tools/soar/build.sh                            # -&gt; tools/soar/dist/medadvice_idp.tgz
+bash tools/soar/build.sh                            # -&gt; soar_apps/medadvice_idp.tgz
 </code></pre>
 <h2 id="install-once-per-soar-tenant">Install (once per SOAR tenant)</h2>
 <p>The ES/SOAR pairing proxy that <code>| genaiseedes</code> uses has no app-install route,
