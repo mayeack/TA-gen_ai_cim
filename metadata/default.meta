@@ -65,6 +65,25 @@ export = system
 access = read : [ admin, sc_admin, power ], write : [ admin, sc_admin ]
 export = system
 
+# Custom search command - genaiseedes
+# Seeds Mission Control (response plan, investigation type, queue) and binds the
+# plan's tasks to the simulated SOAR app through the ES pairing. It writes into
+# the missioncontrol app's KV collections and reaches SOAR on the caller's
+# behalf, so only admins may invoke it directly; the shipped scheduled search
+# runs it under the system context.
+[commands/genaiseedes]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
+export = system
+
+# ES integration settings (conf file) - read by genaiseedes
+[conf/ta_gen_ai_cim_es]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
+export = none
+
+[configs/conf-ta_gen_ai_cim_es]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
+export = none
+
 # Workflow actions for Event Context menu
 [workflow_actions]
 access = read : [ * ], write : [ admin, sc_admin ]

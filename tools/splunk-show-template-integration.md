@@ -42,6 +42,8 @@ The split is not stylistic — it follows from two hard constraints.
 
 Excluded from the tarball (`package.sh` drops `tools/`). Run it after the TA is installed.
 
+Since the TA seeds Mission Control on its own (the shipped search *GenAI - ES - Seed Response Plan and SOAR Binding* runs `| genaiseedes` hourly and on startup, using the ES/SOAR pairing proxy for the SOAR half), steps 4–7 and 10–12 below are the **same code** (`bin/genai_es_seed.py`) run from outside with explicit credentials. Running the script still matters for a demo stack: it applies everything immediately, it can install the simulator app on SOAR (in-product that needs a `soar` account in `ta_gen_ai_cim_account.conf`), and steps 1–3, 8, 9 and 13 exist nowhere else.
+
 | Step | Why it cannot be in the tarball |
 |---|---|
 | 1. Create `gen_ai_log` | Cloud apps cannot ship `indexes.conf` |
@@ -53,16 +55,24 @@ Excluded from the tarball (`package.sh` drops `tools/`). Run it after the TA is 
 | 7. `ai_triage_enabled = 1` | `missioncontrol` conf namespace |
 | 8. Demo timing | Partly TA-owned, partly `SA-ThreatIntelligence`-owned — and TA-owned demo tuning must not ship to real customers |
 | 9. Verify | — |
+| 10. Install the simulated **MedAdvice Identity Provider** SOAR app (source ships in `soar_apps/`) | Lives on the paired SOAR, not in Splunk; the ES pairing proxy has no install route, so this needs SOAR credentials (`--soar-url` + `$SOAR_PASSWORD`/`$SOAR_AUTH_TOKEN`) |
+| 11. Create its `medadvice_idp` asset | Same |
+| 12. List the competing identity assets (read-only) | The demo-mock Okta/Azure/LDAP assets fail for MedAdvice users; deselect them in ES → *Security AI Assistant settings* → Guided Response connectors. The script never edits foreign assets (`POST /rest/asset/<id>` re-saves the whole record and ignores `disabled`) |
+| 13. Smoke test (`--soar-smoke-test`) | Runs test connectivity / get user / disable user for `t.nguyen` on a scratch container and closes it |
+
+Steps 10–13 run **first** so that step 4 can turn the plan's `suggestions.soar_binding[]` entries into real task actions with that tenant's app/asset ids. Without SOAR credentials step 4 drops the binding and preserves whatever actions/playbooks the live record already carries per task.
 
 ```bash
 export SPLUNK_ADMIN_PASSWORD='...'
 export SPLUNK_ACS_TOKEN='...'
-python3 tools/show_postdeploy.py --stack https://esp-shw-xxxx.splunkcloud.com --dry-run
+export SOAR_PASSWORD='...'
+python3 tools/show_postdeploy.py --stack https://esp-shw-xxxx.splunkcloud.com \
+    --soar-url https://sor-xxxx.soar.splunkcloud.com --dry-run
 ```
 
-Drop `--dry-run` to apply. It is idempotent — re-running updates in place.
+Drop `--dry-run` to apply. It is idempotent — re-running updates in place. `--soar-only` runs steps 10–13 alone.
 
-> **Verification status.** Steps 3, 4, 7 and 8 use endpoints and KV schemas confirmed against a live ES 8.6 stack. Steps 1, 2, 5 and 6 are built from Splunk's documented ACS API and from `missioncontrol/default/collections.conf`, but were **not** executed end-to-end — the reference stacks became unreachable partway through development. Run `--dry-run` first and read the per-step report.
+> **Verification status.** Steps 3, 4 and 8 use endpoints confirmed against a live ES 8.6 stack; steps 5, 6 and 7 were corrected against the `missioncontrol` Python data models and REST handlers (not `collections.conf`). Steps 1 and 2 are built from Splunk's documented ACS API and were **not** executed end-to-end. Steps 10–13 were executed end-to-end on a SOAR Cloud 8.6.0 tenant paired with ES 8.6 (2026-09-03), and the task-action record step 4 writes was validated against the `missioncontrol` `Action` model. Run `--dry-run` first and read the per-step report.
 
 ### 2.3 DemoBot
 
@@ -86,7 +96,9 @@ The three AI Defense response actions **call nothing externally**. Each records 
 
 They exist so a stack with no paired SOAR still produces a real adaptive-response entry and a complete audit trail — indistinguishable on screen from a SOAR action, runnable both from a Finding and from a Containment task.
 
-**Be straight about this with an audience if asked.** The `simulated` flag is in every record precisely so the distinction survives into the data. If the stack has SOAR paired and you want genuine containment, replace these with SOAR playbook actions on the Containment tasks.
+**Be straight about this with an audience if asked.** The `simulated` flag is in every record precisely so the distinction survives into the data.
+
+With SOAR paired, the Containment tasks additionally carry real SOAR actions from the **MedAdvice Identity Provider** app in `tools/soar/` — `disable user` and `clear user sessions` — which is what the ES 8.6 Guided Response agent recommends and runs when asked to disable `t.nguyen`. That app is a simulator too (no directory, no network, `"simulated": true` in every result); it exists because the demo tenant's mock Okta/Azure/LDAP assets fail for the MedAdvice personas. The ES-side steps (plan action, finding next steps, agent settings) are in `es-guided-response-runbook.md`.
 
 Audit trail:
 
@@ -145,7 +157,7 @@ If the Show Template cannot run arbitrary post-deploy scripts, these are the equ
 3. **Enable the detections** — ES → Security content → Content management, search `AI Governance`. `Prompt Injection Attack Correlation` is already enabled (v1.6.2+); enable the other two.
 4. **Tune the primary detection** — on `AI Governance - Prompt Injection Attack Correlation - Rule`: cron `*/1 * * * *`, earliest `-15m`, latest `now`, and **turn throttling/suppression OFF**.
 5. **Tune the risk rule** *(optional)* — `Risk - 24 Hour Risk Threshold Exceeded - Rule` in `SA-ThreatIntelligence`: latest `now`, cron `*/1 * * * *`.
-6. **Create the response plan** — ES → Security content → Response plans → Create. Transcribe the four phases and fifteen tasks from `default/data/response_plans/ai_incident_response_plan.json`. *(Tedious — the script exists for this reason.)*
+6. **Create the response plan** — ES → Security content → Response plans → Create. Transcribe the four phases and fifteen tasks from `default/data/response_plans/ai_incident_response_plan.json`, including the seven embedded searches (`suggestions.searches`) and, with SOAR paired, the two Containment task actions (`suggestions.soar_binding` → MedAdvice Identity Provider `disable user` / `clear user sessions`). *(Tedious — the script exists for this reason.)*
 7. **Create the investigation type** and associate the response plan, so it auto-applies.
 8. **Create a queue** for AI findings.
 9. **Enable the Triage agent** — ES → Configure → All configurations → Security AI Assistant settings; turn on AI triage and enable it for `AI Governance - Prompt Injection Attack Correlation - Rule`.
@@ -175,7 +187,7 @@ Steps 1–4 and 10 are the minimum for a working demo of steps 1–3. Steps 6–
 | Gap | Impact | Mitigation |
 |---|---|---|
 | ACS and `missioncontrol` KV writes not executed end-to-end | Steps 1, 2, 5, 6 unproven | `--dry-run`, read the per-step report, §6 fallback |
-| Response plan tasks carry no native embedded search/action | SPL and action references live in task descriptions | `mc_response_templates` declares only `name`/`order`/`description`/`owner` — attach natively in the UI if wanted |
-| Response actions are simulated | Not real containment | By design; `"simulated": true` in every record |
+| The plan's SOAR actions are bound per tenant | `app_id`/`asset` are SOAR ids, so the seed carries `soar_binding` and needs SOAR credentials at post-deploy time to become real actions | Run with `--soar-url`; or attach the action once in the ES plan editor — re-runs without SOAR credentials preserve it |
+| Response actions are simulated | Not real containment — both the `ai_defense_*` adaptive responses and the MedAdvice IdP SOAR app | By design; `"simulated": true` in every record |
 | Triage and Guided Response agents need Premier + Cloud + SOAR | Steps 4 and 6 blocked on entitlement | Provision accordingly; the rest of the flow is unaffected |
 | 60–90s, not 30s | Live pacing | Cron floor is 1 minute; fill with the raw-events search |

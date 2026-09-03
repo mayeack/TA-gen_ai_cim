@@ -24,15 +24,30 @@
     "    is_note_required, notes[], files[], suggestions",
     "  suggestions: {searches[], actions[], playbooks[]}",
     "    searches[]  = {name, description, spl}  - native Splunk SPL, no SOAR",
-    "    actions[]   = SOAR actions {app_id, asset, parameters, ...}",
+    "    actions[]   = SOAR actions {last_job_id, name, description, action, type,",
+    "                  app_id, asset, parameters[]} - app_id/asset are the SOAR",
+    "                  tenant's numeric ids, so they are never hard-coded here",
     "    playbooks[] = SOAR playbooks {playbook_id, repo, ...}",
     "  Limits: name <= 250 chars, description <= 7000 chars.",
     "",
+    "SOAR BINDING: a task may carry suggestions.soar_binding[] = {app_name,",
+    "  asset_name, action, type, name, description, parameters[]}. It is NOT a",
+    "  Mission Control field: bin/genai_es_seed.py (run in-product by the shipped",
+    "  search 'GenAI - ES - Seed Response Plan and SOAR Binding' via | genaiseedes,",
+    "  and from outside by tools/show_postdeploy.py) resolves app_name/asset_name",
+    "  against the paired SOAR, writes the result into suggestions.actions[] and",
+    "  strips soar_binding before the record is written. When the app is not on",
+    "  the paired SOAR the binding is dropped and whatever actions[]/playbooks[]",
+    "  the live record already carries for that task is preserved (e.g. an",
+    "  action attached in the ES UI).",
+    "",
     "Tasks DO carry embedded searches - that is what suggestions.searches is for,",
     "and it is how the ES Triage agent is grounded in specific tooling rather",
-    "than prose. actions[] and playbooks[] are left empty here because they are",
-    "SOAR objects; the three simulated ai_defense_* adaptive response actions are",
-    "named in the task descriptions instead.",
+    "than prose. actions[]/playbooks[] are SOAR objects: the Containment tasks bind",
+    "the simulated 'MedAdvice Identity Provider' SOAR app (shipped in",
+    "soar_apps/) through soar_binding; the three simulated",
+    "ai_defense_* adaptive response actions stay named in the task descriptions",
+    "as the no-SOAR fallback.",
     "",
     "BINDING: a response plan does NOT attach to a detection. The chain is",
     "savedsearches.conf action.notable.param.investigation_type -> KV",
@@ -55,7 +70,7 @@
   "origin": {
     "id": "TA-gen_ai_cim",
     "name": "TA-gen_ai_cim",
-    "version": 1
+    "version": 2
   },
   "template_status": "published",
   "source_attachment_id": null,
@@ -142,16 +157,59 @@
       "order": 1,
       "tasks": [
         {
-          "name": "Suspend the offending identity",
+          "name": "Inactivate the offending identity's account",
           "order": 0,
-          "description": "Stop further attempts from this actor.\n\nRun the adaptive response action: Suspend User (AI Defense)\n\nThe action resolves the identity from the finding automatically. It records an auditable containment entry in gen_ai_log under sourcetype ai_cim:response:action.\n\nNOTE: this action is SIMULATED - every record it writes carries \"simulated\": true. It does not call an IdP. On a deployment with a paired SOAR instance, replace it with the equivalent SOAR playbook action and note the substitution here.",
-          "owner": ""
+          "description": "Stop further attempts from this actor.\n\n**Containment standard:** 3 or more blocked prompt-injection attempts within 24 hours from one actor, with no authorized-testing record for that actor, means the account is inactivated pending review. The finding's `injection_attempts` and `policy_blocks` counts are the evidence; the note on this task is the review record.\n\nRun the attached SOAR action **MedAdvice Identity Provider -> disable user** with the username from the finding's `user` field (the actor). The result is recorded on this task and on the investigation's Automation tab, and `enable user` on the same app reverses it during Recovery.\n\nNOTE: the MedAdvice Identity Provider is a workshop simulator - every result carries \"simulated\": true and no directory is touched. On a stack without a paired SOAR, run the adaptive response action Suspend User (AI Defense) instead; it is equally simulated and records its audit entry in gen_ai_log under sourcetype ai_cim:response:action.",
+          "owner": "",
+          "is_note_required": true,
+          "suggestions": {
+            "searches": [],
+            "actions": [],
+            "playbooks": [],
+            "soar_binding": [
+              {
+                "app_name": "MedAdvice Identity Provider",
+                "asset_name": "medadvice_idp",
+                "action": "disable user",
+                "type": "contain",
+                "name": "Inactivate account (MedAdvice IdP, simulated)",
+                "description": "Disable the actor's account in the simulated MedAdvice identity provider. Username comes from the finding's user field; every result carries simulated=true.",
+                "parameters": [
+                  {
+                    "username": "$user$",
+                    "reason": "GenAI prompt injection containment - AI Incident Response Plan"
+                  }
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "Revoke active sessions and API credentials",
           "order": 1,
-          "description": "Invalidate anything the actor could reuse, including tokens issued before the suspension.\n\nRun the adaptive response action: Revoke Session / API Key\n\nRepeat per session if the Identification phase found more than one. The same \"simulated\": true caveat applies as for user suspension.",
-          "owner": ""
+          "description": "Invalidate anything the actor could reuse, including tokens issued before the account was inactivated.\n\nRun the attached SOAR action **MedAdvice Identity Provider -> clear user sessions** for the same username. Repeat per session if the Identification phase found more than one application session.\n\nWithout a paired SOAR, run the adaptive response action Revoke Session / API Key instead. The same \"simulated\": true caveat applies as for account inactivation.",
+          "owner": "",
+          "suggestions": {
+            "searches": [],
+            "actions": [],
+            "playbooks": [],
+            "soar_binding": [
+              {
+                "app_name": "MedAdvice Identity Provider",
+                "asset_name": "medadvice_idp",
+                "action": "clear user sessions",
+                "type": "contain",
+                "name": "Revoke DemoBot sessions (MedAdvice IdP, simulated)",
+                "description": "Revoke the actor's active application sessions in the simulated MedAdvice identity provider. Every result carries simulated=true.",
+                "parameters": [
+                  {
+                    "username": "$user$",
+                    "reason": "GenAI prompt injection containment - AI Incident Response Plan"
+                  }
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "Tighten the guardrail profile",
@@ -162,7 +220,7 @@
         {
           "name": "Confirm containment took effect",
           "order": 3,
-          "description": "Verify the actions were recorded and that no new activity is arriving from the actor.\n\nRun both attached searches. A non-zero count from \"Confirm activity has stopped\" means containment has not held - return to the suspension task.",
+          "description": "Verify the actions were recorded and that no new activity is arriving from the actor.\n\nRun both attached searches. A non-zero count from \"Confirm activity has stopped\" means containment has not held - return to the account inactivation task.",
           "owner": "",
           "suggestions": {
             "searches": [

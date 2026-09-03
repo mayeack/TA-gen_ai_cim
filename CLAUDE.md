@@ -36,9 +36,24 @@ ML detections, and a ServiceNow AI Case Management integration.
   loaders live here, not in `bin/`, because they write into another app's
   dir. Also `show_postdeploy.py` (configures a Splunk Show stack for the
   AI Defense demo — everything the tarball structurally cannot do) plus
-  `demobot-spray-attack-spec.md` and
-  `splunk-show-template-integration.md`, each with a parallel
-  self-contained `.html`.
+  `demobot-spray-attack-spec.md`,
+  `splunk-show-template-integration.md` and
+  `es-guided-response-runbook.md`, each with a parallel self-contained
+  `.html`. `tools/soar/` holds the build script, persona generator and offline
+  tests for the SOAR app in `soar_apps/` (see below).
+- `soar_apps/` — **SOAR** apps, not Splunk apps. Top level and outside
+  `default/` on purpose: SOAR is a separate product, so the folder (or the
+  committed `medadvice_idp.tgz` beside it) is lifted out and uploaded to the
+  SOAR instance on its own. It still ships inside the TA tarball, which is what
+  lets `bin/genai_es_seed.py` package it in memory for `install_simulator`;
+  `package.sh` excludes only `soar_apps/*.tgz` so the archive holds no nested
+  tarball. `medadvice_idp/` is a simulated identity provider (classic
+  connector, stdlib only, stateless, every result `"simulated": true`) whose
+  persona table is generated from `lookups/medadvice_identities.csv` by
+  `tools/soar/gen_personas.py` (`--check` in `build.sh`). `build.sh` and
+  `build_soar_app_tgz()` must produce the same archive shape — only the
+  `build.sh` output has been verified to install on SOAR, and a unit test
+  asserts the two match.
 - `elements/`, `README/` — internal docs, excluded from the package.
 - `package.sh` — builds the shippable tarball; keep its exclude list in
   sync when adding assistant/dev files.
@@ -121,7 +136,7 @@ ML detections, and a ServiceNow AI Case Management integration.
   ships `disabled = 1`** — enablement is per-environment via `local/`
   (this box's enablement is in `local/savedsearches.conf`; keep the
   btool before/after diff clean when touching default enablement).
-  **Two documented exceptions:**
+  **Three documented exceptions:**
   (1) `AI Governance - Prompt Injection Attack Correlation - Rule` (v1.6.2+)
   ships `disabled = 0` because it is the entry-point detection for the
   Agentic Trust workshop / AI Defense demo — a fresh install must reach a
@@ -132,6 +147,15 @@ ML detections, and a ServiceNow AI Case Management integration.
   `genai_token_cost` collection and every cost panel renders $0. It writes
   only shipped CSV constants (`lookups/genai_token_cost_seed.csv`) into the
   app's own collection, insert-only and idempotent, and reads no event data.
+  (3) `GenAI - ES - Seed Response Plan and SOAR Binding` (unreleased) ships
+  `disabled = 0` + `run_on_startup = 1` and runs `| genaiseedes`: it writes
+  the TA-owned records a TA cannot ship as conf into the `missioncontrol`
+  namespace (response plan, `ai security incident` investigation type, AI
+  Findings queue) and, via the ES/SOAR pairing proxy, the `medadvice_idp`
+  asset + the plan's SOAR task actions when the simulator app is on the
+  paired SOAR. Update-or-create, live task actions preserved, no event data
+  read; `install_simulator` and `enable_triage_agent` ship off in
+  `ta_gen_ai_cim_es.conf`.
   Do not add further exceptions without the same stanza rationale comment, a
   README changelog entry, and an R-SEC-002 amendment in VALIDATION_RULES.md.
 - Data models: `AI_Inference`, `AI_Safety`, `AI_Evaluation`

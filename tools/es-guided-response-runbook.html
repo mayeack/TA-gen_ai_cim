@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ES runbook — the Guided Response agent inactivates `t.nguyen` (per-tenant prerequisites)</title>
+<style>
+:root {
+  --bg: #ffffff; --fg: #1c1e21; --muted: #5c6370; --border: #d7dae0;
+  --code-bg: #f5f6f8; --accent: #0b5fff; --thead: #f0f2f5;
+  --quote-bg: #fff8e6; --quote-br: #e0a800;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a; --fg: #e4e6eb; --muted: #9aa0a6; --border: #333740;
+    --code-bg: #1c1f24; --accent: #5b9bff; --thead: #1f232a;
+    --quote-bg: #2a2415; --quote-br: #c99a00;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14161a; --fg: #e4e6eb; --muted: #9aa0a6; --border: #333740;
+  --code-bg: #1c1f24; --accent: #5b9bff; --thead: #1f232a;
+  --quote-bg: #2a2415; --quote-br: #c99a00;
+}
+:root[data-theme="light"] {
+  --bg: #ffffff; --fg: #1c1e21; --muted: #5c6370; --border: #d7dae0;
+  --code-bg: #f5f6f8; --accent: #0b5fff; --thead: #f0f2f5;
+  --quote-bg: #fff8e6; --quote-br: #e0a800;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); margin: 0;
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+  padding: 2.5rem 1.25rem 5rem;
+}
+main { max-width: 62rem; margin: 0 auto; }
+h1, h2, h3, h4 { line-height: 1.25; margin: 2.2rem 0 .85rem; font-weight: 650; }
+h1 { font-size: 2rem; margin-top: 0; letter-spacing: -.02em; }
+h2 { font-size: 1.45rem; padding-bottom: .35rem; border-bottom: 1px solid var(--border); }
+h3 { font-size: 1.15rem; }
+h4 { font-size: 1rem; color: var(--muted); }
+p, ul, ol { margin: 0 0 1rem; }
+li { margin: .3rem 0; }
+a { color: var(--accent); }
+hr { border: 0; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+code {
+  background: var(--code-bg); padding: .15em .4em; border-radius: 4px;
+  font: .875em/1.5 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: .9rem 1rem; overflow-x: auto; margin: 0 0 1.2rem;
+}
+pre code { background: none; padding: 0; font-size: .85em; }
+.table-wrap { overflow-x: auto; margin: 0 0 1.3rem; }
+table { border-collapse: collapse; width: 100%; font-size: .93em; }
+th, td { border: 1px solid var(--border); padding: .5rem .7rem; text-align: left; vertical-align: top; }
+th { background: var(--thead); font-weight: 620; }
+blockquote {
+  margin: 0 0 1.2rem; padding: .75rem 1rem; background: var(--quote-bg);
+  border-left: 4px solid var(--quote-br); border-radius: 0 6px 6px 0;
+}
+blockquote p:last-child { margin-bottom: 0; }
+img { max-width: 100%; }
+input[type=checkbox] { margin-right: .5rem; }
+</style>
+</head>
+<body>
+<main>
+<h1 id="es-runbook-the-guided-response-agent-inactivates-tnguyen-per-tenant-prerequisites">ES runbook — the Guided Response agent inactivates <code>t.nguyen</code> (per-tenant prerequisites)</h1>
+<p>What still has to happen outside the TA for the Agentic Trust workshop's
+"inactivate the account" moment, now that the package configures itself. The
+TA ships the finding's next steps and recommended actions as conf, and the
+shipped search <strong>GenAI - ES - Seed Response Plan and SOAR Binding</strong> runs
+<code>| genaiseedes</code> hourly and on startup to seed Mission Control and bind the
+response plan's Containment tasks to the simulated <strong>MedAdvice Identity
+Provider</strong> SOAR app. Nothing here touches a real directory: every action the
+agent runs returns <code>"simulated": true</code>.</p>
+<p>Stack: <code>stg-shw-051e9803c1c971.stg.splunkcloud.com</code> (ES 8.6, paired with SOAR
+<code>sor-shw-16b02b7abdc021.soar.stg.splunkcloud.com</code>).</p>
+<h2 id="what-is-automatic-no-action-needed">What is automatic (no action needed)</h2>
+<table>
+<thead>
+<tr>
+<th>Done by</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Conf on the detections</td>
+<td>Finding <strong>Next steps</strong> (containment standard + the SOAR action to run) and <strong>Recommended actions</strong> on all three AI Governance rules</td>
+</tr>
+<tr>
+<td><code>\| genaiseedes</code> (hourly, on startup)</td>
+<td>Response plan <em>AI Incident Response Plan</em> with the two Containment task actions bound, investigation type <code>ai security incident</code> → plan, queue <em>AI Findings</em>, <code>medadvice_idp</code> asset on SOAR (when the app is there)</td>
+</tr>
+<tr>
+<td><code>tools/show_postdeploy.py --soar-only</code> (already run on this SOAR, 2026-09-03)</td>
+<td>The simulator app itself (id 198) and its asset (id 34); smoke test passed</td>
+</tr>
+</tbody>
+</table>
+<p><code>| genaiseedes dry_run=true</code> in the search bar shows the per-step report without
+writing.</p>
+<h2 id="e1-agent-settings-per-tenant-once">E1. Agent settings (per tenant, once)</h2>
+<ol>
+<li><strong>Configure → All configurations → Security AI Assistant settings.</strong>
+   AI Assistant <strong>on</strong>. <em>Model choice</em>: the <strong>non-SecA1</strong> (Frontier) option —
+   the Guided Response agent is not available under SecA1. In the Guided
+   Response connector list, confirm <strong>MedAdvice Identity Provider</strong> is selected
+   (new connectors are added automatically on install) and <strong>deselect Okta,
+   Azure AD Graph and AD LDAP</strong>: their assets on this tenant run in demo mock
+   mode and answer <em>"No data found for app/action/parameter"</em> for every
+   MedAdvice user, so the agent must not be able to pick them. (They stay
+   installed on SOAR — SOAR has no REST-safe way to switch an asset off, and
+   the TA never edits foreign assets.)</li>
+<li><strong>Configure → All configurations → Triage agent → Detections.</strong>
+   <code>AI Governance - Prompt Injection Attack Correlation - Rule</code> is on. On a new
+   tenant, either flip it here or set <code>enable_triage_agent = true</code> in
+   <code>local/ta_gen_ai_cim_es.conf</code> and let the next <code>| genaiseedes</code> run do it
+   (needs the <code>allow_ai_triage</code> entitlement: ES 8.6 Premier, Platform 10.1+,
+   AWS Cloud, paired SOAR).</li>
+</ol>
+<h2 id="e2-simulator-app-on-a-new-soar-tenant-once-per-tenant">E2. Simulator app on a new SOAR tenant (once per tenant)</h2>
+<p>Pick one:</p>
+<ul>
+<li><code>python3 tools/show_postdeploy.py --soar-only --soar-url https://&lt;tenant&gt;.soar.splunkcloud.com --soar-smoke-test</code>
+  with <code>$SOAR_PASSWORD</code> or <code>$SOAR_AUTH_TOKEN</code> exported (dry-run first).</li>
+<li>Create a <code>soar</code> account in the TA (<code>local/ta_gen_ai_cim_account.conf</code>:
+  <code>url</code>, <code>auth_type = token</code>; the automation token stored as the account
+  password through the account REST handler) and set
+  <code>install_simulator = true</code> in <code>local/ta_gen_ai_cim_es.conf</code>; the next
+  <code>| genaiseedes</code> run installs the app and creates the asset.</li>
+<li>SOAR UI: on the <strong>Apps</strong> page choose <strong>Install App</strong> and upload the
+  committed <code>soar_apps/medadvice_idp.tgz</code>, then <strong>Configure New Asset</strong> named
+  <code>medadvice_idp</code>. The next <code>| genaiseedes</code> run binds the plan tasks.</li>
+</ul>
+<h2 id="e3-verify-the-seeding-2-min">E3. Verify the seeding (2 min)</h2>
+<ul>
+<li>Search bar: <code>| genaiseedes dry_run=true</code> → every row <code>OK</code> or an expected
+  <code>SKIP</code> (<code>triage agent</code> when off, <code>SOAR simulator app</code> on a tenant without
+  the app).</li>
+<li><strong>Security content → Response plans → My organization's response plans →
+  AI Incident Response Plan → Containment</strong>: task 1 <em>Inactivate the offending
+  identity's account</em> shows the <code>disable user</code> action, task 2 shows
+  <code>clear user sessions</code>. <em>⋮ → Export</em> the plan once and hand the JSON back: it
+  confirms whether ES keeps <code>$user$</code> in action parameters. If it does not, the
+  agent and the analyst supply the username at run time — the simulator
+  rejects an unsubstituted token rather than "disabling" it.</li>
+<li><strong>Configure → Findings and investigations → Investigation types →
+  <code>ai security incident</code></strong>: <em>AI Incident Response Plan</em> listed first.</li>
+<li>Open the correlation detection → <em>Adaptive response actions → Create a
+  finding</em>: <strong>Next steps</strong> and <strong>Recommended actions</strong> are populated from conf.</li>
+</ul>
+<h2 id="e4-demo-timing-workshop-stacks-only">E4. Demo timing (workshop stacks only)</h2>
+<p>The correlation rule ships <code>alert.suppress.period = 86400s</code> per actor: a
+<code>t.nguyen</code> finding already exists today, so with suppression on the next spray
+produces nothing. <code>tools/show_postdeploy.py</code> step 8 turns it off (<code>alert.suppress
+= 0</code>, cron <code>*/1</code>, <code>-15m</code> window); by hand: detection → <em>Throttling</em>.</p>
+<h2 id="e5-permissions-1-min">E5. Permissions (1 min)</h2>
+<p>The attendee role needs <code>edit_tokens_own</code>, <code>edit_tokens_all</code> and
+<code>edit_correlationsearches</code> for the sparkle chat. No SOAR change is needed: the
+pairing account <code>es_soar_integration_user</code> is a SOAR Administrator and asset
+approvals are off.</p>
+<h2 id="e6-dry-run-10-min">E6. Dry run (10 min)</h2>
+<ol>
+<li>DemoBot → toggle the <strong>Prompt-Injection Spray</strong> (Lab 4.1.2). Within ~90 s a
+   fresh <strong>GenAI Prompt Injection Attack: t.nguyen (critical)</strong> finding appears
+   with the shipped next steps; the Triage Analysis panel renders.</li>
+<li>Finding → <strong>Start investigation</strong> → <strong>Response</strong> tab shows <em>AI Incident
+   Response Plan</em>; the Containment task shows the <code>disable user</code> action.</li>
+<li>Sparkle chat with the investigation selected:
+   <em>How should I respond to the prompt injection attempt from t.nguyen?</em> →
+   the recommendation names account inactivation via MedAdvice Identity
+   Provider. Then <em>Disable user t.nguyen</em> → the agent proposes <strong>MedAdvice
+   Identity Provider → disable user (username=t.nguyen)</strong>, asks for double
+   confirmation, runs, and reports success with <code>simulated: true</code>.</li>
+<li><strong>Automation</strong> tab lists the run with its JSON; <strong>Response</strong> tab task →
+   <em>Completed</em>; add the required note; set Disposition/Status.</li>
+<li>Repeat step 3 as a second user: identical result, no reset needed.</li>
+<li>Negative checks: Model choice → SecA1 → agent unavailable (switch back);
+   deselect the MedAdvice connector → agent cannot run it (re-select).</li>
+</ol>
+<h2 id="rollback">Rollback</h2>
+<ul>
+<li>ES: set <code>seed_response_plan = false</code> (or disable the seed search) in
+  <code>local/</code>, then delete the plan, the investigation type association and the
+  queue in the UI if wanted; existing findings and investigations are
+  unaffected. The finding next steps revert with the TA version.</li>
+<li>SOAR: delete the <code>medadvice_idp</code> asset and the <em>MedAdvice Identity Provider</em>
+  app; re-select the other connectors in the ES Guided Response list.</li>
+</ul>
+</main>
+</body>
+</html>

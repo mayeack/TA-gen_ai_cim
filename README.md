@@ -1297,9 +1297,15 @@ with ES automatically — `action.correlationsearch.enabled = 1` plus
 **Configure → Content → Content Management**. No registration file is required.
 
 Attaching the shipped **AI Incident Response Plan** to the resulting
-investigation takes two more steps, because both halves of the binding live in
-the `missioncontrol` app and Splunk conf layering is per-app — a TA physically
-cannot ship into another app's namespace.
+investigation needs records that live in the `missioncontrol` app, and Splunk
+conf layering is per-app — a TA physically cannot ship into another app's
+namespace. So the TA writes them itself at run time: the shipped search
+**GenAI - ES - Seed Response Plan and SOAR Binding** (enabled,
+`run_on_startup`, hourly) runs `| genaiseedes`, which seeds the plan, the
+investigation type bound to it and the AI Findings queue, and binds the plan's
+Containment tasks to the simulated SOAR identity provider when that app is on
+the paired SOAR. A fresh install converges with nothing to click; the finding's
+next steps and recommended actions ship as conf on the detections themselves.
 
 ### How a response plan binds to a detection
 
@@ -1317,8 +1323,8 @@ default/savedsearches.conf
 ```
 
 The TA ships hop 1 and the plan itself
-(`default/data/response_plans/ai_incident_response_plan.json`). You supply hops
-2 and 3 once, per stack.
+(`default/data/response_plans/ai_incident_response_plan.json`); `| genaiseedes`
+writes hops 2 and 3 (update-or-create, hourly and on startup).
 
 > **Investigation type names must be lowercase.** Mission Control rejects any
 > uppercase character (its Role API is case-insensitive while the collection API
@@ -1326,16 +1332,51 @@ The TA ships hop 1 and the plan itself
 > `savedsearches.conf` must match the `mc_incident_types` `_key` exactly, or the
 > plan silently fails to attach.
 
-### Option A — scripted
+### Automatic — `| genaiseedes`
 
-On a Splunk Show stack, `tools/show_postdeploy.py` performs every step
-(the `tools/` directory is dev-only and is not in the shipped tarball):
+| Step | What is written | Switch (`ta_gen_ai_cim_es.conf [es_integration]`) |
+|---|---|---|
+| Response plan | `mc_response_templates` `_key ai_incident_response_plan` — the shipped JSON, URL-encoded on write; actions/playbooks already attached to a task in the ES UI are preserved unless a shipped `soar_binding` replaces them | `seed_response_plan = true` |
+| Investigation type | `mc_incident_types` `_key ai security incident`, this plan first in `response_template_ids` (existing ids kept) | same |
+| Queue | `queues` `_key ai_findings_queue` — *AI Findings*, `search_name="AI Governance*"` | same |
+| SOAR binding | Through Mission Control's pairing proxy (`/v1/soar/...`, no SOAR credential in the TA): if the **MedAdvice Identity Provider** app is installed on the paired SOAR, create its `medadvice_idp` asset and resolve the plan's `soar_binding` entries into real task actions (`disable user`, `clear user sessions`). Otherwise skip and preserve | `bind_soar_actions = true` |
+| Simulator install | Install the app itself from `soar_apps/medadvice_idp/` when missing. The proxy has no install route, so this needs a `soar` account in `ta_gen_ai_cim_account.conf` (`url`, `auth_type = token` or `basic`, secret stored as the account password) | `install_simulator = false` |
+| Triage agent | `ai_triage_enabled = 1` + allowlist the primary detection (no-op without the `allow_ai_triage` entitlement) | `enable_triage_agent = false` |
 
-```bash
-python3 tools/show_postdeploy.py --stack https://<stack>.splunkcloud.com --dry-run
+Run it by hand to see the per-step report, or to test without writing:
+
+```
+| genaiseedes dry_run=true
 ```
 
-### Option B — manual, in the ES UI
+Each row carries `step`, `status` (OK / SKIP / FAIL) and `detail`. The log is
+`$SPLUNK_HOME/var/log/splunk/genaiseedes.log`. On the ES8 demo tenant the
+demo-mock Okta / Azure AD / AD LDAP connectors must stay deselected under
+*Configure → All configurations → Security AI Assistant settings* (Guided
+Response connectors); the command lists them but never edits them.
+
+### Option A — scripted, from outside the stack
+
+`tools/show_postdeploy.py` runs the same seeding code (`bin/genai_es_seed.py`)
+from a workstation with explicit credentials, plus the demo-only extras — index,
+HEC token, detection enablement, demo timing, a SOAR smoke test — that nothing
+in the package should do on a customer stack (the `tools/` directory is dev-only
+and is not in the shipped tarball):
+
+```bash
+export SPLUNK_ADMIN_PASSWORD='...'
+export SOAR_PASSWORD='...'   # optional: installs the simulator and binds the Containment tasks
+python3 tools/show_postdeploy.py --stack https://<stack>.splunkcloud.com \
+    --soar-url https://<tenant>.soar.splunkcloud.com --dry-run
+```
+
+With SOAR credentials the script first installs the simulated **MedAdvice
+Identity Provider** app (packaged in memory from `soar_apps/`, or the committed
+`soar_apps/medadvice_idp.tgz` passed with `--soar-app-tgz`), creates its
+`medadvice_idp` asset, and then binds the plan's tasks with that tenant's
+app/asset ids. `--soar-only` runs just the SOAR steps.
+
+### Option B — manual, in the ES UI (fallback)
 
 1. **Import the response plan.** *Configure → Content → Response plans →
    Create*, then transcribe the four phases and fifteen tasks from
@@ -1367,9 +1408,11 @@ The Triage agent reads the response plan assigned to the investigation and uses
 its task descriptions and embedded searches to ground its reasoning, which is
 why the embedded SPL in step 1 above is worth the effort.
 
-Turning it on is operator-side configuration in the `missioncontrol` app —
-nothing this TA can ship. Under *Configure → All configurations → Triage agent →
-Detections*, enable **GenAI - Prompt Injection Attack Correlation**. Only
+Turning it on is operator-side configuration in the `missioncontrol` app. Set
+`enable_triage_agent = true` in `ta_gen_ai_cim_es.conf` and `| genaiseedes`
+does it on its next run (it ships off because it changes ES-wide behaviour), or
+do it by hand under *Configure → All configurations → Triage agent →
+Detections*: enable **GenAI - Prompt Injection Attack Correlation**. Only
 event-based detections that are already turned on are eligible; finding groups
 and risk-based detections are not.
 
@@ -1392,6 +1435,78 @@ findings and the risk scoring — works on ES 8.x without the agent.
 ## Version History
 
 ### Unreleased
+
+**The ES integration configures itself - response plan, investigation type, queue, finding next steps and the simulated SOAR identity provider ship in the package**
+
+- NEW: `GenAI - ES - Seed Response Plan and SOAR Binding` - a shipped,
+  enabled, `run_on_startup` search (hourly) that runs the new `| genaiseedes`
+  command (`bin/genaiseedes.py` over `bin/genai_es_seed.py`). It seeds Mission
+  Control with the AI Incident Response Plan, the `ai security incident`
+  investigation type bound to it and the AI Findings queue, and - through
+  Mission Control's own ES/SOAR pairing proxy, with no SOAR credential stored
+  in the TA - creates the `medadvice_idp` asset and binds the plan's
+  Containment tasks to the simulated SOAR actions when that app is on the
+  paired SOAR. Every write is update-or-create of a TA-owned record; actions or
+  playbooks attached to a plan task in the ES UI are preserved unless a shipped
+  binding replaces them; no event data is read. This is the **third**
+  documented exception to "everything ships disabled" (R-SEC-002 amendment
+  2026-09-03). Switches in the new `ta_gen_ai_cim_es.conf [es_integration]`:
+  `seed_response_plan`, `bind_soar_actions` (both on), `install_simulator`,
+  `enable_triage_agent` (both off - they change something beyond this TA's
+  records). `| genaiseedes dry_run=true` prints the per-step report.
+- NEW: `soar_apps/` - a top-level folder, outside `default/` on purpose,
+  holding SOAR apps rather than Splunk content. SOAR is a separate product,
+  so the folder and the committed, ready-to-upload
+  `soar_apps/medadvice_idp.tgz` can be lifted out of a checkout and
+  installed on the SOAR instance on their own. The source still ships
+  inside the TA tarball so `install_simulator` can package it in memory;
+  `package.sh` excludes only `soar_apps/*.tgz` so the archive holds no
+  nested tarball. `build_soar_app_tgz()` and `tools/soar/build.sh` now
+  produce byte-identical archive structures, asserted by a unit test,
+  because only the `build.sh` output has been verified to install on SOAR.
+- NEW: `soar_apps/medadvice_idp/` - the source of a small Splunk
+  SOAR app, **MedAdvice Identity Provider**, with `get user`,
+  `list user sessions`, `disable user`, `enable user` and `clear user
+  sessions` for the MedAdvice workshop personas. It is a simulator: no network
+  call, no directory, no state, and every result carries `"simulated": true`.
+  It exists because ES response plans and the ES 8.6 **Guided Response agent**
+  can only run actions installed on the paired SOAR, and the ES8 demo tenant's
+  mock Okta / Azure AD / AD LDAP assets answer *"No data found for
+  app/action/parameter"* for every MedAdvice user (the Triage agent's own
+  `Okta get user t.nguyen` call fails that way). The seeding core packages it
+  in memory and installs it when `install_simulator = true` and a `soar`
+  account (`ta_gen_ai_cim_account.conf`: url + token/password) exists, or
+  `tools/show_postdeploy.py` installs it with explicit SOAR credentials. Build
+  script, persona generator and 23 offline tests live in `tools/soar/`.
+- NEW: `action.notable.param.next_steps` and `recommended_actions` on all
+  three AI Governance rules. The correlation rule's next steps state the
+  containment standard (3+ blocked attempts in 24h, no authorized-testing
+  record -> inactivate the account) and name the SOAR action the Guided
+  Response agent should run; `[[action|...]]` links carry the simulated
+  `ai_defense_*` adaptive responses as the no-SOAR fallback.
+- CHANGED: `default/data/response_plans/ai_incident_response_plan.json` -
+  Containment task *Suspend the offending identity* is now *Inactivate the
+  offending identity's account* (note required, containment standard stated),
+  and it and *Revoke active sessions and API credentials* carry a
+  `suggestions.soar_binding[]` naming the SOAR app/asset/action, resolved into
+  real `suggestions.actions[]` (tenant-specific ids) at seed time; the
+  task-action record shape was validated against the `missioncontrol` `Action`
+  model. `origin.version` -> 2.
+- CHANGED: `tools/show_postdeploy.py` now runs the shared seeding core with
+  explicit credentials and keeps only the demo extras (index, HEC, detection
+  enablement, demo timing, verify) plus SOAR steps 10-13 (install the app,
+  create the asset, list competing identity assets read-only, optional smoke
+  test on a scratch container) behind `--soar-url` + `$SOAR_PASSWORD` /
+  `$SOAR_AUTH_TOKEN`; `--soar-only`, `--skip-triage`.
+- NEW: `tools/es-guided-response-runbook.md` - what remains per tenant (agent
+  model choice, connector selection, simulator install options, verification,
+  demo timing, dry run).
+- OPERATIONAL NOTE: the demo-mock `okta`, `azure_ad` and `ldap` assets stay
+  installed; keep the Guided Response agent off them by deselecting those
+  connectors in ES (*Security AI Assistant settings*). Nothing in the TA
+  writes to foreign SOAR assets: `POST /rest/asset/<id>` re-saves the whole
+  asset (absent fields reset to defaults, masked secrets are re-stored) and
+  ignores `disabled`, so there is no safe REST way to switch one off.
 
 **Prompt injection correlation now runs every minute**
 
