@@ -229,6 +229,15 @@ owner = admin
 [savedsearches/GenAI%20Scoring%20-%20Pipeline%2010]
 owner = admin
 
+# Same reason, and it matters more here because this one ships enabled with
+# run_on_startup: the genaiseedes command is restricted to read:[admin,sc_admin]
+# above, and it reads ta_gen_ai_cim_es.conf and writes the missioncontrol KV
+# collections over REST. A nobody-owned scheduled search has no authenticated
+# session for any of that, so the whole ES seeding step would silently no-op on
+# a fresh install - exactly the install this search exists to serve.
+[savedsearches/GenAI%20-%20ES%20-%20Seed%20Response%20Plan%20and%20SOAR%20Binding]
+owner = admin
+
 ###############################################################################
 # EVENTTYPE AND TAG PERMISSIONS
 ###############################################################################

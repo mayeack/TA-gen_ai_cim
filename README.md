@@ -1436,6 +1436,17 @@ findings and the risk scoring — works on ES 8.x without the agent.
 
 ### v1.7.0 (2026-09-03)
 
+- FIXED (pre-release, from MR !174 review): the new seeding search had no
+  `owner = admin` stanza in `metadata/default.meta`. Objects shipped in
+  `default/` are owned by `nobody`, which holds no roles, and the scheduler
+  runs a saved search in its owner's context - so the search could not read
+  the admin-only `genaiseedes` command, its conf, or the Mission Control
+  collections, and would have failed config load silently on exactly the
+  fresh installs it exists to serve. The ten `GenAI Scoring - Pipeline N`
+  searches already carried the stanza for the same reason. Generalized as
+  R-CONF-005 with a mechanical check
+  (`.claude/skills/splunk-ta-development/check_search_owner.py`).
+
 **The ES integration configures itself - response plan, investigation type, queue, finding next steps and the simulated SOAR identity provider ship in the package**
 
 - NEW: `GenAI - ES - Seed Response Plan and SOAR Binding` - a shipped,

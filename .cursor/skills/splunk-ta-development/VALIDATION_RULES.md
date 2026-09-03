@@ -353,6 +353,46 @@ or in a documented reason why it should not.
 
 ## R-DOC — Documentation
 
+### R-CONF-005 · A scheduled search that calls a restricted command needs an owner
+
+**Rule.** Any saved search shipped in `default/savedsearches.conf` that invokes
+a custom command whose `[commands/<name>]` ACL excludes `nobody` — i.e. any
+`read` list that is not `[ * ]` — must carry an owner stanza in
+`metadata/default.meta`:
+
+```
+[savedsearches/<URL-encoded search name>]
+owner = admin
+```
+
+The same applies to a search that reads an admin-only conf or writes a
+restricted KV collection over REST, whatever command it uses.
+
+**Why.** Objects shipped in `default/` are owned by `nobody`, and `nobody`
+holds no roles. The scheduler runs a saved search in its owner's context, so a
+nobody-owned search cannot read an admin-only command, conf, or collection: it
+fails config load with *"Session is not logged in"* and, because a scheduled
+search has nobody to report to, does so silently. The blast radius is worst
+exactly where it is least visible — a search that ships `disabled = 0` with
+`run_on_startup = 1` is supposed to make a fresh install self-configure, so a
+silent no-op there means the feature never runs and nothing says why.
+
+**Check.** Lists every enabled search, the restricted command it calls, and
+whether an owner stanza exists. Matches only the `search =` value, joining conf
+line-continuations, so a command named in a stanza comment is not a false hit.
+Exits non-zero on any FAIL:
+
+```bash
+python3 .claude/skills/splunk-ta-development/check_search_owner.py
+```
+
+*Provenance: MR !174 finding `11909_174_489ad313_1`, P1, confidence 0.91,
+category `bug`, 2026-09-03. The ten `GenAI Scoring - Pipeline N` searches
+already carried `owner = admin` for this exact reason; the new
+`GenAI - ES - Seed Response Plan and SOAR Binding` search was added without
+one, which would have made the entire self-seeding ES integration a silent
+no-op on every fresh install.*
+
 ### R-DOC-001 · Behavior changes carry a changelog entry
 
 Every user-visible change gets a README changelog entry under the version that
@@ -377,3 +417,4 @@ and verified on a real instance. Numbers, not adjectives.
 | [!171](https://cd.splunkdev.com/tmm/domane-unreleased-apps/-/merge_requests/171) | `11909_171_712a7827_1` | P2 | 0.88 | security | Enabled correlation rule wrote raw `$injection_prompts$` into the notable description | R-SEC-001, R-SEC-002 |
 | — (found by the gate, not a reviewer) | `R-SEC-001/self-1` | P3 | — | security | `AI Governance - Prompt Injection Detected (GenAI Judge) - Rule` wrote the judge's free-text `$explanations$` into the notable description; ships disabled, so opt-in | R-SEC-001 |
 | — (deliberate design decision, not a finding) | `R-SEC-002/amend-1` | — | — | security | Second sanctioned `disabled = 0` exception: `GenAI - Tokenomics - Seed Token Cost Pricing`, an insert-only KV seed of shipped CSV pricing constants (reads no index, no event-derived fields) | R-SEC-002 (amended) |
+| [!174](https://cd.splunkdev.com/tmm/domane-unreleased-apps/-/merge_requests/174) | `11909_174_489ad313_1` | P1 | 0.91 | bug | Enabled `run_on_startup` search calling the admin-only `genaiseedes` command had no `owner = admin` stanza, so it would run as `nobody` and silently no-op on a fresh install | R-CONF-005 |
