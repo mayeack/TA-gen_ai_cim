@@ -39,12 +39,15 @@ ML detections, and a ServiceNow AI Case Management integration.
   `demobot-spray-attack-spec.md`,
   `splunk-show-template-integration.md` and
   `es-guided-response-runbook.md`, each with a parallel self-contained
-  `.html`. `tools/soar/medadvice_idp/` is a simulated identity-provider SOAR
-  app (classic connector, stdlib only, every result `"simulated": true`) that
-  `show_postdeploy.py` installs on the paired SOAR and binds to the response
-  plan's Containment tasks via `suggestions.soar_binding[]`; its persona table
-  is generated from `lookups/medadvice_identities.csv` by
-  `tools/soar/gen_personas.py` (`--check` in `build.sh`).
+  `.html`. `tools/soar/` holds the build script, persona generator and offline
+  tests for the simulated identity-provider SOAR app whose **source ships** in
+  `default/data/soar_apps/medadvice_idp/` (classic connector, stdlib only,
+  every result `"simulated": true`); `bin/genai_es_seed.py` — shared by the
+  `| genaiseedes` command and `show_postdeploy.py` — seeds Mission Control and
+  installs/binds that app to the response plan's Containment tasks via
+  `suggestions.soar_binding[]`. Its persona table is generated from
+  `lookups/medadvice_identities.csv` by `tools/soar/gen_personas.py`
+  (`--check` in `build.sh`).
 - `elements/`, `README/` — internal docs, excluded from the package.
 - `package.sh` — builds the shippable tarball; keep its exclude list in
   sync when adding assistant/dev files.
@@ -127,7 +130,7 @@ ML detections, and a ServiceNow AI Case Management integration.
   ships `disabled = 1`** — enablement is per-environment via `local/`
   (this box's enablement is in `local/savedsearches.conf`; keep the
   btool before/after diff clean when touching default enablement).
-  **Two documented exceptions:**
+  **Three documented exceptions:**
   (1) `AI Governance - Prompt Injection Attack Correlation - Rule` (v1.6.2+)
   ships `disabled = 0` because it is the entry-point detection for the
   Agentic Trust workshop / AI Defense demo — a fresh install must reach a
@@ -138,6 +141,15 @@ ML detections, and a ServiceNow AI Case Management integration.
   `genai_token_cost` collection and every cost panel renders $0. It writes
   only shipped CSV constants (`lookups/genai_token_cost_seed.csv`) into the
   app's own collection, insert-only and idempotent, and reads no event data.
+  (3) `GenAI - ES - Seed Response Plan and SOAR Binding` (unreleased) ships
+  `disabled = 0` + `run_on_startup = 1` and runs `| genaiseedes`: it writes
+  the TA-owned records a TA cannot ship as conf into the `missioncontrol`
+  namespace (response plan, `ai security incident` investigation type, AI
+  Findings queue) and, via the ES/SOAR pairing proxy, the `medadvice_idp`
+  asset + the plan's SOAR task actions when the simulator app is on the
+  paired SOAR. Update-or-create, live task actions preserved, no event data
+  read; `install_simulator` and `enable_triage_agent` ship off in
+  `ta_gen_ai_cim_es.conf`.
   Do not add further exceptions without the same stanza rationale comment, a
   README changelog entry, and an R-SEC-002 amendment in VALIDATION_RULES.md.
 - Data models: `AI_Inference`, `AI_Safety`, `AI_Evaluation`

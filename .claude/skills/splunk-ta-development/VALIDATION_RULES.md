@@ -258,6 +258,29 @@ rationale comment in the stanza, README changelog entry naming the exception,
 R-SEC-001 with no exception. Any third enabled search, or any enabled
 writeback that reads from an index, needs a new amendment here first.
 
+**Amendment (2026-09-03).** A third exception is sanctioned:
+`GenAI - ES - Seed Response Plan and SOAR Binding` ships `disabled = 0` +
+`run_on_startup = 1` and runs `| genaiseedes` (`bin/genaiseedes.py` over
+`bin/genai_es_seed.py`). It writes **outside** the app's own namespace — the
+`missioncontrol` KV collections `mc_response_templates`, `mc_incident_types`
+and `queues`, and, through the ES/SOAR pairing proxy, one asset on the paired
+SOAR — so the writeback clause is narrowed a second time, with these bounds:
+the records are TA-owned (fixed `_key`s: `ai_incident_response_plan`,
+`ai security incident`, `ai_findings_queue`, asset `medadvice_idp`); their
+content ships inside the package (`default/data/response_plans/`,
+`default/data/soar_apps/`); every write is update-or-create, and actions or
+playbooks already attached to a plan task on the live record are preserved
+unless a shipped `soar_binding` replaces them; nothing is written to SOAR
+unless the simulator app is already installed there; and no index or
+event-derived field is read, so R-SEC-001 holds vacuously. The two settings
+that change behaviour beyond the TA's own records — `install_simulator`
+(installs an app on the paired SOAR; needs a `soar` account) and
+`enable_triage_agent` (ES-wide AI triage) — ship **off** in
+`ta_gen_ai_cim_es.conf`. Every other clause still applies: rationale comment
+in the stanza, README changelog entry naming the exception, R-SEC-001 with no
+exception. Any enabled search that writes a record it does not own, or that
+reads from an index, needs a new amendment here first.
+
 ### R-SEC-003 · No secrets, no content logging
 
 **Rule.** No credentials, tokens, or API keys in conf files, code, or URLs —

@@ -42,6 +42,8 @@ The split is not stylistic — it follows from two hard constraints.
 
 Excluded from the tarball (`package.sh` drops `tools/`). Run it after the TA is installed.
 
+Since the TA seeds Mission Control on its own (the shipped search *GenAI - ES - Seed Response Plan and SOAR Binding* runs `| genaiseedes` hourly and on startup, using the ES/SOAR pairing proxy for the SOAR half), steps 4–7 and 10–12 below are the **same code** (`bin/genai_es_seed.py`) run from outside with explicit credentials. Running the script still matters for a demo stack: it applies everything immediately, it can install the simulator app on SOAR (in-product that needs a `soar` account in `ta_gen_ai_cim_account.conf`), and steps 1–3, 8, 9 and 13 exist nowhere else.
+
 | Step | Why it cannot be in the tarball |
 |---|---|
 | 1. Create `gen_ai_log` | Cloud apps cannot ship `indexes.conf` |
@@ -53,7 +55,7 @@ Excluded from the tarball (`package.sh` drops `tools/`). Run it after the TA is 
 | 7. `ai_triage_enabled = 1` | `missioncontrol` conf namespace |
 | 8. Demo timing | Partly TA-owned, partly `SA-ThreatIntelligence`-owned — and TA-owned demo tuning must not ship to real customers |
 | 9. Verify | — |
-| 10. Install the simulated **MedAdvice Identity Provider** SOAR app (`tools/soar/`) | Lives on the paired SOAR, not in Splunk; needs SOAR credentials (`--soar-url` + `$SOAR_PASSWORD`/`$SOAR_AUTH_TOKEN`) |
+| 10. Install the simulated **MedAdvice Identity Provider** SOAR app (source ships in `default/data/soar_apps/`) | Lives on the paired SOAR, not in Splunk; the ES pairing proxy has no install route, so this needs SOAR credentials (`--soar-url` + `$SOAR_PASSWORD`/`$SOAR_AUTH_TOKEN`) |
 | 11. Create its `medadvice_idp` asset | Same |
 | 12. List the competing identity assets (read-only) | The demo-mock Okta/Azure/LDAP assets fail for MedAdvice users; deselect them in ES → *Security AI Assistant settings* → Guided Response connectors. The script never edits foreign assets (`POST /rest/asset/<id>` re-saves the whole record and ignores `disabled`) |
 | 13. Smoke test (`--soar-smoke-test`) | Runs test connectivity / get user / disable user for `t.nguyen` on a scratch container and closes it |

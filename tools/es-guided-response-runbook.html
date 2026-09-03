@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ES runbook — make the Guided Response agent inactivate `t.nguyen` (staging)</title>
+<title>ES runbook — the Guided Response agent inactivates `t.nguyen` (per-tenant prerequisites)</title>
 <style>
 :root {
   --bg: #ffffff; --fg: #1c1e21; --muted: #5c6370; --border: #d7dae0;
@@ -68,17 +68,43 @@ input[type=checkbox] { margin-right: .5rem; }
 </head>
 <body>
 <main>
-<h1 id="es-runbook-make-the-guided-response-agent-inactivate-tnguyen-staging">ES runbook — make the Guided Response agent inactivate <code>t.nguyen</code> (staging)</h1>
-<p>Stack-side steps for the Splunk Enterprise Security 8.6 half of the Agentic
-Trust workshop's "inactivate the account" moment. The SOAR half (the simulated
-<strong>MedAdvice Identity Provider</strong> app and its <code>medadvice_idp</code> asset) is applied by
-<code>tools/show_postdeploy.py --soar-only</code>;
-this document covers what has to be done in the ES UI, in order, with the exact
-text to paste. Nothing here touches a real directory: every action the agent
-runs returns <code>"simulated": true</code>.</p>
+<h1 id="es-runbook-the-guided-response-agent-inactivates-tnguyen-per-tenant-prerequisites">ES runbook — the Guided Response agent inactivates <code>t.nguyen</code> (per-tenant prerequisites)</h1>
+<p>What still has to happen outside the TA for the Agentic Trust workshop's
+"inactivate the account" moment, now that the package configures itself. The
+TA ships the finding's next steps and recommended actions as conf, and the
+shipped search <strong>GenAI - ES - Seed Response Plan and SOAR Binding</strong> runs
+<code>| genaiseedes</code> hourly and on startup to seed Mission Control and bind the
+response plan's Containment tasks to the simulated <strong>MedAdvice Identity
+Provider</strong> SOAR app. Nothing here touches a real directory: every action the
+agent runs returns <code>"simulated": true</code>.</p>
 <p>Stack: <code>stg-shw-051e9803c1c971.stg.splunkcloud.com</code> (ES 8.6, paired with SOAR
 <code>sor-shw-16b02b7abdc021.soar.stg.splunkcloud.com</code>).</p>
-<h2 id="e1-prerequisites-5-min">E1. Prerequisites (5 min)</h2>
+<h2 id="what-is-automatic-no-action-needed">What is automatic (no action needed)</h2>
+<table>
+<thead>
+<tr>
+<th>Done by</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Conf on the detections</td>
+<td>Finding <strong>Next steps</strong> (containment standard + the SOAR action to run) and <strong>Recommended actions</strong> on all three AI Governance rules</td>
+</tr>
+<tr>
+<td><code>\| genaiseedes</code> (hourly, on startup)</td>
+<td>Response plan <em>AI Incident Response Plan</em> with the two Containment task actions bound, investigation type <code>ai security incident</code> → plan, queue <em>AI Findings</em>, <code>medadvice_idp</code> asset on SOAR (when the app is there)</td>
+</tr>
+<tr>
+<td><code>tools/show_postdeploy.py --soar-only</code> (already run on this SOAR, 2026-09-03)</td>
+<td>The simulator app itself (id 198) and its asset (id 34); smoke test passed</td>
+</tr>
+</tbody>
+</table>
+<p><code>| genaiseedes dry_run=true</code> in the search bar shows the per-step report without
+writing.</p>
+<h2 id="e1-agent-settings-per-tenant-once">E1. Agent settings (per tenant, once)</h2>
 <ol>
 <li><strong>Configure → All configurations → Security AI Assistant settings.</strong>
    AI Assistant <strong>on</strong>. <em>Model choice</em>: the <strong>non-SecA1</strong> (Frontier) option —
@@ -88,89 +114,61 @@ runs returns <code>"simulated": true</code>.</p>
    Azure AD Graph and AD LDAP</strong>: their assets on this tenant run in demo mock
    mode and answer <em>"No data found for app/action/parameter"</em> for every
    MedAdvice user, so the agent must not be able to pick them. (They stay
-   installed on SOAR — SOAR has no REST-safe way to switch an asset off.)</li>
+   installed on SOAR — SOAR has no REST-safe way to switch an asset off, and
+   the TA never edits foreign assets.)</li>
 <li><strong>Configure → All configurations → Triage agent → Detections.</strong>
-   <code>AI Governance - Prompt Injection Attack Correlation - Rule</code> is on (it is —
-   the Analysis panel already renders on today's findings).</li>
+   <code>AI Governance - Prompt Injection Attack Correlation - Rule</code> is on. On a new
+   tenant, either flip it here or set <code>enable_triage_agent = true</code> in
+   <code>local/ta_gen_ai_cim_es.conf</code> and let the next <code>| genaiseedes</code> run do it
+   (needs the <code>allow_ai_triage</code> entitlement: ES 8.6 Premier, Platform 10.1+,
+   AWS Cloud, paired SOAR).</li>
 </ol>
-<h2 id="e2-response-plan-attach-the-soar-action-10-min">E2. Response plan — attach the SOAR action (10 min)</h2>
-<p><strong>Security content → Response plans → My organization's response plans → AI
-Incident Response Plan → Containment.</strong></p>
-<ol>
-<li>Expand task 1 (<em>Suspend the offending identity</em>). Rename it to:</li>
-</ol>
-<p><code>Inactivate the offending identity's account</code></p>
-<p>Replace its description with:</p>
-<p>```
-   Stop further attempts from this actor.</p>
-<p><strong>Containment standard:</strong> 3 or more blocked prompt-injection attempts within 24 hours from one actor, with no authorized-testing record for that actor, means the account is inactivated pending review. The finding's <code>injection_attempts</code> and <code>policy_blocks</code> counts are the evidence; the note on this task is the review record.</p>
-<p>Run the attached SOAR action <strong>MedAdvice Identity Provider -&gt; disable user</strong> with the username from the finding's <code>user</code> field (the actor). The result is recorded on this task and on the investigation's Automation tab, and <code>enable user</code> on the same app reverses it during Recovery.</p>
-<p>NOTE: the MedAdvice Identity Provider is a workshop simulator - every result carries "simulated": true and no directory is touched. On a stack without a paired SOAR, run the adaptive response action Suspend User (AI Defense) instead; it is equally simulated and records its audit entry in gen_ai_log under sourcetype ai_cim:response:action.
-   ```</p>
-<p>Tick <strong>Require a note upon task completion</strong>.
-2. Still in that task: <strong>Actions → + Action</strong> → App <strong>MedAdvice Identity
-   Provider</strong> → Action <strong>disable user</strong> → <code>username</code>: try the token <code>$user$</code>
-   first; if the picker rejects it or the dry run in E7 shows it unsubstituted,
-   use <code>t.nguyen</code> → <code>reason</code>: <code>GenAI prompt injection containment - AI Incident
-   Response Plan</code> → <strong>Submit</strong>.
-3. Task 2 (<em>Revoke active sessions and API credentials</em>): <strong>+ Action</strong> → App
-   <strong>MedAdvice Identity Provider</strong> → Action <strong>clear user sessions</strong> → same
-   <code>username</code> → <strong>Submit</strong>. Replace its description with:</p>
-<p>```
-   Invalidate anything the actor could reuse, including tokens issued before the account was inactivated.</p>
-<p>Run the attached SOAR action <strong>MedAdvice Identity Provider -&gt; clear user sessions</strong> for the same username. Repeat per session if the Identification phase found more than one application session.</p>
-<p>Without a paired SOAR, run the adaptive response action Revoke Session / API Key instead. The same "simulated": true caveat applies as for account inactivation.
-   <code>``
-4. Toggle **Status → Published**, then **Save changes**.
-5. **⋮ → Export** the plan and hand the JSON back: it pins the exact</code>parameters<code>shape the seed writes (</code>tools/show_postdeploy.py<code>step 4) and
-   confirms whether</code>$user$` is stored.</p>
-<blockquote>
-<p>The repo seed (<code>default/data/response_plans/ai_incident_response_plan.json</code>)
-now carries the same two actions as <code>soar_binding</code>, so a rebuilt stack gets
-them from <code>show_postdeploy.py</code> without this step. Re-running the script
-without SOAR credentials keeps whatever you attached here.</p>
-</blockquote>
-<h2 id="e3-investigation-type-2-min">E3. Investigation type (2 min)</h2>
-<p><strong>Configure → Findings and investigations → Investigation types →
-<code>ai security incident</code>.</strong> <em>AI Incident Response Plan</em> is listed first. If the
-type is missing (the post-deploy script never ran on this stack), create it
-with exactly that lowercase name and assign the plan.</p>
-<h2 id="e4-finding-text-steer-the-agents-5-min">E4. Finding text — steer the agents (5 min)</h2>
-<p><strong>Configure → Content → Content management → GenAI - Prompt Injection Attack
-Correlation → Edit → Adaptive response actions → Create a finding.</strong></p>
+<h2 id="e2-simulator-app-on-a-new-soar-tenant-once-per-tenant">E2. Simulator app on a new SOAR tenant (once per tenant)</h2>
+<p>Pick one:</p>
 <ul>
-<li><strong>Description</strong>: keep the narrative and append:</li>
+<li><code>python3 tools/show_postdeploy.py --soar-only --soar-url https://&lt;tenant&gt;.soar.splunkcloud.com --soar-smoke-test</code>
+  with <code>$SOAR_PASSWORD</code> or <code>$SOAR_AUTH_TOKEN</code> exported (dry-run first).</li>
+<li>Create a <code>soar</code> account in the TA (<code>local/ta_gen_ai_cim_account.conf</code>:
+  <code>url</code>, <code>auth_type = token</code>; the automation token stored as the account
+  password through the account REST handler) and set
+  <code>install_simulator = true</code> in <code>local/ta_gen_ai_cim_es.conf</code>; the next
+  <code>| genaiseedes</code> run installs the app and creates the asset.</li>
+<li>SOAR UI: <em>Apps → Install App</em> → upload <code>tools/soar/dist/medadvice_idp.tgz</code>
+  (from <code>tools/soar/build.sh</code>) → <em>Configure New Asset</em> named <code>medadvice_idp</code>.
+  The next <code>| genaiseedes</code> run binds the plan tasks.</li>
 </ul>
-<p><code>Containment standard: 3+ blocked injection attempts in 24h with no authorized-testing record -&gt; inactivate the account pending review.</code></p>
+<h2 id="e3-verify-the-seeding-2-min">E3. Verify the seeding (2 min)</h2>
 <ul>
-<li><strong>Next steps</strong> (plain text; use <em>Insert Adaptive Response Action</em> for the
-  fallback link in step 3):</li>
+<li>Search bar: <code>| genaiseedes dry_run=true</code> → every row <code>OK</code> or an expected
+  <code>SKIP</code> (<code>triage agent</code> when off, <code>SOAR simulator app</code> on a tenant without
+  the app).</li>
+<li><strong>Security content → Response plans → My organization's response plans →
+  AI Incident Response Plan → Containment</strong>: task 1 <em>Inactivate the offending
+  identity's account</em> shows the <code>disable user</code> action, task 2 shows
+  <code>clear user sessions</code>. <em>⋮ → Export</em> the plan once and hand the JSON back: it
+  confirms whether ES keeps <code>$user$</code> in action parameters. If it does not, the
+  agent and the analyst supply the username at run time — the simulator
+  rejects an unsubstituted token rather than "disabling" it.</li>
+<li><strong>Configure → Findings and investigations → Investigation types →
+  <code>ai security incident</code></strong>: <em>AI Incident Response Plan</em> listed first.</li>
+<li>Open the correlation detection → <em>Adaptive response actions → Create a
+  finding</em>: <strong>Next steps</strong> and <strong>Recommended actions</strong> are populated from conf.</li>
 </ul>
-<p><code>1. Review the raw prompts and sessions for the actor (Contributing events drill-down).
-  2. Validate intent with the user's manager: authorized red-team or testing record?
-  3. If repeat attempts and no authorization: inactivate the account via SOAR - MedAdvice Identity Provider -&gt; disable user (username = the finding's user). Without SOAR, run Suspend User (AI Defense).
-  4. Revoke the actor's active DemoBot sessions (MedAdvice Identity Provider -&gt; clear user sessions, or Revoke Session / API Key).
-  5. Record the disposition and rationale on the investigation.</code></p>
-<ul>
-<li><strong>Recommended actions</strong>: add <em>Suspend User (AI Defense)</em>, <em>Revoke Session /
-  API Key</em>, <em>Tighten Guardrail Policy</em>, plus any SOAR-backed action the list
-  offers on this stack (note what is offered). <strong>Save.</strong> This writes the
-  stack's <code>local/savedsearches.conf</code> and survives TA upgrades.</li>
-</ul>
-<h2 id="e5-throttling-1-min">E5. Throttling (1 min)</h2>
-<p>Same detection → <strong>Throttling</strong>: suppression must be <strong>off</strong> (the post-deploy
-script sets <code>alert.suppress = 0</code>). A <code>t.nguyen</code> finding already exists today;
-with suppression on, the next spray produces nothing.</p>
-<h2 id="e6-permissions-1-min">E6. Permissions (1 min)</h2>
+<h2 id="e4-demo-timing-workshop-stacks-only">E4. Demo timing (workshop stacks only)</h2>
+<p>The correlation rule ships <code>alert.suppress.period = 86400s</code> per actor: a
+<code>t.nguyen</code> finding already exists today, so with suppression on the next spray
+produces nothing. <code>tools/show_postdeploy.py</code> step 8 turns it off (<code>alert.suppress
+= 0</code>, cron <code>*/1</code>, <code>-15m</code> window); by hand: detection → <em>Throttling</em>.</p>
+<h2 id="e5-permissions-1-min">E5. Permissions (1 min)</h2>
 <p>The attendee role needs <code>edit_tokens_own</code>, <code>edit_tokens_all</code> and
 <code>edit_correlationsearches</code> for the sparkle chat. No SOAR change is needed: the
 pairing account <code>es_soar_integration_user</code> is a SOAR Administrator and asset
 approvals are off.</p>
-<h2 id="e7-dry-run-10-min">E7. Dry run (10 min)</h2>
+<h2 id="e6-dry-run-10-min">E6. Dry run (10 min)</h2>
 <ol>
 <li>DemoBot → toggle the <strong>Prompt-Injection Spray</strong> (Lab 4.1.2). Within ~90 s a
    fresh <strong>GenAI Prompt Injection Attack: t.nguyen (critical)</strong> finding appears
-   with the E4 text; the Triage Analysis panel renders.</li>
+   with the shipped next steps; the Triage Analysis panel renders.</li>
 <li>Finding → <strong>Start investigation</strong> → <strong>Response</strong> tab shows <em>AI Incident
    Response Plan</em>; the Containment task shows the <code>disable user</code> action.</li>
 <li>Sparkle chat with the investigation selected:
@@ -183,13 +181,14 @@ approvals are off.</p>
    <em>Completed</em>; add the required note; set Disposition/Status.</li>
 <li>Repeat step 3 as a second user: identical result, no reset needed.</li>
 <li>Negative checks: Model choice → SecA1 → agent unavailable (switch back);
-   SOAR asset <code>medadvice_idp</code> disabled → agent cannot run it (re-enable).</li>
+   deselect the MedAdvice connector → agent cannot run it (re-select).</li>
 </ol>
 <h2 id="rollback">Rollback</h2>
 <ul>
-<li>ES: remove the two actions from the tasks in the plan editor; revert the
-  detection's <em>Create a finding</em> text. Existing findings and investigations are
-  unaffected.</li>
+<li>ES: set <code>seed_response_plan = false</code> (or disable the seed search) in
+  <code>local/</code>, then delete the plan, the investigation type association and the
+  queue in the UI if wanted; existing findings and investigations are
+  unaffected. The finding next steps revert with the TA version.</li>
 <li>SOAR: delete the <code>medadvice_idp</code> asset and the <em>MedAdvice Identity Provider</em>
   app; re-select the other connectors in the ES Guided Response list.</li>
 </ul>

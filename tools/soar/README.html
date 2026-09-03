@@ -69,18 +69,21 @@ input[type=checkbox] { margin-right: .5rem; }
 <body>
 <main>
 <h1 id="medadvice-identity-provider-simulated-soar-app-for-the-genai-workshop">MedAdvice Identity Provider — simulated SOAR app for the GenAI workshop</h1>
-<p><code>tools/soar/</code> holds a small <strong>Splunk SOAR app that pretends to be MedAdvice's
-identity provider</strong>. It exists for one reason: Splunk Enterprise Security 8.6
-response plans and the <strong>Guided Response agent</strong> can only recommend and run
-actions that are installed on the paired SOAR, and the demo-mock Okta / Azure AD
-/ AD LDAP assets on the ES8 demo tenant return <em>"No data found for
-app/action/parameter"</em> for every MedAdvice persona. With this app installed, the
-agent can answer <em>"Disable user t.nguyen"</em> with a real, repeatable action.</p>
+<p>The TA ships a small <strong>Splunk SOAR app that pretends to be MedAdvice's identity
+provider</strong> (source in <code>default/data/soar_apps/medadvice_idp/</code>; this directory
+holds its build script, persona generator and offline tests). It exists for one
+reason: Splunk Enterprise Security 8.6 response plans and the <strong>Guided Response
+agent</strong> can only recommend and run actions that are installed on the paired
+SOAR, and the demo-mock Okta / Azure AD / AD LDAP assets on the ES8 demo tenant
+return <em>"No data found for app/action/parameter"</em> for every MedAdvice persona.
+With this app installed, the agent can answer <em>"Disable user t.nguyen"</em> with a
+real, repeatable action.</p>
 <p><strong>Everything here is simulated.</strong> The connector never opens a network
 connection, never touches a directory, keeps no state, and every result carries
 <code>"simulated": true</code>. That flag is the only thing separating a lab containment
 record from a real one — never strip it, and never let the app imply real
-enforcement. The <code>tools/</code> tree is dev-only and is not part of the TA tarball.</p>
+enforcement. Nothing in the TA installs it on a SOAR unless an operator asks
+(<code>install_simulator = true</code> plus a <code>soar</code> account, or <code>tools/show_postdeploy.py</code>).</p>
 <h2 id="layout">Layout</h2>
 <table>
 <thead>
@@ -91,28 +94,32 @@ enforcement. The <code>tools/</code> tree is dev-only and is not part of the TA 
 </thead>
 <tbody>
 <tr>
-<td><code>medadvice_idp/medadvice_idp.json</code></td>
+<td><code>default/data/soar_apps/medadvice_idp/medadvice_idp.json</code></td>
 <td>App manifest (classic connector format): six actions, <code>contains</code> chosen so the finding's <code>user</code> artifact matches</td>
 </tr>
 <tr>
-<td><code>medadvice_idp/medadvice_idp_connector.py</code></td>
+<td><code>default/data/soar_apps/medadvice_idp/medadvice_idp_connector.py</code></td>
 <td><code>BaseConnector</code> implementation, standard library only, Python 3.9 and 3.13</td>
 </tr>
 <tr>
-<td><code>medadvice_idp/medadvice_idp_consts.py</code></td>
+<td><code>default/data/soar_apps/medadvice_idp/medadvice_idp_consts.py</code></td>
 <td><strong>Generated</strong> persona table from <code>lookups/medadvice_identities.csv</code> plus messages</td>
 </tr>
 <tr>
-<td><code>gen_personas.py</code></td>
+<td><code>bin/genai_es_seed.py</code></td>
+<td>Packages the source in memory (<code>build_soar_app_tgz</code>), installs it, creates the asset, binds the response plan — shared by <code>| genaiseedes</code> and <code>show_postdeploy.py</code></td>
+</tr>
+<tr>
+<td><code>tools/soar/gen_personas.py</code></td>
 <td>Regenerates the consts module (<code>--check</code> fails when it is stale)</td>
 </tr>
 <tr>
-<td><code>build.sh</code></td>
-<td>Packages <code>dist/medadvice_idp.tgz</code> (gitignored)</td>
+<td><code>tools/soar/build.sh</code></td>
+<td>Packages <code>tools/soar/dist/medadvice_idp.tgz</code> (gitignored) for a manual upload</td>
 </tr>
 <tr>
-<td><code>tests/</code></td>
-<td>Offline unit tests with a 60-line stand-in for the <code>phantom</code> package</td>
+<td><code>tools/soar/tests/</code></td>
+<td>Offline unit tests: the connector (60-line stand-in for the <code>phantom</code> package) and the seeding core (fake splunkd/SOAR transports)</td>
 </tr>
 </tbody>
 </table>
@@ -170,35 +177,40 @@ enforcement. The <code>tools/</code> tree is dev-only and is not part of the TA 
 <code>known: false</code> rather than an error. A username that still contains <code>$</code> or
 <code>%24</code> — an ES token such as <code>$user$</code> that was never substituted — is rejected
 with an explicit message so nobody "disables" a token.</p>
-<h2 id="build-test-install">Build, test, install</h2>
+<h2 id="build-and-test">Build and test</h2>
 <pre><code class="language-bash">python3 tools/soar/gen_personas.py                 # only after editing the identities CSV
-PYTHONPATH=tools/soar/tests/phantom_shim:tools/soar/medadvice_idp \
+PYTHONPATH=tools/soar/tests/phantom_shim:default/data/soar_apps/medadvice_idp \
   /opt/splunk104/bin/splunk cmd python3.13 -m unittest discover -s tools/soar/tests -v
 bash tools/soar/build.sh                            # -&gt; tools/soar/dist/medadvice_idp.tgz
 </code></pre>
-<p>Install and configure it on the paired SOAR with the post-deploy script (steps
-10–13), which is idempotent and also binds the response-plan Containment tasks
-to the app's actions when run together with the Splunk steps:</p>
-<pre><code class="language-bash">export SOAR_PASSWORD='...'        # or SOAR_AUTH_TOKEN
-python3 tools/show_postdeploy.py --soar-only \
-  --soar-url https://&lt;tenant&gt;.soar.splunkcloud.com --soar-username soar_local_admin \
-  --soar-smoke-test --dry-run
-</code></pre>
-<p>Drop <code>--dry-run</code> to apply. Or install by hand: SOAR → <em>Apps → Install App</em> →
-upload the tarball → <em>Configure New Asset</em> named <code>medadvice_idp</code>. The Guided
-Response agent adds new connectors to its pre-selected list automatically.</p>
-<p>Step 12 of the script only <em>lists</em> the other identity-management assets on the
-tenant (on the ES8 demo tenant: <code>okta</code>, <code>azure_ad</code>, <code>ldap</code>, all in demo mock
-mode). Keep the Guided Response agent off them by deselecting those connectors
-in ES under <em>Configure → All configurations → Security AI Assistant settings</em>
-— not by editing the assets: <code>POST /rest/asset/&lt;id&gt;</code> re-saves the whole asset
-(absent fields fall back to defaults such as <code>concurrency_limit</code> and the
-<code>mock_app</code> flag, masked secrets are re-stored) and ignores <code>disabled</code>.</p>
+<h2 id="install-once-per-soar-tenant">Install (once per SOAR tenant)</h2>
+<p>The ES/SOAR pairing proxy that <code>| genaiseedes</code> uses has no app-install route,
+so the app reaches a tenant one of three ways; the asset and the response-plan
+binding follow automatically on the next <code>| genaiseedes</code> run in every case.</p>
+<ol>
+<li><code>tools/show_postdeploy.py --soar-only --soar-url https://&lt;tenant&gt;.soar.splunkcloud.com --soar-smoke-test</code>
+   with <code>$SOAR_PASSWORD</code> or <code>$SOAR_AUTH_TOKEN</code> exported (dry-run first).</li>
+<li>A <code>soar</code> account in the TA (<code>ta_gen_ai_cim_account.conf</code>: <code>url</code>,
+   <code>auth_type = token</code> or <code>basic</code>, the token/password stored as the account
+   password) plus <code>install_simulator = true</code> in <code>ta_gen_ai_cim_es.conf</code>.</li>
+<li>SOAR UI: <em>Apps → Install App</em> → upload the tarball → <em>Configure New Asset</em>
+   named <code>medadvice_idp</code>.</li>
+</ol>
+<p>The Guided Response agent adds new connectors to its pre-selected list
+automatically. <code>| genaiseedes</code> (and the script's step 12) only <em>lists</em> the other
+identity-management assets on the tenant (on the ES8 demo tenant: <code>okta</code>,
+<code>azure_ad</code>, <code>ldap</code>, all in demo mock mode). Keep the agent off them by
+deselecting those connectors in ES under <em>Configure → All configurations →
+Security AI Assistant settings</em> — not by editing the assets: <code>POST
+/rest/asset/&lt;id&gt;</code> re-saves the whole asset (absent fields fall back to defaults
+such as <code>concurrency_limit</code> and the <code>mock_app</code> flag, masked secrets are
+re-stored) and ignores <code>disabled</code>.</p>
 <h2 id="rollback">Rollback</h2>
 <p>Delete the <code>medadvice_idp</code> asset and the app in the SOAR UI (or
 <code>DELETE /rest/asset/&lt;id&gt;</code> and <code>DELETE /rest/app/&lt;id&gt;</code>), and re-select the other
 connectors in the ES Guided Response list. Existing findings and investigations
-are unaffected.</p>
+are unaffected; the next <code>| genaiseedes</code> run reports the binding as skipped and
+preserves whatever the plan tasks still carry.</p>
 </main>
 </body>
 </html>
