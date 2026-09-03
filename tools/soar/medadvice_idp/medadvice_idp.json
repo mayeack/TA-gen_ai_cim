@@ -1,0 +1,922 @@
+{
+  "appid": "b8f9915e-230e-481d-a223-9b436359974a",
+  "name": "MedAdvice Identity Provider",
+  "description": "Simulated identity provider for the MedAdvice / DemoBot workshop personas. Supports get user, list user sessions, disable user, enable user and clear user sessions. The app never contacts a directory and every result carries simulated=true - it exists so Splunk Enterprise Security (response plans and the Guided Response agent) can run a real, repeatable containment action in a lab.",
+  "type": "identity management",
+  "product_vendor": "MedAdvice",
+  "product_name": "MedAdvice Identity Provider",
+  "product_version_regex": ".*",
+  "publisher": "Splunk",
+  "package_name": "phantom_medadviceidp",
+  "main_module": "medadvice_idp_connector.py",
+  "license": "Copyright (c) 2026 Splunk Inc. Licensed under the Apache License 2.0.",
+  "app_version": "1.0.0",
+  "utctime_updated": "2026-09-03T04:55:34.000000Z",
+  "python_version": "3.9, 3.13",
+  "min_phantom_version": "6.3.0",
+  "fips_compliant": false,
+  "logo": "logo_medadvice_idp.svg",
+  "logo_dark": "logo_medadvice_idp_dark.svg",
+  "app_wizard_version": "1.0.0",
+  "configuration": {
+    "mode": {
+      "description": "Simulation mode. Only 'simulate' is implemented; the app never contacts a directory",
+      "data_type": "string",
+      "required": false,
+      "default": "simulate",
+      "order": 0
+    },
+    "directory_name": {
+      "description": "Display name of the simulated directory",
+      "data_type": "string",
+      "required": false,
+      "default": "medadvice.example.com",
+      "order": 1
+    }
+  },
+  "actions": [
+    {
+      "action": "test connectivity",
+      "identifier": "test_connectivity",
+      "description": "Validate the asset configuration (always succeeds - the app is a simulator)",
+      "type": "test",
+      "read_only": true,
+      "parameters": {},
+      "output": [],
+      "versions": "EQ(*)"
+    },
+    {
+      "action": "get user",
+      "identifier": "get_user",
+      "description": "Return the simulated directory record for a MedAdvice user",
+      "type": "investigate",
+      "read_only": true,
+      "parameters": {
+        "username": {
+          "description": "Username, user id or email of the MedAdvice user",
+          "data_type": "string",
+          "required": true,
+          "primary": true,
+          "order": 0,
+          "contains": [
+            "user name",
+            "user id",
+            "email"
+          ]
+        }
+      },
+      "output": [
+        {
+          "data_path": "action_result.data.*.username",
+          "data_type": "string",
+          "contains": [
+            "user name"
+          ],
+          "column_name": "Username",
+          "column_order": 0
+        },
+        {
+          "data_path": "action_result.data.*.email",
+          "data_type": "string",
+          "contains": [
+            "email"
+          ],
+          "column_name": "Email",
+          "column_order": 1
+        },
+        {
+          "data_path": "action_result.data.*.display_name",
+          "data_type": "string",
+          "column_name": "Display name",
+          "column_order": 2
+        },
+        {
+          "data_path": "action_result.data.*.user_id",
+          "data_type": "string",
+          "contains": [
+            "user id"
+          ],
+          "column_name": "User id",
+          "column_order": 3
+        },
+        {
+          "data_path": "action_result.data.*.status",
+          "data_type": "string",
+          "column_name": "Status",
+          "column_order": 4,
+          "example_values": [
+            "active",
+            "disabled"
+          ]
+        },
+        {
+          "data_path": "action_result.data.*.department",
+          "data_type": "string",
+          "column_name": "Department",
+          "column_order": 5
+        },
+        {
+          "data_path": "action_result.data.*.category",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.watchlist",
+          "data_type": "boolean"
+        },
+        {
+          "data_path": "action_result.data.*.priority",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.mfa_enrolled",
+          "data_type": "boolean"
+        },
+        {
+          "data_path": "action_result.data.*.last_login",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.directory",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.known",
+          "data_type": "boolean"
+        },
+        {
+          "data_path": "action_result.data.*.simulated",
+          "data_type": "boolean",
+          "column_name": "Simulated",
+          "column_order": 6,
+          "example_values": [
+            true
+          ]
+        },
+        {
+          "data_path": "action_result.summary.username",
+          "data_type": "string",
+          "contains": [
+            "user name"
+          ]
+        },
+        {
+          "data_path": "action_result.summary.status",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.parameter.username",
+          "data_type": "string",
+          "contains": [
+            "user name",
+            "user id",
+            "email"
+          ]
+        },
+        {
+          "data_path": "action_result.status",
+          "data_type": "string",
+          "example_values": [
+            "success",
+            "failed"
+          ]
+        },
+        {
+          "data_path": "action_result.message",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.summary.simulated",
+          "data_type": "boolean",
+          "example_values": [
+            true
+          ]
+        },
+        {
+          "data_path": "summary.total_objects",
+          "data_type": "numeric",
+          "example_values": [
+            1
+          ]
+        },
+        {
+          "data_path": "summary.total_objects_successful",
+          "data_type": "numeric",
+          "example_values": [
+            1
+          ]
+        }
+      ],
+      "render": {
+        "type": "table",
+        "width": 12,
+        "height": 5,
+        "title": "User"
+      },
+      "versions": "EQ(*)"
+    },
+    {
+      "action": "list user sessions",
+      "identifier": "list_user_sessions",
+      "description": "List the simulated active application sessions for a MedAdvice user",
+      "type": "investigate",
+      "read_only": true,
+      "parameters": {
+        "username": {
+          "description": "Username, user id or email of the MedAdvice user",
+          "data_type": "string",
+          "required": true,
+          "primary": true,
+          "order": 0,
+          "contains": [
+            "user name",
+            "user id",
+            "email"
+          ]
+        }
+      },
+      "output": [
+        {
+          "data_path": "action_result.data.*.session_id",
+          "data_type": "string",
+          "column_name": "Session id",
+          "column_order": 0
+        },
+        {
+          "data_path": "action_result.data.*.username",
+          "data_type": "string",
+          "contains": [
+            "user name"
+          ],
+          "column_name": "Username",
+          "column_order": 1
+        },
+        {
+          "data_path": "action_result.data.*.app",
+          "data_type": "string",
+          "column_name": "Application",
+          "column_order": 2
+        },
+        {
+          "data_path": "action_result.data.*.client_address",
+          "data_type": "string",
+          "contains": [
+            "ip"
+          ],
+          "column_name": "Client",
+          "column_order": 3
+        },
+        {
+          "data_path": "action_result.data.*.started",
+          "data_type": "string",
+          "column_name": "Started",
+          "column_order": 4
+        },
+        {
+          "data_path": "action_result.data.*.last_seen",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.status",
+          "data_type": "string",
+          "column_name": "Status",
+          "column_order": 5
+        },
+        {
+          "data_path": "action_result.data.*.simulated",
+          "data_type": "boolean",
+          "column_name": "Simulated",
+          "column_order": 6
+        },
+        {
+          "data_path": "action_result.summary.username",
+          "data_type": "string",
+          "contains": [
+            "user name"
+          ]
+        },
+        {
+          "data_path": "action_result.summary.session_count",
+          "data_type": "numeric"
+        },
+        {
+          "data_path": "action_result.parameter.username",
+          "data_type": "string",
+          "contains": [
+            "user name",
+            "user id",
+            "email"
+          ]
+        },
+        {
+          "data_path": "action_result.status",
+          "data_type": "string",
+          "example_values": [
+            "success",
+            "failed"
+          ]
+        },
+        {
+          "data_path": "action_result.message",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.summary.simulated",
+          "data_type": "boolean",
+          "example_values": [
+            true
+          ]
+        },
+        {
+          "data_path": "summary.total_objects",
+          "data_type": "numeric",
+          "example_values": [
+            1
+          ]
+        },
+        {
+          "data_path": "summary.total_objects_successful",
+          "data_type": "numeric",
+          "example_values": [
+            1
+          ]
+        }
+      ],
+      "render": {
+        "type": "table",
+        "width": 12,
+        "height": 5,
+        "title": "Sessions"
+      },
+      "versions": "EQ(*)"
+    },
+    {
+      "action": "disable user",
+      "identifier": "disable_user",
+      "description": "Inactivate a MedAdvice user account (simulated - no directory is touched)",
+      "type": "contain",
+      "read_only": false,
+      "undo": "enable user",
+      "parameters": {
+        "username": {
+          "description": "Username, user id or email of the MedAdvice user",
+          "data_type": "string",
+          "required": true,
+          "primary": true,
+          "order": 0,
+          "contains": [
+            "user name",
+            "user id",
+            "email"
+          ]
+        },
+        "reason": {
+          "description": "Free-text reason recorded with the change (optional)",
+          "data_type": "string",
+          "required": false,
+          "order": 1
+        }
+      },
+      "output": [
+        {
+          "data_path": "action_result.data.*.username",
+          "data_type": "string",
+          "contains": [
+            "user name"
+          ],
+          "column_name": "Username",
+          "column_order": 0
+        },
+        {
+          "data_path": "action_result.data.*.email",
+          "data_type": "string",
+          "contains": [
+            "email"
+          ],
+          "column_name": "Email",
+          "column_order": 1
+        },
+        {
+          "data_path": "action_result.data.*.display_name",
+          "data_type": "string",
+          "column_name": "Display name",
+          "column_order": 2
+        },
+        {
+          "data_path": "action_result.data.*.user_id",
+          "data_type": "string",
+          "contains": [
+            "user id"
+          ],
+          "column_name": "User id",
+          "column_order": 3
+        },
+        {
+          "data_path": "action_result.data.*.status",
+          "data_type": "string",
+          "column_name": "Status",
+          "column_order": 4,
+          "example_values": [
+            "active",
+            "disabled"
+          ]
+        },
+        {
+          "data_path": "action_result.data.*.department",
+          "data_type": "string",
+          "column_name": "Department",
+          "column_order": 5
+        },
+        {
+          "data_path": "action_result.data.*.category",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.watchlist",
+          "data_type": "boolean"
+        },
+        {
+          "data_path": "action_result.data.*.priority",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.mfa_enrolled",
+          "data_type": "boolean"
+        },
+        {
+          "data_path": "action_result.data.*.last_login",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.directory",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.known",
+          "data_type": "boolean"
+        },
+        {
+          "data_path": "action_result.data.*.simulated",
+          "data_type": "boolean",
+          "column_name": "Simulated",
+          "column_order": 6,
+          "example_values": [
+            true
+          ]
+        },
+        {
+          "data_path": "action_result.summary.username",
+          "data_type": "string",
+          "contains": [
+            "user name"
+          ]
+        },
+        {
+          "data_path": "action_result.summary.status",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.previous_status",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.reason",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.transaction_id",
+          "data_type": "string",
+          "column_name": "Transaction",
+          "column_order": 7
+        },
+        {
+          "data_path": "action_result.data.*.timestamp",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.message",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.parameter.reason",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.summary.transaction_id",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.parameter.username",
+          "data_type": "string",
+          "contains": [
+            "user name",
+            "user id",
+            "email"
+          ]
+        },
+        {
+          "data_path": "action_result.status",
+          "data_type": "string",
+          "example_values": [
+            "success",
+            "failed"
+          ]
+        },
+        {
+          "data_path": "action_result.message",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.summary.simulated",
+          "data_type": "boolean",
+          "example_values": [
+            true
+          ]
+        },
+        {
+          "data_path": "summary.total_objects",
+          "data_type": "numeric",
+          "example_values": [
+            1
+          ]
+        },
+        {
+          "data_path": "summary.total_objects_successful",
+          "data_type": "numeric",
+          "example_values": [
+            1
+          ]
+        }
+      ],
+      "render": {
+        "type": "table",
+        "width": 12,
+        "height": 5,
+        "title": "Disable user"
+      },
+      "versions": "EQ(*)"
+    },
+    {
+      "action": "enable user",
+      "identifier": "enable_user",
+      "description": "Re-activate a MedAdvice user account (simulated)",
+      "type": "correct",
+      "read_only": false,
+      "undo": "disable user",
+      "parameters": {
+        "username": {
+          "description": "Username, user id or email of the MedAdvice user",
+          "data_type": "string",
+          "required": true,
+          "primary": true,
+          "order": 0,
+          "contains": [
+            "user name",
+            "user id",
+            "email"
+          ]
+        },
+        "reason": {
+          "description": "Free-text reason recorded with the change (optional)",
+          "data_type": "string",
+          "required": false,
+          "order": 1
+        }
+      },
+      "output": [
+        {
+          "data_path": "action_result.data.*.username",
+          "data_type": "string",
+          "contains": [
+            "user name"
+          ],
+          "column_name": "Username",
+          "column_order": 0
+        },
+        {
+          "data_path": "action_result.data.*.email",
+          "data_type": "string",
+          "contains": [
+            "email"
+          ],
+          "column_name": "Email",
+          "column_order": 1
+        },
+        {
+          "data_path": "action_result.data.*.display_name",
+          "data_type": "string",
+          "column_name": "Display name",
+          "column_order": 2
+        },
+        {
+          "data_path": "action_result.data.*.user_id",
+          "data_type": "string",
+          "contains": [
+            "user id"
+          ],
+          "column_name": "User id",
+          "column_order": 3
+        },
+        {
+          "data_path": "action_result.data.*.status",
+          "data_type": "string",
+          "column_name": "Status",
+          "column_order": 4,
+          "example_values": [
+            "active",
+            "disabled"
+          ]
+        },
+        {
+          "data_path": "action_result.data.*.department",
+          "data_type": "string",
+          "column_name": "Department",
+          "column_order": 5
+        },
+        {
+          "data_path": "action_result.data.*.category",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.watchlist",
+          "data_type": "boolean"
+        },
+        {
+          "data_path": "action_result.data.*.priority",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.mfa_enrolled",
+          "data_type": "boolean"
+        },
+        {
+          "data_path": "action_result.data.*.last_login",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.directory",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.known",
+          "data_type": "boolean"
+        },
+        {
+          "data_path": "action_result.data.*.simulated",
+          "data_type": "boolean",
+          "column_name": "Simulated",
+          "column_order": 6,
+          "example_values": [
+            true
+          ]
+        },
+        {
+          "data_path": "action_result.summary.username",
+          "data_type": "string",
+          "contains": [
+            "user name"
+          ]
+        },
+        {
+          "data_path": "action_result.summary.status",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.previous_status",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.reason",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.transaction_id",
+          "data_type": "string",
+          "column_name": "Transaction",
+          "column_order": 7
+        },
+        {
+          "data_path": "action_result.data.*.timestamp",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.message",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.parameter.reason",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.summary.transaction_id",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.parameter.username",
+          "data_type": "string",
+          "contains": [
+            "user name",
+            "user id",
+            "email"
+          ]
+        },
+        {
+          "data_path": "action_result.status",
+          "data_type": "string",
+          "example_values": [
+            "success",
+            "failed"
+          ]
+        },
+        {
+          "data_path": "action_result.message",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.summary.simulated",
+          "data_type": "boolean",
+          "example_values": [
+            true
+          ]
+        },
+        {
+          "data_path": "summary.total_objects",
+          "data_type": "numeric",
+          "example_values": [
+            1
+          ]
+        },
+        {
+          "data_path": "summary.total_objects_successful",
+          "data_type": "numeric",
+          "example_values": [
+            1
+          ]
+        }
+      ],
+      "render": {
+        "type": "table",
+        "width": 12,
+        "height": 5,
+        "title": "Enable user"
+      },
+      "versions": "EQ(*)"
+    },
+    {
+      "action": "clear user sessions",
+      "identifier": "clear_user_sessions",
+      "description": "Revoke the simulated active application sessions of a MedAdvice user",
+      "type": "contain",
+      "read_only": false,
+      "parameters": {
+        "username": {
+          "description": "Username, user id or email of the MedAdvice user",
+          "data_type": "string",
+          "required": true,
+          "primary": true,
+          "order": 0,
+          "contains": [
+            "user name",
+            "user id",
+            "email"
+          ]
+        },
+        "reason": {
+          "description": "Free-text reason recorded with the change (optional)",
+          "data_type": "string",
+          "required": false,
+          "order": 1
+        }
+      },
+      "output": [
+        {
+          "data_path": "action_result.data.*.session_id",
+          "data_type": "string",
+          "column_name": "Session id",
+          "column_order": 0
+        },
+        {
+          "data_path": "action_result.data.*.username",
+          "data_type": "string",
+          "contains": [
+            "user name"
+          ],
+          "column_name": "Username",
+          "column_order": 1
+        },
+        {
+          "data_path": "action_result.data.*.app",
+          "data_type": "string",
+          "column_name": "Application",
+          "column_order": 2
+        },
+        {
+          "data_path": "action_result.data.*.client_address",
+          "data_type": "string",
+          "contains": [
+            "ip"
+          ],
+          "column_name": "Client",
+          "column_order": 3
+        },
+        {
+          "data_path": "action_result.data.*.started",
+          "data_type": "string",
+          "column_name": "Started",
+          "column_order": 4
+        },
+        {
+          "data_path": "action_result.data.*.last_seen",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.data.*.status",
+          "data_type": "string",
+          "column_name": "Status",
+          "column_order": 5
+        },
+        {
+          "data_path": "action_result.data.*.simulated",
+          "data_type": "boolean",
+          "column_name": "Simulated",
+          "column_order": 6
+        },
+        {
+          "data_path": "action_result.summary.username",
+          "data_type": "string",
+          "contains": [
+            "user name"
+          ]
+        },
+        {
+          "data_path": "action_result.summary.session_count",
+          "data_type": "numeric"
+        },
+        {
+          "data_path": "action_result.data.*.transaction_id",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.parameter.reason",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.summary.sessions_revoked",
+          "data_type": "numeric"
+        },
+        {
+          "data_path": "action_result.summary.transaction_id",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.parameter.username",
+          "data_type": "string",
+          "contains": [
+            "user name",
+            "user id",
+            "email"
+          ]
+        },
+        {
+          "data_path": "action_result.status",
+          "data_type": "string",
+          "example_values": [
+            "success",
+            "failed"
+          ]
+        },
+        {
+          "data_path": "action_result.message",
+          "data_type": "string"
+        },
+        {
+          "data_path": "action_result.summary.simulated",
+          "data_type": "boolean",
+          "example_values": [
+            true
+          ]
+        },
+        {
+          "data_path": "summary.total_objects",
+          "data_type": "numeric",
+          "example_values": [
+            1
+          ]
+        },
+        {
+          "data_path": "summary.total_objects_successful",
+          "data_type": "numeric",
+          "example_values": [
+            1
+          ]
+        }
+      ],
+      "render": {
+        "type": "table",
+        "width": 12,
+        "height": 5,
+        "title": "Sessions revoked"
+      },
+      "versions": "EQ(*)"
+    }
+  ]
+}

@@ -1332,8 +1332,20 @@ On a Splunk Show stack, `tools/show_postdeploy.py` performs every step
 (the `tools/` directory is dev-only and is not in the shipped tarball):
 
 ```bash
-python3 tools/show_postdeploy.py --stack https://<stack>.splunkcloud.com --dry-run
+export SPLUNK_ADMIN_PASSWORD='...'
+export SOAR_PASSWORD='...'   # optional: binds the Containment tasks to the paired SOAR
+python3 tools/show_postdeploy.py --stack https://<stack>.splunkcloud.com \
+    --soar-url https://<tenant>.soar.splunkcloud.com --dry-run
 ```
+
+With SOAR credentials the script first installs the simulated **MedAdvice
+Identity Provider** app from `tools/soar/` (build it with
+`tools/soar/build.sh`), creates its `medadvice_idp` asset, and then resolves the
+plan's `suggestions.soar_binding[]` entries into real task actions
+(`disable user`, `clear user sessions`) using that tenant's app/asset ids.
+Without SOAR credentials it drops the binding and keeps whatever actions or
+playbooks the live plan record already carries per task, so an action attached
+in the ES UI survives a re-run. `--soar-only` runs just the SOAR steps.
 
 ### Option B — manual, in the ES UI
 
@@ -1390,6 +1402,46 @@ findings and the risk scoring — works on ES 8.x without the agent.
 ---
 
 ## Version History
+
+### Unreleased
+
+**Simulated identity provider for SOAR - the Guided Response agent can inactivate the actor**
+
+- NEW: `tools/soar/medadvice_idp/` - a small Splunk SOAR app, **MedAdvice
+  Identity Provider**, with `get user`, `list user sessions`, `disable user`,
+  `enable user` and `clear user sessions` for the MedAdvice workshop personas.
+  It is a simulator: no network call, no directory, no state, and every result
+  carries `"simulated": true`. It exists because ES response plans and the ES
+  8.6 **Guided Response agent** can only run actions installed on the paired
+  SOAR, and the ES8 demo tenant's mock Okta / Azure AD / AD LDAP assets answer
+  *"No data found for app/action/parameter"* for every MedAdvice user (the
+  Triage agent's own `Okta get user t.nguyen` call fails that way). Dev-only:
+  `tools/` never ships. See `tools/soar/README.md`.
+- CHANGED: `default/data/response_plans/ai_incident_response_plan.json` -
+  Containment task *Suspend the offending identity* is now *Inactivate the
+  offending identity's account* (note required, containment standard stated),
+  and it and *Revoke active sessions and API credentials* carry a
+  `suggestions.soar_binding[]` naming the SOAR app/asset/action. The binding
+  is resolved into real `suggestions.actions[]` (tenant-specific ids) by the
+  post-deploy script; the simulated `ai_defense_*` adaptive responses remain the
+  no-SOAR fallback in the task text. `origin.version` -> 2.
+- CHANGED: `tools/show_postdeploy.py` gained steps 10-13 (install the SOAR app,
+  create its `medadvice_idp` asset, list the competing identity assets to
+  deselect in ES, optional smoke test on a scratch container) behind
+  `--soar-url` + `$SOAR_PASSWORD`/`$SOAR_AUTH_TOKEN`, plus `--soar-only`. Step 4
+  now binds `soar_binding` entries and, when run without SOAR credentials,
+  **preserves** any `actions[]`/`playbooks[]` already on the live plan record
+  per task - a re-run no longer wipes an action attached in the ES UI. Step 9
+  reports which tasks carry SOAR actions. The written task-action shape was
+  validated against the `missioncontrol` `Action` model.
+- NEW: `tools/es-guided-response-runbook.md` - the ES-UI half (response plan
+  action, investigation type, finding next steps, agent settings, dry run).
+- OPERATIONAL NOTE: the demo-mock `okta`, `azure_ad` and `ldap` assets stay
+  installed; keep the Guided Response agent off them by deselecting those
+  connectors in ES (*Security AI Assistant settings*). The script never
+  writes to foreign assets: `POST /rest/asset/<id>` re-saves the whole asset
+  (absent fields reset to defaults, masked secrets are re-stored) and ignores
+  `disabled`, so there is no safe REST way to switch one off.
 
 ### v1.6.5 (2026-08-26)
 

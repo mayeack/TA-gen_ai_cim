@@ -36,9 +36,15 @@ ML detections, and a ServiceNow AI Case Management integration.
   loaders live here, not in `bin/`, because they write into another app's
   dir. Also `show_postdeploy.py` (configures a Splunk Show stack for the
   AI Defense demo — everything the tarball structurally cannot do) plus
-  `demobot-spray-attack-spec.md` and
-  `splunk-show-template-integration.md`, each with a parallel
-  self-contained `.html`.
+  `demobot-spray-attack-spec.md`,
+  `splunk-show-template-integration.md` and
+  `es-guided-response-runbook.md`, each with a parallel self-contained
+  `.html`. `tools/soar/medadvice_idp/` is a simulated identity-provider SOAR
+  app (classic connector, stdlib only, every result `"simulated": true`) that
+  `show_postdeploy.py` installs on the paired SOAR and binds to the response
+  plan's Containment tasks via `suggestions.soar_binding[]`; its persona table
+  is generated from `lookups/medadvice_identities.csv` by
+  `tools/soar/gen_personas.py` (`--check` in `build.sh`).
 - `elements/`, `README/` — internal docs, excluded from the package.
 - `package.sh` — builds the shippable tarball; keep its exclude list in
   sync when adding assistant/dev files.

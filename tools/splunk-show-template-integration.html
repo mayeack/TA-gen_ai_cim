@@ -68,11 +68,11 @@ input[type=checkbox] { margin-right: .5rem; }
 </head>
 <body>
 <main>
-<h1>Splunk Show Template Integration — Cisco AI Defense → ES Agentic SOC Demo</h1>
+<h1 id="splunk-show-template-integration-cisco-ai-defense-es-agentic-soc-demo">Splunk Show Template Integration — Cisco AI Defense → ES Agentic SOC Demo</h1>
 <p>How the <code>TA-gen_ai_cim</code> v1.5.0 tarball and the post-deploy script combine to configure a Splunk Show instance for the eight-step demo, what each artifact is responsible for, and what to do if the Show Template cannot run scripts.</p>
 <hr />
-<h2>1. The eight-step flow and what carries each step</h2>
-<div class="table-wrap"><table>
+<h2 id="1-the-eight-step-flow-and-what-carries-each-step">1. The eight-step flow and what carries each step</h2>
+<table>
 <thead>
 <tr>
 <th>#</th>
@@ -131,14 +131,14 @@ input[type=checkbox] { margin-right: .5rem; }
 <td>Manual; the <em>Detection Builder agent</em> is a separate entitlement</td>
 </tr>
 </tbody>
-</table></div>
+</table>
 <p>Steps 4 and 6's <em>agents</em> depend on stack entitlements, not on these artifacts. Everything the artifacts control is covered.</p>
 <hr />
-<h2>2. Artifact responsibilities</h2>
+<h2 id="2-artifact-responsibilities">2. Artifact responsibilities</h2>
 <p>The split is not stylistic — it follows from two hard constraints.</p>
 <p><strong>Splunk Cloud apps cannot create indexes</strong>, so <code>indexes.conf</code> cannot ship. <strong>Conf layering is per-app</strong>, so the TA cannot override a saved search owned by <code>SA-ThreatIntelligence</code> or settings owned by <code>missioncontrol</code> — a same-named stanza in the TA creates a <em>new</em> object in the TA's namespace instead.</p>
-<h3>2.1 The tarball — <code>TA-gen_ai_cim-1.5.0.tgz</code></h3>
-<div class="table-wrap"><table>
+<h3 id="21-the-tarball-ta-gen_ai_cim-150tgz">2.1 The tarball — <code>TA-gen_ai_cim-1.5.0.tgz</code></h3>
+<table>
 <thead>
 <tr>
 <th>Ships</th>
@@ -171,10 +171,10 @@ input[type=checkbox] { margin-right: .5rem; }
 <td>Documented in <code>README.md</code> — HEC <code>/services/collector/event</code></td>
 </tr>
 </tbody>
-</table></div>
-<h3>2.2 The post-deploy script — <code>tools/show_postdeploy.py</code></h3>
+</table>
+<h3 id="22-the-post-deploy-script-toolsshow_postdeploypy">2.2 The post-deploy script — <code>tools/show_postdeploy.py</code></h3>
 <p>Excluded from the tarball (<code>package.sh</code> drops <code>tools/</code>). Run it after the TA is installed.</p>
-<div class="table-wrap"><table>
+<table>
 <thead>
 <tr>
 <th>Step</th>
@@ -218,20 +218,39 @@ input[type=checkbox] { margin-right: .5rem; }
 <td>9. Verify</td>
 <td>—</td>
 </tr>
+<tr>
+<td>10. Install the simulated <strong>MedAdvice Identity Provider</strong> SOAR app (<code>tools/soar/</code>)</td>
+<td>Lives on the paired SOAR, not in Splunk; needs SOAR credentials (<code>--soar-url</code> + <code>$SOAR_PASSWORD</code>/<code>$SOAR_AUTH_TOKEN</code>)</td>
+</tr>
+<tr>
+<td>11. Create its <code>medadvice_idp</code> asset</td>
+<td>Same</td>
+</tr>
+<tr>
+<td>12. List the competing identity assets (read-only)</td>
+<td>The demo-mock Okta/Azure/LDAP assets fail for MedAdvice users; deselect them in ES → <em>Security AI Assistant settings</em> → Guided Response connectors. The script never edits foreign assets (<code>POST /rest/asset/&lt;id&gt;</code> re-saves the whole record and ignores <code>disabled</code>)</td>
+</tr>
+<tr>
+<td>13. Smoke test (<code>--soar-smoke-test</code>)</td>
+<td>Runs test connectivity / get user / disable user for <code>t.nguyen</code> on a scratch container and closes it</td>
+</tr>
 </tbody>
-</table></div>
+</table>
+<p>Steps 10–13 run <strong>first</strong> so that step 4 can turn the plan's <code>suggestions.soar_binding[]</code> entries into real task actions with that tenant's app/asset ids. Without SOAR credentials step 4 drops the binding and preserves whatever actions/playbooks the live record already carries per task.</p>
 <pre><code class="language-bash">export SPLUNK_ADMIN_PASSWORD='...'
 export SPLUNK_ACS_TOKEN='...'
-python3 tools/show_postdeploy.py --stack https://esp-shw-xxxx.splunkcloud.com --dry-run
+export SOAR_PASSWORD='...'
+python3 tools/show_postdeploy.py --stack https://esp-shw-xxxx.splunkcloud.com \
+    --soar-url https://sor-xxxx.soar.splunkcloud.com --dry-run
 </code></pre>
-<p>Drop <code>--dry-run</code> to apply. It is idempotent — re-running updates in place.</p>
+<p>Drop <code>--dry-run</code> to apply. It is idempotent — re-running updates in place. <code>--soar-only</code> runs steps 10–13 alone.</p>
 <blockquote>
-<p><strong>Verification status.</strong> Steps 3, 4, 7 and 8 use endpoints and KV schemas confirmed against a live ES 8.6 stack. Steps 1, 2, 5 and 6 are built from Splunk's documented ACS API and from <code>missioncontrol/default/collections.conf</code>, but were <strong>not</strong> executed end-to-end — the reference stacks became unreachable partway through development. Run <code>--dry-run</code> first and read the per-step report.</p>
+<p><strong>Verification status.</strong> Steps 3, 4 and 8 use endpoints confirmed against a live ES 8.6 stack; steps 5, 6 and 7 were corrected against the <code>missioncontrol</code> Python data models and REST handlers (not <code>collections.conf</code>). Steps 1 and 2 are built from Splunk's documented ACS API and were <strong>not</strong> executed end-to-end. Steps 10–13 were executed end-to-end on a SOAR Cloud 8.6.0 tenant paired with ES 8.6 (2026-09-03), and the task-action record step 4 writes was validated against the <code>missioncontrol</code> <code>Action</code> model. Run <code>--dry-run</code> first and read the per-step report.</p>
 </blockquote>
-<h3>2.3 DemoBot</h3>
+<h3 id="23-demobot">2.3 DemoBot</h3>
 <p>Streams live over HEC. The spray toggle is specified in <code>demobot-spray-attack-spec.md</code> — <strong>specification only, no implementation.</strong></p>
 <hr />
-<h2>3. Deployment order</h2>
+<h2 id="3-deployment-order">3. Deployment order</h2>
 <ol>
 <li>Provision the Show instance — ES 8.6, <strong>Premier</strong>, SOAR paired <em>(steps 4 and 6 need this; 1–3, 5, 7 do not)</em>.</li>
 <li>Install <code>TA-gen_ai_cim-1.5.0.tgz</code>.</li>
@@ -240,20 +259,21 @@ python3 tools/show_postdeploy.py --stack https://esp-shw-xxxx.splunkcloud.com --
 <li>Fire one spray to warm the demo, confirm a Finding appears, then reset.</li>
 </ol>
 <hr />
-<h2>4. Response actions — simulated by default</h2>
+<h2 id="4-response-actions-simulated-by-default">4. Response actions — simulated by default</h2>
 <p>The three AI Defense response actions <strong>call nothing externally</strong>. Each records a structured audit event in <code>gen_ai_log</code> under sourcetype <code>ai_cim:response:action</code> carrying <code>"simulated": true</code>, and reports success.</p>
 <p>They exist so a stack with no paired SOAR still produces a real adaptive-response entry and a complete audit trail — indistinguishable on screen from a SOAR action, runnable both from a Finding and from a Containment task.</p>
-<p><strong>Be straight about this with an audience if asked.</strong> The <code>simulated</code> flag is in every record precisely so the distinction survives into the data. If the stack has SOAR paired and you want genuine containment, replace these with SOAR playbook actions on the Containment tasks.</p>
+<p><strong>Be straight about this with an audience if asked.</strong> The <code>simulated</code> flag is in every record precisely so the distinction survives into the data.</p>
+<p>With SOAR paired, the Containment tasks additionally carry real SOAR actions from the <strong>MedAdvice Identity Provider</strong> app in <code>tools/soar/</code> — <code>disable user</code> and <code>clear user sessions</code> — which is what the ES 8.6 Guided Response agent recommends and runs when asked to disable <code>t.nguyen</code>. That app is a simulator too (no directory, no network, <code>"simulated": true</code> in every result); it exists because the demo tenant's mock Okta/Azure/LDAP assets fail for the MedAdvice personas. The ES-side steps (plan action, finding next steps, agent settings) are in <code>es-guided-response-runbook.md</code>.</p>
 <p>Audit trail:</p>
 <pre><code>index=gen_ai_log sourcetype=ai_cim:response:action
 | table _time, action_label, target_type, target, status, simulated, executed_by, execution_id
 | sort - _time
 </code></pre>
 <hr />
-<h2>5. Demo timing</h2>
+<h2 id="5-demo-timing">5. Demo timing</h2>
 <p>Verified against ES 8.6 / Splunk Cloud 10.2.</p>
-<h3>5.1 The chain</h3>
-<div class="table-wrap"><table>
+<h3 id="51-the-chain">5.1 The chain</h3>
+<table>
 <thead>
 <tr>
 <th>Stage</th>
@@ -288,13 +308,13 @@ python3 tools/show_postdeploy.py --stack https://esp-shw-xxxx.splunkcloud.com --
 <td>LLM</td>
 </tr>
 </tbody>
-</table></div>
+</table>
 <p><strong>Realistic end to end: 60–90 seconds.</strong> Not 30 — Splunk's cron granularity is one minute, so no scheduled detection can fire faster.</p>
-<h3>5.2 Bypass the RBA hop for the live loop</h3>
+<h3 id="52-bypass-the-rba-hop-for-the-live-loop">5.2 Bypass the RBA hop for the live loop</h3>
 <p><code>Risk - 24 Hour Risk Threshold Exceeded - Rule</code> searches <code>-2h@h</code> → <code>-10m@m</code>. That <code>-10m@m</code> bound makes recent events invisible for ten minutes — an unavoidable floor if the Finding depends on it.</p>
 <p>The correlation rule already sets <code>action.notable = 1</code> and raises the Finding itself, so <strong>drive the live demo off the correlation rule.</strong> Post-deploy also sets the risk rule's <code>latest</code> to <code>now</code> and its cron to <code>*/1</code> (skip with <code>--keep-risk-timing</code>), which pulls the RBA narrative into the fast loop too.</p>
 <p>Risk math for the narrative: threshold is <code>100</code>, each blocked injection carries <code>risk_score: 60</code> — <strong>two events cross it</strong>; the default 15-event spray gives 900.</p>
-<h3>5.3 The suppression trap</h3>
+<h3 id="53-the-suppression-trap">5.3 The suppression trap</h3>
 <p>The correlation rule ships:</p>
 <pre><code>alert.suppress = 1
 alert.suppress.fields = actor
@@ -302,7 +322,7 @@ alert.suppress.period = 86400s
 </code></pre>
 <p><strong>One finding per actor per 24 hours.</strong> Rehearse twice as <code>t.nguyen</code> and the second run silently produces nothing — no error, no finding. Post-deploy step 8 disables it. If you configure a stack by hand, do not skip this.</p>
 <hr />
-<h2>6. Manual fallback</h2>
+<h2 id="6-manual-fallback">6. Manual fallback</h2>
 <p>If the Show Template cannot run arbitrary post-deploy scripts, these are the equivalent manual steps. Order matters.</p>
 <ol>
 <li><strong>Create index <code>gen_ai_log</code></strong> — Settings → Indexes, or ACS.</li>
@@ -310,7 +330,7 @@ alert.suppress.period = 86400s
 <li><strong>Enable the detections</strong> — ES → Security content → Content management, search <code>AI Governance</code>. <code>Prompt Injection Attack Correlation</code> is already enabled (v1.6.2+); enable the other two.</li>
 <li><strong>Tune the primary detection</strong> — on <code>AI Governance - Prompt Injection Attack Correlation - Rule</code>: cron <code>*/1 * * * *</code>, earliest <code>-15m</code>, latest <code>now</code>, and <strong>turn throttling/suppression OFF</strong>.</li>
 <li><strong>Tune the risk rule</strong> <em>(optional)</em> — <code>Risk - 24 Hour Risk Threshold Exceeded - Rule</code> in <code>SA-ThreatIntelligence</code>: latest <code>now</code>, cron <code>*/1 * * * *</code>.</li>
-<li><strong>Create the response plan</strong> — ES → Security content → Response plans → Create. Transcribe the four phases and fifteen tasks from <code>default/data/response_plans/ai_incident_response_plan.json</code>. <em>(Tedious — the script exists for this reason.)</em></li>
+<li><strong>Create the response plan</strong> — ES → Security content → Response plans → Create. Transcribe the four phases and fifteen tasks from <code>default/data/response_plans/ai_incident_response_plan.json</code>, including the seven embedded searches (<code>suggestions.searches</code>) and, with SOAR paired, the two Containment task actions (<code>suggestions.soar_binding</code> → MedAdvice Identity Provider <code>disable user</code> / <code>clear user sessions</code>). <em>(Tedious — the script exists for this reason.)</em></li>
 <li><strong>Create the investigation type</strong> and associate the response plan, so it auto-applies.</li>
 <li><strong>Create a queue</strong> for AI findings.</li>
 <li><strong>Enable the Triage agent</strong> — ES → Configure → All configurations → Security AI Assistant settings; turn on AI triage and enable it for <code>AI Governance - Prompt Injection Attack Correlation - Rule</code>.</li>
@@ -318,7 +338,7 @@ alert.suppress.period = 86400s
 </ol>
 <p>Steps 1–4 and 10 are the minimum for a working demo of steps 1–3. Steps 6–7 add step 5. Step 9 adds step 4.</p>
 <hr />
-<h2>7. Demo runbook</h2>
+<h2 id="7-demo-runbook">7. Demo runbook</h2>
 <ol>
 <li><strong>Set the scene</strong> — ES Analyst Queue, empty. Show the detection in Content management: ATLAS <code>AML.T0051</code>, OWASP-LLM <code>LLM01</code>.</li>
 <li><strong>Fire the spray</strong> — flip the DemoBot toggle.</li>
@@ -332,8 +352,8 @@ alert.suppress.period = 86400s
 <li><strong>Close it out</strong> — show the audit trail from §4.</li>
 </ol>
 <hr />
-<h2>8. Known gaps</h2>
-<div class="table-wrap"><table>
+<h2 id="8-known-gaps">8. Known gaps</h2>
+<table>
 <thead>
 <tr>
 <th>Gap</th>
@@ -348,13 +368,13 @@ alert.suppress.period = 86400s
 <td><code>--dry-run</code>, read the per-step report, §6 fallback</td>
 </tr>
 <tr>
-<td>Response plan tasks carry no native embedded search/action</td>
-<td>SPL and action references live in task descriptions</td>
-<td><code>mc_response_templates</code> declares only <code>name</code>/<code>order</code>/<code>description</code>/<code>owner</code> — attach natively in the UI if wanted</td>
+<td>The plan's SOAR actions are bound per tenant</td>
+<td><code>app_id</code>/<code>asset</code> are SOAR ids, so the seed carries <code>soar_binding</code> and needs SOAR credentials at post-deploy time to become real actions</td>
+<td>Run with <code>--soar-url</code>; or attach the action once in the ES plan editor — re-runs without SOAR credentials preserve it</td>
 </tr>
 <tr>
 <td>Response actions are simulated</td>
-<td>Not real containment</td>
+<td>Not real containment — both the <code>ai_defense_*</code> adaptive responses and the MedAdvice IdP SOAR app</td>
 <td>By design; <code>"simulated": true</code> in every record</td>
 </tr>
 <tr>
@@ -368,7 +388,7 @@ alert.suppress.period = 86400s
 <td>Cron floor is 1 minute; fill with the raw-events search</td>
 </tr>
 </tbody>
-</table></div>
+</table>
 </main>
 </body>
 </html>

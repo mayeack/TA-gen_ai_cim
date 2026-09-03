@@ -52,3 +52,6 @@ README/KEY_FEATURES.md
 
 # Claude Code local settings (instance-specific)
 .claude/settings.local.json
+
+# Built SOAR app packages (tools/soar/build.sh output) - rebuild, never commit
+tools/soar/dist/

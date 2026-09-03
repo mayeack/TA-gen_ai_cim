@@ -19,17 +19,35 @@ Does everything the TA tarball structurally cannot:
   7. turn the Triage agent on for those rules    (missioncontrol namespace)
   8. tune demo timing                            (incl. an ES-owned search)
   9. verify and report
+ 10. install the simulated "MedAdvice Identity     (paired SOAR, optional)
+     Provider" SOAR app from tools/soar/
+ 11. configure its asset "medadvice_idp"           (paired SOAR, optional)
+ 12. list competing identity assets (read-only)    (paired SOAR, optional)
+ 13. smoke-test the app on a scratch container     (paired SOAR, opt-in flag)
+
+The SOAR steps run first when SOAR credentials are supplied, so that step 4 can
+translate each task's suggestions.soar_binding[] into real suggestions.actions[]
+(app/asset ids are tenant-specific and resolved at run time). Without SOAR
+credentials the binding is dropped and any actions/playbooks already on the live
+record are preserved per task, so an action attached in the ES UI survives a
+re-run.
 
 Idempotent: re-running updates in place rather than duplicating.
 
 Usage:
     export SPLUNK_ADMIN_PASSWORD='...'
+    export SOAR_PASSWORD='...'            # or SOAR_AUTH_TOKEN
     python3 show_postdeploy.py --stack https://esp-shw-xxxx.splunkcloud.com \\
-        [--acs-token <token>] [--username admin] [--skip-timing] [--dry-run]
+        [--acs-token <token>] [--username admin] [--keep-risk-timing] \\
+        [--soar-url https://sor-xxxx.soar.splunkcloud.com] [--soar-username u] \\
+        [--soar-app-tgz tools/soar/dist/medadvice_idp.tgz] [--soar-smoke-test] \\
+        [--soar-only] [--dry-run]
 
 Steps 1-2 need ACS (Splunk Cloud only). Supply --acs-token, or pass
 --skip-acs and create the index and HEC token by hand. Steps 3-9 use the
-splunkd REST API on :8089.
+splunkd REST API on :8089. Steps 10-13 use the SOAR REST API (basic auth or
+ph-auth-token) and are skipped without --soar-url plus a credential;
+--soar-only runs nothing else (no --stack needed).
 
 VERIFICATION STATUS: steps 3, 4 and 8 use endpoints confirmed against a live ES
 8.6 stack. Steps 5, 6 and 7 were corrected against the missioncontrol source of
@@ -37,7 +55,10 @@ truth - the Python data models and REST handlers, not collections.conf, which
 only declares scalar types and omits nested objects. Steps 1 and 2 are built
 from Splunk's documented ACS API and were NOT executed end-to-end. Step 7 is a
 no-op without the Triage agent entitlement and now reports SKIP rather than a
-misleading OK. Run with --dry-run first and read the per-step report.
+misleading OK. Steps 10-13 were executed end-to-end against a SOAR Cloud 8.6.0
+tenant paired with ES 8.6 (see the README changelog). The task-action record
+shape written by step 4 was validated against the missioncontrol Action model.
+Run with --dry-run first and read the per-step report.
 
 Copyright 2026 Splunk Inc.
 Licensed under Apache License 2.0
@@ -106,6 +127,33 @@ RISK_RULE_TIMING = {
     'dispatch.latest_time': 'now',
 }
 
+# The simulated identity provider SOAR app (tools/soar/). Its actions are what
+# the response plan's Containment tasks bind to and what the ES Guided Response
+# agent runs; every result it returns carries "simulated": true.
+SOAR_APP_NAME = 'MedAdvice Identity Provider'
+SOAR_ASSET_NAME = 'medadvice_idp'
+SOAR_APP_TGZ = os.path.join(HERE, 'soar', 'dist', 'medadvice_idp.tgz')
+SOAR_APP_MANIFEST = os.path.join(HERE, 'soar', 'medadvice_idp', 'medadvice_idp.json')
+SOAR_ASSET_RECORD = {
+    'name': SOAR_ASSET_NAME,
+    'product_vendor': 'MedAdvice',
+    'product_name': SOAR_APP_NAME,
+    'description': ('Simulated MedAdvice identity provider for the GenAI workshop '
+                    '(TA-gen_ai_cim tools/soar). Every action succeeds without '
+                    'contacting a directory; every result carries simulated=true.'),
+    'configuration': {'mode': 'simulate', 'directory_name': 'medadvice.example.com'},
+    'tags': ['genai', 'workshop', 'simulated'],
+}
+# Step 12 lists the other identity-management assets on the tenant so the
+# operator can deselect them in ES (Security AI Assistant settings -> Guided
+# Response connectors). It is deliberately READ-ONLY: POST /rest/asset/<id>
+# re-saves the whole asset (absent fields fall back to defaults - concurrency
+# limit, boolean config such as the demo mock_app flag - and masked secrets are
+# re-stored) and it ignores `disabled` entirely, so there is no safe way to
+# switch an asset off over REST.
+IDP_APP_TYPES = ('identity management',)
+SMOKE_TEST_USER = 't.nguyen'
+
 
 class Reporter(object):
     """Per-step status so a partial run is legible rather than a stack trace."""
@@ -139,6 +187,114 @@ class Reporter(object):
         return counts.get('FAIL', 0)
 
 
+def _http_request(ctx, url, method='GET', data=None, headers=None, timeout=60):
+    """Shared urllib wrapper: returns (status_code, body_text); never raises."""
+    headers = dict(headers or {})
+    body = None
+    if data is not None:
+        if isinstance(data, dict):
+            body = urllib.parse.urlencode(data, doseq=True).encode('utf-8')
+            headers.setdefault('Content-Type',
+                               'application/x-www-form-urlencoded')
+        else:
+            body = data if isinstance(data, bytes) else data.encode('utf-8')
+    req = urllib.request.Request(url, data=body, method=method)
+    for key, value in headers.items():
+        req.add_header(key, value)
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=timeout) as resp:
+            raw = resp.read().decode('utf-8', 'replace')
+            return resp.getcode(), raw
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode('utf-8', 'replace')
+    except Exception as exc:
+        return 0, str(exc)
+
+
+class SoarClient(object):
+    """Splunk SOAR REST client - basic auth or ph-auth-token, JSON in and out.
+
+    TLS verification stays ON: SOAR Cloud presents a publicly rooted certificate.
+    Every call returns (status_code, parsed_json_or_text).
+    """
+
+    def __init__(self, url, username=None, password=None, token=None,
+                 dry_run=False):
+        self.base = url.rstrip('/')
+        self.username = username
+        self.password = password
+        self.token = token
+        self.dry_run = dry_run
+        self.ctx = ssl.create_default_context()
+
+    def _headers(self, json_body=False):
+        headers = {'Accept': 'application/json'}
+        if self.token:
+            headers['ph-auth-token'] = self.token
+        else:
+            cred = '{}:{}'.format(self.username, self.password).encode('utf-8')
+            headers['Authorization'] = 'Basic ' + base64.b64encode(cred).decode('ascii')
+        if json_body:
+            headers['Content-Type'] = 'application/json'
+        return headers
+
+    @staticmethod
+    def _parse(code, text):
+        try:
+            return code, json.loads(text)
+        except ValueError:
+            return code, text
+
+    def get(self, path, timeout=90):
+        return self._parse(*_http_request(self.ctx, self.base + path, 'GET',
+                                          headers=self._headers(), timeout=timeout))
+
+    def post(self, path, payload, timeout=240, quiet=False):
+        if self.dry_run:
+            shown = json.dumps(payload)
+            if len(shown) > 300:
+                shown = shown[:300] + '... ({} bytes)'.format(len(json.dumps(payload)))
+            print('       DRY-RUN POST {}{}'.format(self.base, path))
+            if not quiet:
+                print('       DRY-RUN body: {}'.format(shown))
+            return 200, {'success': True, 'id': None, 'dry_run': True}
+        body = json.dumps(payload).encode('utf-8')
+        return self._parse(*_http_request(self.ctx, self.base + path, 'POST', data=body,
+                                          headers=self._headers(json_body=True),
+                                          timeout=timeout))
+
+    def find_one(self, resource, name):
+        """First record of /rest/<resource> whose name equals `name`, else None."""
+        query = urllib.parse.urlencode({'_filter_name': json.dumps(name),
+                                        'page_size': 10})
+        code, data = self.get('/rest/{}?{}'.format(resource, query))
+        if code != 200 or not isinstance(data, dict):
+            return None
+        for item in data.get('data') or []:
+            if item.get('name') == name:
+                return item
+        return None
+
+    def app_actions(self, app_id):
+        query = urllib.parse.urlencode({'_filter_app': app_id, 'page_size': 200})
+        code, data = self.get('/rest/app_action?{}'.format(query))
+        if code != 200 or not isinstance(data, dict):
+            return {}
+        return dict((item.get('action'), item) for item in data.get('data') or [])
+
+    def wait_action_run(self, run_id, timeout=90):
+        """Poll an action_run until it leaves running/pending. Returns the record."""
+        deadline = time.time() + timeout
+        record = {}
+        while time.time() < deadline:
+            code, record = self.get('/rest/action_run/{}'.format(run_id))
+            if code == 200 and isinstance(record, dict) and \
+                    record.get('status') not in ('running', 'pending', None, ''):
+                return record
+            time.sleep(3)
+        return record if isinstance(record, dict) else {'status': 'timeout'}
+
+
 class Client(object):
     def __init__(self, stack, username, password, acs_token=None,
                  insecure=True, dry_run=False):
@@ -159,26 +315,8 @@ class Client(object):
             self.ctx.verify_mode = ssl.CERT_NONE
 
     def _request(self, url, method='GET', data=None, headers=None, timeout=60):
-        headers = dict(headers or {})
-        body = None
-        if data is not None:
-            if isinstance(data, dict):
-                body = urllib.parse.urlencode(data, doseq=True).encode('utf-8')
-                headers.setdefault('Content-Type',
-                                   'application/x-www-form-urlencoded')
-            else:
-                body = data if isinstance(data, bytes) else data.encode('utf-8')
-        req = urllib.request.Request(url, data=body, method=method)
-        for key, value in headers.items():
-            req.add_header(key, value)
-        try:
-            with urllib.request.urlopen(req, context=self.ctx, timeout=timeout) as resp:
-                raw = resp.read().decode('utf-8', 'replace')
-                return resp.getcode(), raw
-        except urllib.error.HTTPError as exc:
-            return exc.code, exc.read().decode('utf-8', 'replace')
-        except Exception as exc:
-            return 0, str(exc)
+        return _http_request(self.ctx, url, method=method, data=data,
+                             headers=headers, timeout=timeout)
 
     # --- splunkd REST (:8089) -------------------------------------------
 
@@ -240,6 +378,30 @@ def encode_plan(obj):
     if isinstance(obj, str):
         return urllib.parse.quote(obj, safe=_URI_COMPONENT_SAFE)
     return obj
+
+
+def decode_plan(obj):
+    """Inverse of encode_plan(): percent-decode every string in a live record so
+    values copied from KV back into the plain-text plan are not double-encoded
+    when encode_plan() runs on the merged result."""
+    if isinstance(obj, dict):
+        return dict((k, decode_plan(v)) for k, v in obj.items())
+    if isinstance(obj, list):
+        return [decode_plan(v) for v in obj]
+    if isinstance(obj, str):
+        return urllib.parse.unquote(obj)
+    return obj
+
+
+def kv_get(client, collection, key):
+    """Read one KV record (already-decoded JSON) or None."""
+    code, text = client.splunkd(kv_path(collection, key))
+    if code != 200:
+        return None
+    try:
+        return json.loads(text)
+    except ValueError:
+        return None
 
 
 def kv_path(collection, key=None):
@@ -354,13 +516,112 @@ def step_enable_detections(client, rep):
             rep.fail(label, 'HTTP {} {}'.format(code, text[:160]))
 
 
-def step_response_plan(client, rep):
+def _iter_tasks(plan):
+    for phase in plan.get('phases') or []:
+        for task in phase.get('tasks') or []:
+            yield phase, task
+
+
+def resolve_soar_binding(soar, binding, rep, label):
+    """Turn one suggestions.soar_binding entry into a Mission Control Action
+    record ({last_job_id, name, description, action, type, app_id, asset,
+    parameters}) using the paired SOAR's ids. Returns None (and reports) when
+    the app, asset or action is not on that tenant."""
+    app = soar.find_one('app', binding.get('app_name', ''))
+    if not app:
+        rep.fail(label, 'SOAR app "{}" not installed'.format(binding.get('app_name')))
+        return None
+    asset = soar.find_one('asset', binding.get('asset_name', ''))
+    if not asset or asset.get('app') != app.get('id'):
+        rep.fail(label, 'SOAR asset "{}" missing or not an asset of "{}"'.format(
+            binding.get('asset_name'), app.get('name')))
+        return None
+    actions = soar.app_actions(app['id'])
+    action = actions.get(binding.get('action'))
+    if not action:
+        rep.fail(label, 'action "{}" not offered by "{}"'.format(
+            binding.get('action'), app.get('name')))
+        return None
+    # last_job_id null is what the missioncontrol Action model accepts for a
+    # never-run action (validated against response_template.py; a string is
+    # rejected). parameters is a list of one dict, mirroring SOAR's
+    # action_run targets[].parameters[].
+    return {
+        'last_job_id': None,
+        'name': binding.get('name') or '{} ({})'.format(binding.get('action'), app['name']),
+        'description': binding.get('description', ''),
+        'action': binding['action'],
+        'type': binding.get('type') or action.get('type') or 'generic',
+        'app_id': app['id'],
+        'asset': asset['id'],
+        'parameters': list(binding.get('parameters') or [{}]),
+    }
+
+
+def bind_soar_actions(plan, soar, rep):
+    """Resolve every task's suggestions.soar_binding[] into suggestions.actions[].
+    The soar_binding key is always stripped - it is not a Mission Control field.
+    Returns (bound, dropped)."""
+    bound = dropped = 0
+    for phase, task in _iter_tasks(plan):
+        suggestions = task.get('suggestions')
+        if not isinstance(suggestions, dict):
+            continue
+        bindings = suggestions.pop('soar_binding', None) or []
+        for binding in bindings:
+            label = '4. bind "{}" -> {}'.format(task.get('name', '?')[:40],
+                                               binding.get('action'))
+            if soar is None:
+                dropped += 1
+                continue
+            record = resolve_soar_binding(soar, binding, rep, label)
+            if record:
+                suggestions.setdefault('actions', []).append(record)
+                bound += 1
+    return bound, dropped
+
+
+def preserve_live_actions(plan, live):
+    """Carry actions[]/playbooks[] from the live KV record into the seed for
+    every task the seed leaves empty, matched on (phase name, task name). This is
+    what keeps an action attached in the ES UI alive across a re-run without
+    SOAR credentials. Returns the number of tasks that inherited something."""
+    if not isinstance(live, dict):
+        return 0
+    live = decode_plan(live)
+    existing = {}
+    for phase, task in _iter_tasks(live):
+        existing[(phase.get('name'), task.get('name'))] = task.get('suggestions') or {}
+    inherited = 0
+    for phase, task in _iter_tasks(plan):
+        old = existing.get((phase.get('name'), task.get('name')))
+        if not old:
+            continue
+        suggestions = task.setdefault('suggestions',
+                                      {'searches': [], 'actions': [], 'playbooks': []})
+        took = False
+        for key in ('actions', 'playbooks'):
+            if not suggestions.get(key) and old.get(key):
+                suggestions[key] = old[key]
+                took = True
+        inherited += 1 if took else 0
+    return inherited
+
+
+def step_response_plan(client, rep, soar=None):
     if not os.path.exists(RESPONSE_PLAN_PATH):
         rep.fail('4. response plan', 'asset missing: {}'.format(RESPONSE_PLAN_PATH))
         return None
     with io.open(RESPONSE_PLAN_PATH, encoding='utf-8') as handle:
         plan = json.load(handle)
     plan.pop('_comment', None)
+
+    bound, dropped = bind_soar_actions(plan, soar, rep)
+    inherited = 0
+    if dropped:
+        # No SOAR credentials: keep whatever the live record already carries.
+        inherited = preserve_live_actions(
+            plan, kv_get(client, 'mc_response_templates', plan['_key']))
 
     now = int(time.time())
     plan.setdefault('create_time', now)
@@ -369,8 +630,15 @@ def step_response_plan(client, rep):
     encoded = encode_plan(plan)
     # _key must stay literal - it is the record address, not a value.
     encoded['_key'] = plan['_key']
-    kv_upsert(client, rep, 'mc_response_templates', plan['_key'], encoded,
-              '4. response plan "AI Incident Response Plan"')
+    ok = kv_upsert(client, rep, 'mc_response_templates', plan['_key'], encoded,
+                   '4. response plan "AI Incident Response Plan"')
+    if ok:
+        if bound:
+            rep.ok('4. SOAR actions on tasks', 'bound {} action(s) from soar_binding'.format(bound))
+        elif dropped:
+            rep.skip('4. SOAR actions on tasks',
+                     'no SOAR credentials - {} binding(s) dropped, {} task(s) kept '
+                     'the actions already on the live record'.format(dropped, inherited))
     return plan.get('template_id')
 
 
@@ -410,6 +678,167 @@ def step_queue(client, rep):
     }
     kv_upsert(client, rep, 'queues', 'ai_findings_queue', record,
               '6. queue "{}"'.format(QUEUE_TITLE))
+
+
+# --- SOAR steps (10-13) ----------------------------------------------------
+
+def _manifest_version():
+    try:
+        with io.open(SOAR_APP_MANIFEST, encoding='utf-8') as handle:
+            return json.load(handle).get('app_version')
+    except (OSError, ValueError):
+        return None
+
+
+def step_soar_app(soar, rep, tgz_path):
+    """Install or update the simulated IdP app from the built tarball."""
+    label = '10. SOAR app "{}"'.format(SOAR_APP_NAME)
+    app = soar.find_one('app', SOAR_APP_NAME)
+    wanted = _manifest_version()
+    if app and (not tgz_path or not wanted or app.get('app_version') == wanted):
+        rep.ok(label, 'already installed (id {}, v{})'.format(
+            app.get('id'), app.get('app_version')))
+        return app
+    if not tgz_path or not os.path.exists(tgz_path):
+        rep.skip(label, 'not installed and no tarball found - run tools/soar/build.sh '
+                        'or pass --soar-app-tgz')
+        return app
+    verb = 'updated' if app else 'installed'
+    with open(tgz_path, 'rb') as handle:
+        payload = {'app': base64.b64encode(handle.read()).decode('ascii')}
+    code, data = soar.post('/rest/app', payload, quiet=True)
+    if soar.dry_run:
+        rep.ok(label, 'dry-run - would have {} from {}'.format(
+            verb, os.path.basename(tgz_path)))
+        return app or {'id': None, 'name': SOAR_APP_NAME, 'app_version': wanted}
+    if code == 200 and isinstance(data, dict) and data.get('success'):
+        app = soar.find_one('app', SOAR_APP_NAME) or {'id': data.get('id'), 'name': SOAR_APP_NAME}
+        rep.ok(label, '{} (id {}, v{})'.format(verb, app.get('id'),
+                                                 app.get('app_version', wanted)))
+        return app
+    rep.fail(label, 'HTTP {} {}'.format(code, str(data)[:200]))
+    return app
+
+
+def step_soar_asset(soar, rep, app):
+    """Create (or re-enable) the medadvice_idp asset and test connectivity."""
+    label = '11. SOAR asset "{}"'.format(SOAR_ASSET_NAME)
+    if not app:
+        rep.skip(label, 'app not available')
+        return None
+    asset = soar.find_one('asset', SOAR_ASSET_NAME)
+    if asset is None:
+        record = dict(SOAR_ASSET_RECORD)
+        if app.get('id'):
+            record['app'] = app['id']
+        code, data = soar.post('/rest/asset', record)
+        if soar.dry_run:
+            rep.ok(label, 'dry-run - would create')
+            return {'id': None, 'name': SOAR_ASSET_NAME, 'app': app.get('id')}
+        if code == 200 and isinstance(data, dict) and data.get('success'):
+            asset = soar.find_one('asset', SOAR_ASSET_NAME) or {'id': data.get('id'),
+                                                              'name': SOAR_ASSET_NAME}
+            rep.ok(label, 'created (id {})'.format(asset.get('id')))
+        else:
+            rep.fail(label, 'HTTP {} {}'.format(code, str(data)[:200]))
+            return None
+    else:
+        rep.ok(label, 'exists (id {})'.format(asset.get('id')))
+    return asset
+
+
+def step_soar_competing_idp_assets(soar, rep):
+    """READ-ONLY: list the other identity-management assets the Guided Response
+    agent could pick instead of the simulator. On the ES8 demo tenant these are
+    demo-mock Okta / Azure AD / AD LDAP assets that answer 'No data found' for
+    the MedAdvice personas. Exclude them in ES, not here: Configure -> All
+    configurations -> Security AI Assistant settings -> Guided Response
+    connectors. (See IDP_APP_TYPES for why this step never writes.)"""
+    label = '12. competing identity assets'
+    code, apps = soar.get('/rest/app?page_size=500')
+    if code != 200 or not isinstance(apps, dict):
+        rep.skip(label, 'could not list apps (HTTP {})'.format(code))
+        return
+    idp_apps = dict((a['id'], a) for a in apps.get('data') or []
+                    if a.get('type') in IDP_APP_TYPES and a.get('name') != SOAR_APP_NAME)
+    code, assets = soar.get('/rest/asset?page_size=500')
+    if code != 200 or not isinstance(assets, dict):
+        rep.skip(label, 'could not list assets (HTTP {})'.format(code))
+        return
+    rows = []
+    for asset in assets.get('data') or []:
+        app = idp_apps.get(asset.get('app'))
+        if app:
+            mock = (asset.get('configuration') or {}).get('mock_app')
+            rows.append('{} ({}{})'.format(asset.get('name'), app.get('name'),
+                                           ', mock' if mock else ''))
+    if rows:
+        rep.ok(label, '{} - deselect them under ES Security AI Assistant settings '
+                      '-> Guided Response connectors'.format(', '.join(rows)))
+    else:
+        rep.ok(label, 'none besides {}'.format(SOAR_APP_NAME))
+
+
+def soar_run_action(soar, container_id, app, asset, action_name, action_type, params):
+    payload = {
+        'action': action_name,
+        'type': action_type,
+        'name': 'show_postdeploy smoke test: {}'.format(action_name),
+        'container_id': container_id,
+        'run_automation': False,
+        'targets': [{'assets': [asset['name']], 'app_id': app['id'],
+                     'parameters': [params]}],
+    }
+    code, data = soar.post('/rest/action_run', payload)
+    if code != 200 or not isinstance(data, dict) or not data.get('success'):
+        return None, 'HTTP {} {}'.format(code, str(data)[:200])
+    record = soar.wait_action_run(data.get('action_run_id') or data.get('id'))
+    return record, record.get('message') or record.get('status')
+
+
+def step_soar_smoke_test(soar, rep, app, asset):
+    """Run test connectivity, get user and disable user for t.nguyen on a scratch
+    container, then close it. Proves the app answers before the workshop does."""
+    label = '13. SOAR smoke test'
+    if soar.dry_run:
+        rep.ok(label, 'dry-run - would run test connectivity / get user / disable user '
+                      'for {} on a scratch container'.format(SMOKE_TEST_USER))
+        return
+    if not (app and asset and asset.get('id') and app.get('id')):
+        rep.skip(label, 'app/asset not available')
+        return
+    code, data = soar.post('/rest/container', {
+        'name': 'MedAdvice IdP smoke test {}'.format(time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())),
+        'label': 'events',
+        'severity': 'low',
+        'description': ('Scratch container created by tools/show_postdeploy.py to verify '
+                        'the simulated MedAdvice identity provider. Safe to delete.'),
+        'tags': ['genai', 'workshop', 'smoke-test'],
+    })
+    if code != 200 or not isinstance(data, dict) or not data.get('id'):
+        rep.fail(label, 'could not create scratch container: HTTP {} {}'.format(
+            code, str(data)[:160]))
+        return
+    container_id = data['id']
+    actions = soar.app_actions(app['id'])
+    runs = (
+        ('test connectivity', {}),
+        ('get user', {'username': SMOKE_TEST_USER}),
+        ('disable user', {'username': SMOKE_TEST_USER,
+                          'reason': 'show_postdeploy smoke test'}),
+    )
+    for action_name, params in runs:
+        row = '13. {} {}'.format(action_name, params.get('username', '')).rstrip()
+        action_type = (actions.get(action_name) or {}).get('type') or 'generic'
+        record, message = soar_run_action(soar, container_id, app, asset,
+                                          action_name, action_type, params)
+        if record and record.get('status') == 'success':
+            rep.ok(row, str(message)[:120])
+        else:
+            rep.fail(row, str(message)[:200])
+    soar.post('/rest/container/{}'.format(container_id),
+              {'status': 'closed'}, quiet=True)
+    rep.ok(label, 'scratch container {} closed'.format(container_id))
 
 
 TRIAGE_REQUIREMENTS = ('requires ES 8.6 Premier + Splunk Platform 10.1+ + AWS '
@@ -505,7 +934,25 @@ def step_timing(client, rep, tune_risk_rule):
         rep.fail('8. risk rule timing', 'HTTP {} {}'.format(code, text[:160]))
 
 
+def step_verify_plan_actions(client, rep):
+    live = kv_get(client, 'mc_response_templates', 'ai_incident_response_plan')
+    if not live:
+        rep.fail('9. verify plan actions', 'live record not readable')
+        return
+    live = decode_plan(live)
+    with_actions = [task.get('name') for _, task in _iter_tasks(live)
+                    if (task.get('suggestions') or {}).get('actions')]
+    if with_actions:
+        rep.ok('9. verify plan actions', '{} task(s) carry SOAR actions: {}'.format(
+            len(with_actions), '; '.join(with_actions)[:120]))
+    else:
+        rep.skip('9. verify plan actions',
+                 'no task carries a SOAR action yet - supply SOAR credentials or '
+                 'attach one in the ES response plan editor')
+
+
 def step_verify(client, rep, out):
+    step_verify_plan_actions(client, rep)
     code, text = client.splunkd(
         '/servicesNS/nobody/missioncontrol/configs/conf-es_ai_settings/settings')
     if code == 200 and '"ai_triage_enabled"' in text:
@@ -547,8 +994,9 @@ def step_verify(client, rep, out):
 def main():
     parser = argparse.ArgumentParser(
         description='Configure a Splunk Show stack for the AI Defense demo.')
-    parser.add_argument('--stack', required=True,
-                        help='Stack URL, e.g. https://esp-shw-xxx.splunkcloud.com')
+    parser.add_argument('--stack',
+                        help='Stack URL, e.g. https://esp-shw-xxx.splunkcloud.com '
+                             '(required unless --soar-only)')
     parser.add_argument('--username', default='admin')
     parser.add_argument('--password',
                         default=os.environ.get('SPLUNK_ADMIN_PASSWORD'),
@@ -561,24 +1009,86 @@ def main():
                         help='Leave the ES risk rule alone (keeps its 10m lag)')
     parser.add_argument('--dry-run', action='store_true',
                         help='Print writes without making them')
+    soar_group = parser.add_argument_group('paired SOAR (steps 10-13, optional)')
+    soar_group.add_argument('--soar-url', default=os.environ.get('SOAR_URL'),
+                            help='SOAR base URL; defaults to $SOAR_URL')
+    soar_group.add_argument('--soar-username',
+                            default=os.environ.get('SOAR_USERNAME', 'soar_local_admin'))
+    soar_group.add_argument('--soar-password', default=os.environ.get('SOAR_PASSWORD'),
+                            help='Defaults to $SOAR_PASSWORD')
+    soar_group.add_argument('--soar-token', default=os.environ.get('SOAR_AUTH_TOKEN'),
+                            help='ph-auth-token; defaults to $SOAR_AUTH_TOKEN')
+    soar_group.add_argument('--soar-app-tgz',
+                            default=SOAR_APP_TGZ if os.path.exists(SOAR_APP_TGZ) else None,
+                            help='Built app package (default: tools/soar/dist/medadvice_idp.tgz '
+                                 'when present; build with tools/soar/build.sh)')
+    soar_group.add_argument('--soar-smoke-test', action='store_true',
+                            help='Run test connectivity / get user / disable user for '
+                                 '{} on a scratch container'.format(SMOKE_TEST_USER))
+    soar_group.add_argument('--soar-only', action='store_true',
+                            help='Run only the SOAR steps (no --stack needed)')
+    soar_group.add_argument('--skip-soar', action='store_true',
+                            help='Skip the SOAR steps even if credentials are set')
     args = parser.parse_args()
 
-    if not args.password:
-        print('ERROR: no password. Set $SPLUNK_ADMIN_PASSWORD or pass --password.',
+    soar_wanted = bool(args.soar_url) and not args.skip_soar
+    soar_cred = bool(args.soar_token or args.soar_password)
+    if args.soar_only and not (args.soar_url and soar_cred):
+        print('ERROR: --soar-only needs --soar-url and $SOAR_PASSWORD / $SOAR_AUTH_TOKEN.',
               file=sys.stderr)
         return 2
+    if not args.soar_only:
+        if not args.stack:
+            print('ERROR: --stack is required (or pass --soar-only).', file=sys.stderr)
+            return 2
+        if not args.password:
+            print('ERROR: no password. Set $SPLUNK_ADMIN_PASSWORD or pass --password.',
+                  file=sys.stderr)
+            return 2
 
-    skip_acs = args.skip_acs or not args.acs_token
-
-    client = Client(args.stack, args.username, args.password,
-                    acs_token=args.acs_token, dry_run=args.dry_run)
     rep = Reporter()
     out = {}
+    print('Mode    : {}'.format('DRY RUN' if args.dry_run else 'apply'))
+
+    # --- SOAR first, so step 4 can bind task actions to real ids -----------
+    soar = None
+    soar_app = soar_asset = None
+    if soar_wanted and soar_cred:
+        soar = SoarClient(args.soar_url, args.soar_username, args.soar_password,
+                          token=args.soar_token, dry_run=args.dry_run)
+        code, data = soar.get('/rest/version')
+        if code != 200 or not isinstance(data, dict):
+            print('ERROR: cannot reach SOAR {} (HTTP {}): {}'.format(
+                soar.base, code, str(data)[:200]), file=sys.stderr)
+            return 2
+        print('SOAR    : {} (v{})'.format(soar.base, data.get('version')))
+        print('-' * 72)
+        soar_app = step_soar_app(soar, rep, args.soar_app_tgz)
+        soar_asset = step_soar_asset(soar, rep, soar_app)
+        step_soar_competing_idp_assets(soar, rep)
+        if args.soar_smoke_test:
+            step_soar_smoke_test(soar, rep, soar_app, soar_asset)
+        else:
+            rep.skip('13. SOAR smoke test', 'pass --soar-smoke-test to run it')
+    elif soar_wanted:
+        print('WARNING: --soar-url given without $SOAR_PASSWORD / $SOAR_AUTH_TOKEN - '
+              'SOAR steps skipped.', file=sys.stderr)
+        rep.skip('10-13. SOAR steps', 'no SOAR credential')
+    else:
+        rep.skip('10-13. SOAR steps', 'no --soar-url; response plan keeps the actions '
+                                      'already on the live record')
+
+    if args.soar_only:
+        failures = rep.summary()
+        return 1 if failures else 0
+
+    skip_acs = args.skip_acs or not args.acs_token
+    client = Client(args.stack, args.username, args.password,
+                    acs_token=args.acs_token, dry_run=args.dry_run)
 
     print('Stack   : {}'.format(client.host))
     print('Mgmt    : {}'.format(client.mgmt))
     print('ACS     : {}'.format('skipped' if skip_acs else client.stack_name))
-    print('Mode    : {}'.format('DRY RUN' if args.dry_run else 'apply'))
     print('-' * 72)
 
     code, text = client.splunkd('/services/server/info')
@@ -595,7 +1105,7 @@ def main():
     step_index(client, rep, skip_acs)
     step_hec(client, rep, skip_acs, out)
     step_enable_detections(client, rep)
-    template_id = step_response_plan(client, rep)
+    template_id = step_response_plan(client, rep, soar)
     step_investigation_type(client, rep, template_id)
     step_queue(client, rep)
     step_triage_agent(client, rep)
