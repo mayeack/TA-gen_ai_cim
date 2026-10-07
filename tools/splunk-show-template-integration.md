@@ -42,7 +42,7 @@ The split is not stylistic — it follows from two hard constraints.
 
 Excluded from the tarball (`package.sh` drops `tools/`). Run it after the TA is installed.
 
-Since the TA seeds Mission Control on its own (the shipped search *GenAI - ES - Seed Response Plan and SOAR Binding* runs `| genaiseedes` hourly and on startup, using the ES/SOAR pairing proxy for the SOAR half), steps 4–7 and 10–12 below are the **same code** (`bin/genai_es_seed.py`) run from outside with explicit credentials. Running the script still matters for a demo stack: it applies everything immediately, it can install the simulator app on SOAR (in-product that needs a `soar` account in `ta_gen_ai_cim_account.conf`), and steps 1–3, 8, 9 and 13 exist nowhere else.
+Since the TA seeds Mission Control on its own (the shipped search *GenAI - ES - Seed Response Plan and SOAR Binding* runs `| genaiseedes` hourly and on startup, using the ES/SOAR pairing proxy for the SOAR half), steps 4–7 and 10–12 below are the **same code** (`bin/genai_es_seed.py`) run from outside with explicit credentials. Running the script still matters for a demo stack: it applies everything immediately, it can install the simulator app on SOAR (in-product that needs a `soar` account in `ta_gen_ai_cim_account.conf`), and steps 1–3, 8, 9, 13 and 14 exist nowhere else.
 
 | Step | Why it cannot be in the tarball |
 |---|---|
@@ -53,12 +53,13 @@ Since the TA seeds Mission Control on its own (the shipped search *GenAI - ES - 
 | 5. Investigation type → plan | `missioncontrol` KV namespace |
 | 6. Create the AI findings queue | `missioncontrol` KV namespace |
 | 7. `ai_triage_enabled = 1` | `missioncontrol` conf namespace |
-| 8. Demo timing | Partly TA-owned, partly `SA-ThreatIntelligence`-owned — and TA-owned demo tuning must not ship to real customers |
+| 8. Demo timing | The TA-owned half is the shipped default since v1.7.1; the step re-asserts it over `local/` overrides left by older versions of this script, and retunes the `SA-ThreatIntelligence`-owned risk rule, which conf layering cannot reach |
 | 9. Verify | — |
 | 10. Install the simulated **MedAdvice Identity Provider** SOAR app (source ships in `soar_apps/`) | Lives on the paired SOAR, not in Splunk; the ES pairing proxy has no install route, so this needs SOAR credentials (`--soar-url` + `$SOAR_PASSWORD`/`$SOAR_AUTH_TOKEN`) |
 | 11. Create its `medadvice_idp` asset | Same |
 | 12. List the competing identity assets (read-only) | The demo-mock Okta/Azure/LDAP assets fail for MedAdvice users; deselect them in ES → *Security AI Assistant settings* → Guided Response connectors. The script never edits foreign assets (`POST /rest/asset/<id>` re-saves the whole record and ignores `disabled`) |
 | 13. Smoke test (`--soar-smoke-test`) | Runs test connectivity / get user / disable user for `t.nguyen` on a scratch container and closes it |
+| 14. Add `gen_ai_log` to the default search indexes of `admin`, `ess_admin`, `ess_analyst` | Roles belong to Splunk and ES; a TA must not redefine them in `default/` (§5.4) |
 
 Steps 10–13 run **first** so that step 4 can turn the plan's `suggestions.soar_binding[]` entries into real task actions with that tenant's app/asset ids. Without SOAR credentials step 4 drops the binding and preserves whatever actions/playbooks the live record already carries per task.
 
@@ -72,7 +73,7 @@ python3 tools/show_postdeploy.py --stack https://esp-shw-xxxx.splunkcloud.com \
 
 Drop `--dry-run` to apply. It is idempotent — re-running updates in place. `--soar-only` runs steps 10–13 alone.
 
-> **Verification status.** Steps 3, 4 and 8 use endpoints confirmed against a live ES 8.6 stack; steps 5, 6 and 7 were corrected against the `missioncontrol` Python data models and REST handlers (not `collections.conf`). Steps 1 and 2 are built from Splunk's documented ACS API and were **not** executed end-to-end. Steps 10–13 were executed end-to-end on a SOAR Cloud 8.6.0 tenant paired with ES 8.6 (2026-09-03), and the task-action record step 4 writes was validated against the `missioncontrol` `Action` model. Run `--dry-run` first and read the per-step report.
+> **Verification status.** Steps 3, 4 and 8 use endpoints confirmed against a live ES 8.6 stack; steps 5, 6 and 7 were corrected against the `missioncontrol` Python data models and REST handlers (not `collections.conf`). Steps 1 and 2 are built from Splunk's documented ACS API and were **not** executed end-to-end. Steps 10–13 were executed end-to-end on a SOAR Cloud 8.6.0 tenant paired with ES 8.6 (2026-09-03), and the task-action record step 4 writes was validated against the `missioncontrol` `Action` model. Step 14 uses the documented `authorization/roles` endpoint and has **not** been executed against a live stack. Run `--dry-run` first and read the per-step report.
 
 ### 2.3 DemoBot
 
@@ -132,19 +133,29 @@ Verified against ES 8.6 / Splunk Cloud 10.2.
 
 The correlation rule already sets `action.notable = 1` and raises the Finding itself, so **drive the live demo off the correlation rule.** Post-deploy also sets the risk rule's `latest` to `now` and its cron to `*/1` (skip with `--keep-risk-timing`), which pulls the RBA narrative into the fast loop too.
 
-Risk math for the narrative: threshold is `100`, each blocked injection carries `risk_score: 60` — **two events cross it**; the default 15-event spray gives 900.
+Risk math for the narrative: threshold is `100`, and risk is written per **finding**, not per blocked turn — each correlation finding adds 80 to the actor and 60 to each source address. One spray (one finding) leaves the actor at 80; **the second spray crosses it** (160). Up to v1.7.0 a single finding wrote the actor twice (140) and the source never, which is why older rehearsals crossed on one spray.
 
-### 5.3 The suppression trap
+### 5.3 Repeat runs
 
-The correlation rule ships:
+As of v1.7.1 the correlation rule ships:
 
 ```
 alert.suppress = 1
 alert.suppress.fields = actor
-alert.suppress.period = 86400s
+alert.suppress.period = 600s
 ```
 
-**One finding per actor per 24 hours.** Rehearse twice as `t.nguyen` and the second run silently produces nothing — no error, no finding. Post-deploy step 8 disables it. If you configure a stack by hand, do not skip this.
+and its search emits an actor only while their newest injection attempt is under 5 minutes old. **One finding per spray, and a new one for every later spray** — rehearse as `t.nguyen` as often as you like. A 5-minute spray raises exactly one finding because its attempts go stale before the 10-minute suppression lapses; a spray that runs longer re-notifies every 10 minutes with the cumulative 24-hour counts.
+
+**The scheduler has to run.** The gate is relative to the run time, so if every run is skipped for 5 or more minutes after the last attempt (10 or more for a 300-second spray), that burst raises nothing. The usual cause is the instance-wide concurrent-search limit (`status=skipped ... maximum number of concurrent historical scheduled searches`). A healthy stack runs the rule every minute. If a spray raises no finding, check `scheduler.log` for skipped runs before suspecting the rule.
+
+Up to v1.7.0 the period was `86400s` — one finding per actor per day, so a second rehearsal as the same actor silently produced nothing — and post-deploy step 8 worked around it by turning suppression off and narrowing the window to `-15m`, which instead raised a finding every minute. Those values live in `local/` and mask the new default, so step 8 now writes the v1.7.1 values explicitly; re-run it on any stack it configured before.
+
+### 5.4 Default search indexes for the Triage agent
+
+The ES Triage agent's evidence searches carry no `index=`, so they run against the role's default search indexes — `main` and `os` on ES. On a stack where `gen_ai_log` is not among them the agent finds no evidence and its verdicts drift to *Benign* / *False Positive*. Post-deploy step 14 appends `gen_ai_log` to `srchIndexesDefault` on `admin`, `ess_admin` and `ess_analyst`, keeping each role's existing defaults; it never widens `srchIndexesAllowed`, and reports a role that cannot already search the index instead of granting access. Roles belong to Splunk and ES, so this cannot ship in the TA's `default/authorize.conf`.
+
+The TA covers the field half of the same problem: since v1.7.1 `gen_ai_log` events carry the CIM `user`, `app` and `src` fields (same values as `gen_ai.user.id`, `gen_ai.app.name` and `client.address`), which is what the agent and Asset & Identity correlation search on.
 
 ---
 
@@ -155,15 +166,16 @@ If the Show Template cannot run arbitrary post-deploy scripts, these are the equ
 1. **Create index `gen_ai_log`** — Settings → Indexes, or ACS.
 2. **Create a HEC token** — default index `gen_ai_log`, default sourcetype `gen_ai:json`. Record the token.
 3. **Enable the detections** — ES → Security content → Content management, search `AI Governance`. `Prompt Injection Attack Correlation` is already enabled (v1.6.2+); enable the other two.
-4. **Tune the primary detection** — on `AI Governance - Prompt Injection Attack Correlation - Rule`: cron `*/1 * * * *`, earliest `-15m`, latest `now`, and **turn throttling/suppression OFF**.
+4. **Check the primary detection's timing** — v1.7.1 ships the demo timing as its default (cron `*/1 * * * *`, earliest `-24h`, throttle by `actor` for 600 seconds), so on a fresh install there is nothing to change. On a stack tuned for an older version, restore those values: an override that turns throttling off raises a finding every minute, and the old 86400-second window suppresses every repeat spray.
 5. **Tune the risk rule** *(optional)* — `Risk - 24 Hour Risk Threshold Exceeded - Rule` in `SA-ThreatIntelligence`: latest `now`, cron `*/1 * * * *`.
 6. **Create the response plan** — ES → Security content → Response plans → Create. Transcribe the four phases and fifteen tasks from `default/data/response_plans/ai_incident_response_plan.json`, including the seven embedded searches (`suggestions.searches`) and, with SOAR paired, the two Containment task actions (`suggestions.soar_binding` → MedAdvice Identity Provider `disable user` / `clear user sessions`). *(Tedious — the script exists for this reason.)*
 7. **Create the investigation type** and associate the response plan, so it auto-applies.
 8. **Create a queue** for AI findings.
 9. **Enable the Triage agent** — ES → Configure → All configurations → Security AI Assistant settings; turn on AI triage and enable it for `AI Governance - Prompt Injection Attack Correlation - Rule`.
 10. **Point DemoBot** at the HEC token.
+11. **Add `gen_ai_log` to the default search indexes** — Settings → Roles → `admin`, `ess_admin`, `ess_analyst` → *Indexes* → tick **Default** for `gen_ai_log`, keeping the existing defaults. Without it the Triage agent finds no evidence (§5.4).
 
-Steps 1–4 and 10 are the minimum for a working demo of steps 1–3. Steps 6–7 add step 5. Step 9 adds step 4.
+Steps 1–4 and 10 are the minimum for a working demo of steps 1–3. Steps 6–7 add step 5. Steps 9 and 11 add step 4.
 
 ---
 

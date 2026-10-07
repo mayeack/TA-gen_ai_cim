@@ -1,11 +1,11 @@
 
 <dashboard version="2" theme="dark">
     <label>AI Governance Overview</label>
-    <description>A centralized view of genAI usage, cost, performance, and risk—tracking safety/PII/policy events, anomalous prompts/responses, token spend, and latency across models, services, and sessions.</description>
+    <description>A centralized view of genAI usage, cost, performance, and risk—tracking safety/PII/policy events, token spend, and latency across models, services, and sessions.</description>
     <definition><![CDATA[
 {
 	"title": "AI Governance Overview",
-	"description": "A centralized view of genAI usage, cost, performance, and risk—tracking safety/PII/policy events, anomalous prompts/responses, token spend, and latency across models, services, and sessions.",
+	"description": "A centralized view of genAI usage, cost, performance, and risk—tracking safety/PII/policy events, token spend, and latency across models, services, and sessions.",
 	"inputs": {
 		"input_model": {
 			"context": {
@@ -459,19 +459,6 @@
 			"title": "Requests by Service",
 			"type": "splunk.bar"
 		},
-		"viz_retries": {
-			"dataSources": {
-				"primary": "ds_retries"
-			},
-			"options": {
-				"backgroundColor": "transparent",
-				"majorColor": "#5cc05c",
-				"sparklineDisplay": "off",
-				"trendDisplay": "off"
-			},
-			"title": "Retries",
-			"type": "splunk.singlevalue"
-		},
 		"viz_safety_violations": {
 			"dataSources": {
 				"primary": "ds_safety_violations"
@@ -535,22 +522,6 @@
 				"yAxisTitleText": "Count"
 			},
 			"title": "Status Outcome",
-			"type": "splunk.bar"
-		},
-		"viz_ml_detection_summary": {
-			"dataSources": {
-				"primary": "ds_ml_detection_summary"
-			},
-			"options": {
-				"seriesColors": [
-					"#dc4e41",
-					"#f8be34",
-					"#6ab7c7"
-				],
-				"xAxisTitleText": "Detection Type",
-				"yAxisTitleText": "Count"
-			},
-			"title": "ML Detection Summary",
 			"type": "splunk.bar"
 		},
 		"viz_token_usage_time": {
@@ -636,22 +607,6 @@
 				"yAxisTitleText": "Service"
 			},
 			"title": "Errors by Service",
-			"type": "splunk.bar"
-		},
-		"viz_genai_detection_summary": {
-			"dataSources": {
-				"primary": "ds_genai_detection_summary"
-			},
-			"options": {
-				"seriesColors": [
-					"#dc4e41",
-					"#f1813f",
-					"#f8be34"
-				],
-				"xAxisTitleText": "Detection Type",
-				"yAxisTitleText": "Count"
-			},
-			"title": "GenAI Detection Summary",
 			"type": "splunk.bar"
 		}
 	},
@@ -748,7 +703,7 @@
 		},
 		"ds_pii_detected": {
 			"options": {
-				"query": "index=gen_ai_log (gen_ai.pii.ml_detected=\"true\" OR gen_ai.pii.genai_detected=\"true\") gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as pii_detected | eval pii_detected=coalesce(pii_detected, 0)",
+				"query": "index=gen_ai_log (gen_ai.pii.detected=\"true\" OR gen_ai.pii.ml_detected=\"true\" OR gen_ai.pii.genai_detected=\"true\") gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | eval _pii_event=coalesce('gen_ai.event.id', _cd) | stats dc(_pii_event) as pii_detected | eval pii_detected=coalesce(pii_detected, 0)",
 				"queryParameters": {
 					"earliest": "$time.earliest$",
 					"latest": "$time.latest$"
@@ -789,16 +744,6 @@
 		"ds_requests_by_service": {
 			"options": {
 				"query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats count as requests by gen_ai.app.name | sort -requests",
-				"queryParameters": {
-					"earliest": "$time.earliest$",
-					"latest": "$time.latest$"
-				}
-			},
-			"type": "ds.search"
-		},
-		"ds_retries": {
-			"options": {
-				"query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(coalesce('gen_ai.retry.count', 0))) as total_retries | eval total_retries=coalesce(total_retries, 0)",
 				"queryParameters": {
 					"earliest": "$time.earliest$",
 					"latest": "$time.latest$"
@@ -849,16 +794,6 @@
 		"ds_status_distribution": {
 			"options": {
 				"query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.safety.violated'=\"true\", 1, 0))) as Safety_Violation, sum(eval(if('gen_ai.policy.blocked'=\"true\", 1, 0))) as Policy_Blocked, sum(eval(if('gen_ai.guardrail.triggered'=\"true\", 1, 0))) as Guardrail_Triggered, sum(eval(if('gen_ai.safety.violated'!=\"true\" AND 'gen_ai.policy.blocked'!=\"true\" AND 'gen_ai.guardrail.triggered'!=\"true\", 1, 0))) as Success | transpose | rename column as status, \"Row 1\" as count",
-				"queryParameters": {
-					"earliest": "$time.earliest$",
-					"latest": "$time.latest$"
-				}
-			},
-			"type": "ds.search"
-		},
-		"ds_ml_detection_summary": {
-			"options": {
-				"query": "index=gen_ai_log source=*_scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if(source=\"pii_ml_scoring\" AND 'gen_ai.pii.ml_detected'=\"true\", 1, 0))) as PII_Detected, sum(eval(if(source=\"prompt_injection_ml_scoring\" AND 'gen_ai.prompt_injection.ml_detected'=\"true\", 1, 0))) as Prompt_Injection, sum(eval(if('gen_ai.response.is_anomaly'=\"true\" OR 'gen_ai.prompt.is_anomaly'=\"True\", 1, 0))) as Anomaly_Detected | transpose | rename column as detection_type, \"Row 1\" as count",
 				"queryParameters": {
 					"earliest": "$time.earliest$",
 					"latest": "$time.latest$"
@@ -925,16 +860,6 @@
 				}
 			},
 			"type": "ds.search"
-		},
-		"ds_genai_detection_summary": {
-			"options": {
-				"query": "index=gen_ai_log sourcetype=genai_scoring gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" | stats sum(eval(if('gen_ai.pii.genai_detected'=\"true\", 1, 0))) as PII_Detected, sum(eval(if('gen_ai.hallucination.genai_detected'=\"true\", 1, 0))) as Hallucination_Detected, sum(eval(if('gen_ai.toxicity.genai_detected'=\"true\", 1, 0))) as Toxicity_Detected | transpose | rename column as detection_type, \"Row 1\" as count",
-				"queryParameters": {
-					"earliest": "$time.earliest$",
-					"latest": "$time.latest$"
-				}
-			},
-			"type": "ds.search"
 		}
 	},
 	"layout": {
@@ -945,7 +870,7 @@
 		],
 		"options": {
 			"showTitleAndDescription": true,
-			"height": 3460,
+			"height": 3180,
 			"width": 1440
 		},
 		"type": "grid",
@@ -1024,7 +949,7 @@
 				"item": "viz_safety_violations",
 				"position": {
 					"h": 120,
-					"w": 288,
+					"w": 360,
 					"x": 0,
 					"y": 220
 				},
@@ -1034,8 +959,8 @@
 				"item": "viz_pii_detected",
 				"position": {
 					"h": 120,
-					"w": 288,
-					"x": 288,
+					"w": 360,
+					"x": 360,
 					"y": 220
 				},
 				"type": "block"
@@ -1044,8 +969,8 @@
 				"item": "viz_policy_blocked",
 				"position": {
 					"h": 120,
-					"w": 288,
-					"x": 576,
+					"w": 360,
+					"x": 720,
 					"y": 220
 				},
 				"type": "block"
@@ -1054,18 +979,8 @@
 				"item": "viz_guardrails_triggered",
 				"position": {
 					"h": 120,
-					"w": 288,
-					"x": 864,
-					"y": 220
-				},
-				"type": "block"
-			},
-			{
-				"item": "viz_retries",
-				"position": {
-					"h": 120,
-					"w": 288,
-					"x": 1152,
+					"w": 360,
+					"x": 1080,
 					"y": 220
 				},
 				"type": "block"
@@ -1287,26 +1202,6 @@
 					"w": 1440,
 					"x": 0,
 					"y": 3000
-				},
-				"type": "block"
-			},
-			{
-				"item": "viz_ml_detection_summary",
-				"position": {
-					"h": 280,
-					"w": 720,
-					"x": 0,
-					"y": 3180
-				},
-				"type": "block"
-			},
-			{
-				"item": "viz_genai_detection_summary",
-				"position": {
-					"h": 280,
-					"w": 720,
-					"x": 720,
-					"y": 3180
 				},
 				"type": "block"
 			}

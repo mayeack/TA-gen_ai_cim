@@ -59,7 +59,7 @@ Built using **Dashboard Studio (JSON)**, this dashboard leverages modern visuali
 | Panel | Description | Color Coding |
 |-------|-------------|--------------|
 | **Safety Violations** | Count of safety policy violations | Green (0), Yellow (1-4), Red (5+) |
-| **PII Detected** | Events with PII identified | Green (0), Yellow (1-9), Red (10+) |
+| **PII Detected** | Distinct events flagged for PII by the application or AI Defense (`gen_ai.pii.detected`) or by either scoring pipeline (`gen_ai.pii.ml_detected`, `gen_ai.pii.genai_detected`), counted once per `gen_ai.event.id` | Green (0), Yellow (1-4), Red (5+) |
 | **Policy Blocked** | Requests blocked by policy | Green (0), Yellow (1-4), Red (5+) |
 | **Guardrails Triggered** | Guardrail activations | Green (0), Yellow (1-4), Red (5+) |
 | **Compliance Summary** | Safety/PII compliance percentages | Red (<85%), Yellow (85-95%), Green (>95%) |
@@ -79,7 +79,6 @@ Built using **Dashboard Studio (JSON)**, this dashboard leverages modern visuali
 | Panel | Type | Description |
 |-------|------|-------------|
 | **Cost by Service** | Pie/Donut chart | Cost breakdown by application |
-| **ML Detection Summary** | Bar chart | Detection counts by type |
 | **Recent AI Requests** | Table | Latest requests with compliance status |
 
 ## Technical Details

@@ -19,6 +19,8 @@ Options (defaults come from ta_gen_ai_cim_es.conf [es_integration]):
   install_simulator    install the simulator app if a `soar` account (default false)
                        exists in ta_gen_ai_cim_account.conf
   enable_triage_agent  turn on ES AI triage for the primary detection (default false)
+  route_findings_to_queue  route AI Governance findings to the AI Findings
+                       queue instead of the Analyst Queue                 (default false)
   dry_run              print writes without making them              (default false)
 
 Output: one event per step - step, status (OK|SKIP|FAIL), detail.
@@ -63,6 +65,12 @@ def _setup_logging():
     return logger
 
 
+# Module level, never self.logger: SearchCommand.logger is a read-only property
+# in splunklib, so assigning it raised AttributeError on every run and the
+# shipped seeding search never wrote anything (fixed in 1.7.1).
+LOGGER = _setup_logging()
+
+
 def _truthy(value, default=False):
     if value is None:
         return default
@@ -75,9 +83,13 @@ class GenaiSeedEsCommand(GeneratingCommand):
     bind_soar_actions = Option(require=False, validate=validators.Boolean())
     install_simulator = Option(require=False, validate=validators.Boolean())
     enable_triage_agent = Option(require=False, validate=validators.Boolean())
+    route_findings_to_queue = Option(require=False, validate=validators.Boolean())
     dry_run = Option(require=False, validate=validators.Boolean(), default=False)
 
-    def _service(self):
+    # Not _service: SearchCommand.__init__ sets self._service = None (the cache
+    # behind its own .service property), which shadowed a method of that name
+    # and made every run fail with "'NoneType' object is not callable".
+    def _connect(self):
         info = self._metadata.searchinfo
         parts = urlsplit(info.splunkd_uri)
         return client.connect(scheme=parts.scheme, host=parts.hostname, port=parts.port,
@@ -90,7 +102,7 @@ class GenaiSeedEsCommand(GeneratingCommand):
                 if stanza.name == 'es_integration':
                     settings = dict(stanza.content)
         except Exception as exc:  # conf missing on a partial install
-            self.logger.warning('ta_gen_ai_cim_es.conf unreadable: %s', exc)
+            LOGGER.warning('ta_gen_ai_cim_es.conf unreadable: %s', exc)
         return settings
 
     def _soar_account(self, service):
@@ -109,7 +121,7 @@ class GenaiSeedEsCommand(GeneratingCommand):
                 if cred.content.get('realm') == SOAR_REALM:
                     secret = cred.clear_password
             if not secret:
-                self.logger.warning('soar account has no stored secret')
+                LOGGER.warning('soar account has no stored secret')
                 return None
             verify = _truthy(account.get('verify_ssl'), True)
             if (account.get('auth_type') or 'token').lower() == 'basic':
@@ -118,13 +130,12 @@ class GenaiSeedEsCommand(GeneratingCommand):
             return seed.SoarDirect(account['url'], token=secret, dry_run=bool(self.dry_run),
                                    verify=verify)
         except Exception as exc:
-            self.logger.warning('soar account unreadable: %s', exc)
+            LOGGER.warning('soar account unreadable: %s', exc)
             return None
 
     def generate(self):
-        self.logger = _setup_logging()
         info = self._metadata.searchinfo
-        service = self._service()
+        service = self._connect()
         settings = self._settings(service)
 
         def opt(name, default):
@@ -137,6 +148,7 @@ class GenaiSeedEsCommand(GeneratingCommand):
         do_bind = opt('bind_soar_actions', True)
         do_install = opt('install_simulator', False)
         do_triage = opt('enable_triage_agent', False)
+        do_route = opt('route_findings_to_queue', False)
         dry_run = bool(self.dry_run)
 
         splunkd = seed.Splunkd(info.splunkd_uri, session_key=info.session_key,
@@ -156,14 +168,14 @@ class GenaiSeedEsCommand(GeneratingCommand):
 
         if do_plan:
             seed.seed(splunkd, rep, soar=soar, install_simulator=do_install,
-                      enable_triage=do_triage)
+                      enable_triage=do_triage, route_queue=do_route)
         else:
             rep.skip('response plan', 'seed_response_plan is off')
             if do_triage:
                 seed.step_triage_agent(splunkd, rep)
 
-        self.logger.info('genaiseedes finished: %d rows, %d failures%s',
-                         len(rep.rows), rep.failures(), ' (dry run)' if dry_run else '')
+        LOGGER.info('genaiseedes finished: %d rows, %d failures%s',
+                    len(rep.rows), rep.failures(), ' (dry run)' if dry_run else '')
         now = time.time()
         for status, step, detail in rep.rows:
             yield {'_time': now, 'step': step, 'status': status, 'detail': detail,

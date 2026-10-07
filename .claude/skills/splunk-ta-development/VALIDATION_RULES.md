@@ -65,6 +65,11 @@ bash .claude/skills/splunk-ta-development/check_package.sh <APP_NAME>-<VERSION>.
 # 5. Data minimization (R-SEC-001)
 python3 .claude/skills/splunk-ta-development/check_notable_content.py default/savedsearches.conf
 
+# 5b. Search ownership, risk objects, custom-command collisions (R-CONF-005/006, R-PY-001)
+python3 .claude/skills/splunk-ta-development/check_search_owner.py
+python3 .claude/skills/splunk-ta-development/check_risk_objects.py
+/opt/splunk104/bin/splunk cmd python3.13 .claude/skills/splunk-ta-development/check_command_collisions.py
+
 # 6. Cloud certification
 splunk-appinspect inspect <APP_NAME>-<VERSION>.tgz --included-tags cloud
 ```
@@ -393,6 +398,110 @@ already carried `owner = admin` for this exact reason; the new
 one, which would have made the entire self-seeding ES integration a silent
 no-op on every fresh install.*
 
+### R-CONF-006 · A rule with configured risk objects must not emit `risk_object`
+
+**Rule.** If `action.risk.param._risk` names its risk objects with
+`risk_object_field`, the search must not put a `risk_object` (or
+`risk_object_type`) field in its results — no `| eval risk_object=...`, no
+`... as risk_object`. A rule that also raises a finding (`action.notable = 1`)
+names the finding's entity in `action.notable.param._entities` instead.
+
+**Why.** The ES risk action (`SA-ThreatIntelligence/bin/risk_extractor.py`)
+prefers a result-level `risk_object`, and a result-level `risk_object_type`,
+over **every** entry in `_risk`. A rule that declares `user` (80) and `src`
+(60) and also evals `risk_object=user` writes the user risk twice and the
+`src`/system risk never — with no error anywhere. All three AI Governance rules
+shipped that way until v1.7.1.
+
+The eval existed for a reason, and removing it alone causes a different bug.
+Mission Control reads the finding's `risk_object` for its Entity column and
+risk-score badge, and commit `4d61c09` added the eval so that column would
+stop rendering `--`. `action.notable.param._entities` (SA-ThreatIntelligence
+`alert_actions.conf.spec`) is the mechanism that serves both: for an
+event-based detection, `notable.py` runs `parse_risk_objects(result,
+'notable')` over `_entities` and puts `risk_object`/`risk_object_type` on the
+finding only, while the risk action still writes every `_risk` entry. Give
+`_entities` one entry: `notable.py` raises one finding per entity value.
+
+**Check.** Exits non-zero on any FAIL. It reads only the `search =` value, and
+also fails a finding-raising rule with `_risk` but no `_entities`:
+
+```bash
+python3 .claude/skills/splunk-ta-development/check_risk_objects.py
+```
+
+*Provenance: AI Trust workshop dry run (2026-10-07), finding "Detection risk";
+not an MR finding. Regression-tested against the v1.7.0 tree, where it flags
+all three rules.*
+
+### R-CONF-007 · Mission Control queue rules are rule-engine syntax, not SPL
+
+**Rule.** A `queues` record seeded into Mission Control carries a `rule_string`
+in the syntax of Mission Control's vendored `rule_engine` library, plus the
+matching structured `rules` (stored as a JSON string). It may only reference
+fields the finding holds at queue-assignment time: the detection's notable
+params (`rule_title` with its literal `$tokens$`, `investigation_type`,
+`severity`, `security_domain`) and the result row. `search_name` is **not**
+one of them, because `notable.py` adds it after the queue is assigned.
+Generate the string with
+`missioncontrol/bin/blueridge/data_models/models/queues.py`
+`Queues.build_rule_string()` rather than writing it by hand.
+
+**Why.** `rule_executor.py` evaluates every queue rule against every finding.
+The SPL-style `search_name="AI Governance*"` that `| genaiseedes` seeded up to
+v1.7.1 is a rule-engine syntax error (*"illegal character '='"*). It never matched,
+so findings fell to the default queue, and it logged an ERROR to
+`notable_modalert.log` on every finding. The obvious repair,
+`search_name =~ "^AI Governance"`, parses but still never matches, for the
+reason above. Both went unnoticed while the seeder itself was crashing
+(R-PY-001). The rule shipped in v1.7.1 is `(rule_title =~ "^GenAI Prompt Injection")`,
+and it ships **off** (`route_findings_to_queue = false`). A working routing rule
+moves findings out of the default Analyst Queue, and a non-default queue is
+admin-only until ES queue permissions are granted. Fixing the syntax must not
+silently change where analysts find their work.
+
+**Check.** Validates the seeded string with Mission Control's own engine and UI
+builder (skips where ES is not installed):
+
+```bash
+/opt/splunk104/bin/splunk cmd python3.13 -m unittest tools.soar.tests.test_seed.QueueRuleTests -v
+```
+
+*Provenance: live verification of the v1.7.1 fixes (2026-10-07). A verifier
+found the ERRORs in `notable_modalert.log` once the fixed seeder ran.*
+
+## R-PY — Python
+
+### R-PY-001 · A custom search command must not collide with splunklib's names
+
+**Rule.** A class deriving from a splunklib `*Command` must not assign a
+read-only `SearchCommand` property (`self.logger = ...`) and must not define a
+method whose name `SearchCommand.__init__` assigns as an instance attribute
+(`_service`, `_metadata`, ...). Keep loggers at module level; name helpers
+something splunklib does not own (`_connect`, not `_service`). Every shipped
+command also gets an offline test that drives its `generate()` / `stream()` end
+to end — testing only the logic it calls is how both bugs below shipped.
+
+**Why.** Both fail only at dispatch, after `py_compile`, `btool` and AppInspect
+have passed. `| genaiseedes` did both: `self.logger = ...` raised *"property
+'logger' ... has no setter"*, and behind it `self._service()` raised
+*"'NoneType' object is not callable"* because `SearchCommand.__init__` sets
+`self._service = None`. The enabled, `run_on_startup` seeding search therefore
+wrote nothing on any stack from v1.7.0 until v1.7.1, which surfaced in the
+workshop as findings with no investigation type and no response plan.
+
+**Check.** Exits non-zero on any FAIL; run under Splunk's Python so
+`lib/splunklib` resolves:
+
+```bash
+/opt/splunk104/bin/splunk cmd python3.13 .claude/skills/splunk-ta-development/check_command_collisions.py
+```
+
+*Provenance: AI Trust workshop dry run (2026-10-07), findings 6–7 ("investigation
+type ai security incident does not exist"); root cause found in
+`scheduler.log`, not an MR finding. Regression-tested against the v1.7.0 tree,
+where it reports both collisions.*
+
 ### R-DOC-001 · Behavior changes carry a changelog entry
 
 Every user-visible change gets a README changelog entry under the version that
@@ -418,3 +527,7 @@ and verified on a real instance. Numbers, not adjectives.
 | — (found by the gate, not a reviewer) | `R-SEC-001/self-1` | P3 | — | security | `AI Governance - Prompt Injection Detected (GenAI Judge) - Rule` wrote the judge's free-text `$explanations$` into the notable description; ships disabled, so opt-in | R-SEC-001 |
 | — (deliberate design decision, not a finding) | `R-SEC-002/amend-1` | — | — | security | Second sanctioned `disabled = 0` exception: `GenAI - Tokenomics - Seed Token Cost Pricing`, an insert-only KV seed of shipped CSV pricing constants (reads no index, no event-derived fields) | R-SEC-002 (amended) |
 | [!174](https://cd.splunkdev.com/tmm/domane-unreleased-apps/-/merge_requests/174) | `11909_174_489ad313_1` | P1 | 0.91 | bug | Enabled `run_on_startup` search calling the admin-only `genaiseedes` command had no `owner = admin` stanza, so it would run as `nobody` and silently no-op on a fresh install | R-CONF-005 |
+| — (workshop dry run 2026-10-07, not a reviewer) | `dryrun-1007-risk` | — | — | bug | All three AI Governance rules evaled `risk_object` in their results, so ES wrote the first `_risk` object twice and the `src`/system risk never | R-CONF-006 |
+| — (live verification 2026-10-07, not a reviewer) | `verify-1007-entity` | — | — | bug | Removing the result-level `risk_object` (R-CONF-006) without `_entities` would have reverted `4d61c09` and blanked Mission Control's Entity column | R-CONF-006 (amended) |
+| — (live verification 2026-10-07, not a reviewer) | `verify-1007-queue` | — | — | bug | Seeded queue `rule_string` was SPL, a Mission Control rule-engine syntax error; the queue never matched and every finding logged an ERROR | R-CONF-007 |
+| — (workshop dry run 2026-10-07, not a reviewer) | `dryrun-1007-seedes` | — | — | bug | `genaiseedes` assigned the read-only `self.logger` and called a `_service()` shadowed by splunklib's `self._service = None`; the enabled seeding search wrote nothing on any stack from v1.7.0 | R-PY-001 |

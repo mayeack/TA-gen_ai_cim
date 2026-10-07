@@ -28,3 +28,10 @@ enable_triage_agent = <bool>
   detection for the ES Triage agent (no-op without the allow_ai_triage
   entitlement)
 * Default: false
+
+route_findings_to_queue = <bool>
+* Give the seeded AI Findings queue the routing rule
+  (rule_title =~ "^GenAI Prompt Injection") so AI Governance findings land there
+  instead of the default Analyst Queue. Grant analyst roles access to the queue
+  in ES, or only admins will see those findings.
+* Default: false
