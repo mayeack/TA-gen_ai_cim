@@ -30,6 +30,8 @@ immediately, from the outside, with explicit credentials:
  11. configure its asset "medadvice_idp"           (paired SOAR)
  12. list competing identity assets (read-only)    (paired SOAR)
  13. smoke-test the app on a scratch container     (paired SOAR, opt-in flag)
+ 14. add gen_ai_log to the default search indexes  (roles belong to Splunk and
+     of admin, ess_admin and ess_analyst            ES, so never in default/)
 
 Steps 4-7 and 10-12 are the same code the TA runs in-product
 (bin/genai_es_seed.py); this script only supplies the transports. SOAR steps run
@@ -47,7 +49,7 @@ Usage:
         [--acs-token <token>] [--username admin] [--keep-risk-timing] \\
         [--soar-url https://sor-xxxx.soar.splunkcloud.com] [--soar-username u] \\
         [--soar-app-tgz soar_apps/medadvice_idp.tgz] [--soar-smoke-test] \\
-        [--soar-only] [--skip-triage] [--dry-run]
+        [--soar-only] [--skip-triage] [--route-findings-to-queue] [--dry-run]
 
 Steps 1-2 need ACS (Splunk Cloud only). Supply --acs-token, or pass
 --skip-acs and create the index and HEC token by hand. Steps 3-9 use the
@@ -71,6 +73,7 @@ Licensed under Apache License 2.0
 """
 
 import argparse
+import fnmatch
 import json
 import os
 import sys
@@ -98,15 +101,27 @@ DETECTIONS = [
 SOAR_APP_TGZ = os.path.join(APP_ROOT, 'soar_apps', 'medadvice_idp.tgz')
 SMOKE_TEST_USER = 't.nguyen'
 
-# Demo timing. See the "Demo timing" section of the integration doc for why
-# each of these matters; the suppression reset is the one that silently breaks
-# repeat runs if skipped.
+# Demo timing. Since 1.7.1 these equal the shipped defaults: the rule fires only
+# for an actor with an injection in the last 5 minutes and suppresses that actor
+# for 10, so every spray raises exactly one finding. They are still written
+# because earlier versions of this script set alert.suppress = 0 and earliest
+# -15m in local/, which masks default/ and turns every spray into a finding per
+# minute; writing the new values is what converges such a stack.
 DEMO_TIMING = {
     'cron_schedule': '*/1 * * * *',
-    'dispatch.earliest_time': '-15m',
+    'dispatch.earliest_time': '-24h',
     'dispatch.latest_time': 'now',
-    'alert.suppress': '0',
+    'alert.suppress': '1',
+    'alert.suppress.fields': 'actor',
+    'alert.suppress.period': '600s',
 }
+
+# The ES Triage agent's searches carry no index=, so they run against the
+# analyst role's default search indexes - main and os on ES. Without gen_ai_log
+# there they return nothing and the agent's verdicts drift to Benign / False
+# Positive. Role definitions belong to Splunk and ES, not to this TA, so the
+# change is made per stack here and never shipped in default/authorize.conf.
+TRIAGE_ROLES = ('admin', 'ess_admin', 'ess_analyst')
 
 # Owned by SA-ThreatIntelligence, not by this TA - conf layering cannot reach
 # it, which is the whole reason this script exists.
@@ -231,7 +246,7 @@ def step_enable_detections(splunkd, rep):
 def step_timing(splunkd, rep, tune_risk_rule):
     code, text = splunkd.call(saved_search_path(APP_NAME, PRIMARY_DETECTION), 'POST', DEMO_TIMING)
     if code in (200, 201):
-        rep.ok('8. demo timing on primary detection', 'cron */1, earliest -15m, suppression OFF')
+        rep.ok('8. demo timing on primary detection', 'cron */1, earliest -24h, suppress actor 600s')
     else:
         rep.fail('8. demo timing', 'HTTP {} {}'.format(code, text[:160]))
     if not tune_risk_rule:
@@ -271,12 +286,57 @@ def step_verify(splunkd, rep):
                 rep.ok('9. verify primary detection', 'enabled, cron={}, suppress={}'.format(cron, suppress))
             else:
                 rep.fail('9. verify primary detection', 'still disabled')
-            if suppress not in ('0', 'False', 'false'):
-                rep.fail('9. verify suppression', 'still ON - repeat demo runs will produce nothing')
+            period = str(content.get('alert.suppress.period'))
+            if suppress in ('0', 'False', 'false'):
+                rep.fail('9. verify suppression', 'OFF - every spray raises a finding per minute')
+            elif period != DEMO_TIMING['alert.suppress.period']:
+                rep.fail('9. verify suppression', 'period {} - expected {}; a long period makes repeat '
+                         'sprays produce nothing'.format(period, DEMO_TIMING['alert.suppress.period']))
         except Exception as exc:
             rep.fail('9. verify primary detection', str(exc))
     else:
         rep.fail('9. verify primary detection', 'HTTP {}'.format(code))
+
+
+def _as_list(value):
+    """splunkd returns a one-element multivalue field as a bare string."""
+    if not value:
+        return []
+    return [value] if isinstance(value, str) else list(value)
+
+
+def step_role_default_indexes(splunkd, rep):
+    """Append gen_ai_log to srchIndexesDefault on each triage role, keeping the
+    role's existing defaults. Never widens srchIndexesAllowed: a role that cannot
+    already search the index is reported, not granted access."""
+    for role in TRIAGE_ROLES:
+        label = '14. default search indexes for {}'.format(role)
+        path = '/services/authorization/roles/{}'.format(urllib.parse.quote(role, safe=''))
+        code, data = splunkd.get_json(path)
+        if code == 404:
+            rep.skip(label, 'role not present on this stack')
+            continue
+        try:
+            content = data['entry'][0]['content']
+        except (TypeError, KeyError, IndexError):
+            rep.fail(label, 'HTTP {} - could not read the role'.format(code))
+            continue
+
+        defaults = _as_list(content.get('srchIndexesDefault'))
+        if INDEX_NAME in defaults:
+            rep.ok(label, 'already includes {}'.format(INDEX_NAME))
+            continue
+        allowed = _as_list(content.get('srchIndexesAllowed')) + \
+            _as_list(content.get('imported_srchIndexesAllowed'))
+        if not any(fnmatch.fnmatchcase(INDEX_NAME, pattern) for pattern in allowed):
+            rep.fail(label, '{} is not in srchIndexesAllowed; grant search access first '
+                            '(not done here)'.format(INDEX_NAME))
+            continue
+        code, text = splunkd.call(path, 'POST', {'srchIndexesDefault': defaults + [INDEX_NAME]})
+        if code in (200, 201):
+            rep.ok(label, ', '.join(defaults + [INDEX_NAME]))
+        else:
+            rep.fail(label, 'HTTP {} {}'.format(code, text[:160]))
 
 
 # --- SOAR-only extras --------------------------------------------------------
@@ -347,6 +407,9 @@ def main():
                         help='Leave the ES risk rule alone (keeps its 10m lag)')
     parser.add_argument('--skip-triage', action='store_true',
                         help='Do not turn on ES AI triage for the primary detection')
+    parser.add_argument('--route-findings-to-queue', action='store_true',
+                        help='Route AI Governance findings to the AI Findings queue instead of the '
+                             'Analyst Queue (grant analyst roles access to that queue in ES first)')
     parser.add_argument('--dry-run', action='store_true', help='Print writes without making them')
     group = parser.add_argument_group('paired SOAR (steps 10-13, optional)')
     group.add_argument('--soar-url', default=os.environ.get('SOAR_URL'), help='Defaults to $SOAR_URL')
@@ -437,10 +500,11 @@ def main():
     step_index(acs, rep, skip_acs)
     step_hec(acs, rep, skip_acs, out)
     step_enable_detections(splunkd, rep)
+    step_role_default_indexes(splunkd, rep)
     binder = soar if (soar_app and soar_asset) else None
     template_id = seed.step_response_plan(splunkd, rep, binder, label='4. response plan')
     seed.step_investigation_type(splunkd, rep, template_id, label='5. investigation type')
-    seed.step_queue(splunkd, rep, label='6. queue')
+    seed.step_queue(splunkd, rep, label='6. queue', route=args.route_findings_to_queue)
     if args.skip_triage:
         rep.skip('7. triage agent', '--skip-triage set')
     else:

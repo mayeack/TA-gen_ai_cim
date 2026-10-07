@@ -46,6 +46,20 @@ import urllib.request
 APP_NAME = 'TA-gen_ai_cim'
 INVESTIGATION_TYPE = 'ai security incident'          # lowercase is mandatory
 QUEUE_TITLE = 'AI Findings'
+# Mission Control evaluates queue rules with its vendored rule_engine library,
+# not SPL: the SPL-style 'search_name="AI Governance*"' this used to seed is a
+# rule_engine syntax error, logged on every finding, so the queue never matched.
+# The rule keys on rule_title, not search_name: notable.py assigns the queue
+# while the finding holds only the detection's notable params and the result
+# row, and search_name is added later. rule_title is matched with its literal
+# $tokens$ (queue assignment runs before token expansion); all three AI
+# Governance rules' titles start "GenAI Prompt Injection". QUEUE_RULES is the
+# UI's structured form (KV stores it as a JSON string) and QUEUE_RULE_STRING is
+# exactly what missioncontrol's Queues.build_rule_string() renders from it, so
+# the queue also stays editable in the ES UI.
+QUEUE_RULES = [{'left_op': '', 'filters': [
+    {'left_op': '', 'field': 'rule_title', 'operand': 'starts_with', 'values': 'GenAI Prompt Injection'}]}]
+QUEUE_RULE_STRING = '(rule_title =~ "^GenAI Prompt Injection")'
 PRIMARY_DETECTION = 'AI Governance - Prompt Injection Attack Correlation - Rule'
 SOAR_APP_NAME = 'MedAdvice Identity Provider'
 SOAR_ASSET_NAME = 'medadvice_idp'
@@ -641,21 +655,33 @@ def step_investigation_type(splunkd, rep, template_id, label='investigation type
               '{} "{}"'.format(label, INVESTIGATION_TYPE))
 
 
-def step_queue(splunkd, rep, label='queue'):
+def step_queue(splunkd, rep, label='queue', route=False):
+    """Upsert the AI Findings queue. Routing is opt-in (route_findings_to_queue):
+    a routed finding leaves the default Analyst Queue, and in Mission Control a
+    non-default queue is visible only to admins until roles are granted on it in
+    ES, so turning it on is an analyst-workflow decision, not a seeding detail.
+    With routing off the queue carries no rule (rule_executor skips an empty
+    rule_string) and findings stay in the Analyst Queue."""
     live = kv_get(splunkd, 'queues', 'ai_findings_queue') or {}
     record = {
         '_key': 'ai_findings_queue',
         'id': 'ai_findings_queue',
         'title': QUEUE_TITLE,
         'description': 'Findings from Cisco AI Defense / GenAI governance detections.',
-        'rule_string': 'search_name="AI Governance*"',
+        'rules': json.dumps(QUEUE_RULES if route else []),
+        'rule_string': QUEUE_RULE_STRING if route else '',
         'allow_override': True,
         'priority': 1,
         'create_time': live.get('create_time') or int(time.time()),
         'update_time': int(time.time()),
     }
-    kv_upsert(splunkd, rep, 'queues', 'ai_findings_queue', record,
-              '{} "{}"'.format(label, QUEUE_TITLE))
+    if kv_upsert(splunkd, rep, 'queues', 'ai_findings_queue', record,
+                 '{} "{}"'.format(label, QUEUE_TITLE)):
+        if route:
+            rep.ok('{} routing'.format(label), QUEUE_RULE_STRING)
+        else:
+            rep.skip('{} routing'.format(label),
+                     'route_findings_to_queue is off; findings stay in the Analyst Queue')
 
 
 def step_soar_simulator(soar, rep, install=False, tgz_bytes=None, label='SOAR simulator'):
@@ -791,7 +817,7 @@ def step_verify_plan_actions(splunkd, rep, label='verify plan actions'):
 
 
 def seed(splunkd, rep, soar=None, install_simulator=False, enable_triage=False,
-         plan_path=RESPONSE_PLAN_PATH):
+         plan_path=RESPONSE_PLAN_PATH, route_queue=False):
     """The whole in-product sequence, in dependency order. Returns template_id."""
     app = asset = None
     if soar is not None:
@@ -800,7 +826,7 @@ def seed(splunkd, rep, soar=None, install_simulator=False, enable_triage=False,
     binder = soar if (app and asset) else None
     template_id = step_response_plan(splunkd, rep, binder, plan_path)
     step_investigation_type(splunkd, rep, template_id)
-    step_queue(splunkd, rep)
+    step_queue(splunkd, rep, route=route_queue)
     if enable_triage:
         step_triage_agent(splunkd, rep)
     else:

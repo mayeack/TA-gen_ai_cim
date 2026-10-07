@@ -122,7 +122,7 @@ input[type=checkbox] { margin-right: .5rem; }
 </table></div>
 <p>The toggle should be <strong>idempotent and re-runnable</strong> — a demo gets rehearsed. Firing it twice must produce two distinct campaigns, not a no-op.</p>
 <blockquote>
-<p><strong>Splunk-side counterpart:</strong> the ES correlation rule ships with a 24-hour per-actor suppression window. The Show post-deploy script disables it. If you rehearse against a stack where that script has not run, the second campaign produces <strong>no finding at all</strong>. That is a Splunk-side setting, not a DemoBot bug.</p>
+<p><strong>Splunk-side counterpart:</strong> as of TA v1.7.1 the ES correlation rule raises one finding per campaign: it fires only for an actor with an injection attempt in the last 5 minutes and throttles that actor for 10. Up to v1.7.0 it suppressed each actor for 24 hours, so a second campaign under the same actor produced <strong>no finding at all</strong> unless the Show post-deploy script had turned suppression off. That is a Splunk-side setting, not a DemoBot bug.</p>
 </blockquote>
 <hr />
 <h2>3. Emission profile</h2>
@@ -144,7 +144,7 @@ input[type=checkbox] { margin-right: .5rem; }
 <tr>
 <td>Total turns</td>
 <td>12–20 over ~10 min</td>
-<td>15 blocked × <code>risk_score</code> 60 = 900 vs a threshold of 100</td>
+<td>Volume for the dashboards and the Triage agent's evidence; risk accrues per finding, not per turn (§7)</td>
 </tr>
 <tr>
 <td>Distinct sessions</td>
@@ -307,37 +307,35 @@ input[type=checkbox] { margin-right: .5rem; }
 <hr />
 <h2>7. Worked risk math</h2>
 <p>Verified against ES 8.6: <code>Risk - 24 Hour Risk Threshold Exceeded - Rule</code> evaluates <code>risk_threshold=100</code>, summing <code>calculated_risk_score</code> per <code>risk_object</code>.</p>
+<p>Risk is written once per <strong>finding</strong>, not per turn. Each finding from <code>AI Governance - Prompt Injection Attack Correlation - Rule</code> adds 80 to the actor (<code>user</code>) and 60 to each distinct source address (<code>src</code>, type system). As of TA v1.7.1 a spray of up to about 5 minutes raises exactly one finding, and every later spray raises another. Verified live on splunk104, 2026-10-07.</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
-<th>Blocked turns</th>
-<th>Risk accrued</th>
+<th>Findings for the actor in 24 h</th>
+<th>Actor risk</th>
+<th>Each source's risk (if seen in every finding)</th>
 <th>Threshold</th>
-<th>Result</th>
+<th>Actor result</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>1</td>
+<td>1 (one spray)</td>
+<td>80</td>
 <td>60</td>
 <td>100</td>
 <td>below</td>
 </tr>
 <tr>
-<td><strong>2</strong></td>
+<td><strong>2</strong> (a repeat spray)</td>
+<td><strong>160</strong></td>
 <td><strong>120</strong></td>
 <td>100</td>
 <td><strong>crosses</strong></td>
 </tr>
-<tr>
-<td>15 (default)</td>
-<td>900</td>
-<td>100</td>
-<td>9× over</td>
-</tr>
 </tbody>
 </table></div>
-<p>Two events are enough. The default of 15 exists for narrative texture — distinct sessions, multiple apps and models, several techniques — not to reach the threshold. If you need a shorter demo, intensity can drop to 5 and still cross comfortably.</p>
+<p>So the actor crosses the 24-hour threshold on the second spray, not the first. Up to TA v1.7.0 one finding wrote the actor twice (80 + 60), so the actor crossed at 140 on a single spray and the source address never got any risk at all. The default 15 turns exist for narrative texture — distinct sessions, multiple apps and models, several techniques — not to reach the threshold.</p>
 <hr />
 <h2>8. Expected downstream behaviour</h2>
 <ol>
@@ -353,7 +351,7 @@ input[type=checkbox] { margin-right: .5rem; }
 <ul>
 <li><input type="checkbox" disabled> Toggle drives real AI Defense turns; no verdict is fabricated.</li>
 <li><input type="checkbox" disabled> Re-running produces a fresh campaign with all-new <code>event_id</code> / <code>trace_id</code> / <code>session_id</code>.</li>
-<li><input type="checkbox" disabled> Primary actor produces ≥ 2 blocked turns (threshold) — default 15.</li>
+<li><input type="checkbox" disabled> Primary actor produces ≥ 2 blocked turns — default 15. (The actor's risk crosses the threshold on its second finding, i.e. a repeat spray; §7.)</li>
 <li><input type="checkbox" disabled> ≥ 3 distinct <code>session_id</code>, ≥ 2 <code>app_name</code>, ≥ 2 <code>model_name</code>.</li>
 <li><input type="checkbox" disabled> ≥ 5 distinct injection technique families represented.</li>
 <li><input type="checkbox" disabled> ~15% of turns allowed through, carrying real token counts and a genuine model response.</li>

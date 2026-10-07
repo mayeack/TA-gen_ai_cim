@@ -174,7 +174,7 @@ input[type=checkbox] { margin-right: .5rem; }
 </table>
 <h3 id="22-the-post-deploy-script-toolsshow_postdeploypy">2.2 The post-deploy script — <code>tools/show_postdeploy.py</code></h3>
 <p>Excluded from the tarball (<code>package.sh</code> drops <code>tools/</code>). Run it after the TA is installed.</p>
-<p>Since the TA seeds Mission Control on its own (the shipped search <em>GenAI - ES - Seed Response Plan and SOAR Binding</em> runs <code>| genaiseedes</code> hourly and on startup, using the ES/SOAR pairing proxy for the SOAR half), steps 4–7 and 10–12 below are the <strong>same code</strong> (<code>bin/genai_es_seed.py</code>) run from outside with explicit credentials. Running the script still matters for a demo stack: it applies everything immediately, it can install the simulator app on SOAR (in-product that needs a <code>soar</code> account in <code>ta_gen_ai_cim_account.conf</code>), and steps 1–3, 8, 9 and 13 exist nowhere else.</p>
+<p>Since the TA seeds Mission Control on its own (the shipped search <em>GenAI - ES - Seed Response Plan and SOAR Binding</em> runs <code>| genaiseedes</code> hourly and on startup, using the ES/SOAR pairing proxy for the SOAR half), steps 4–7 and 10–12 below are the <strong>same code</strong> (<code>bin/genai_es_seed.py</code>) run from outside with explicit credentials. Running the script still matters for a demo stack: it applies everything immediately, it can install the simulator app on SOAR (in-product that needs a <code>soar</code> account in <code>ta_gen_ai_cim_account.conf</code>), and steps 1–3, 8, 9, 13 and 14 exist nowhere else.</p>
 <table>
 <thead>
 <tr>
@@ -213,7 +213,7 @@ input[type=checkbox] { margin-right: .5rem; }
 </tr>
 <tr>
 <td>8. Demo timing</td>
-<td>Partly TA-owned, partly <code>SA-ThreatIntelligence</code>-owned — and TA-owned demo tuning must not ship to real customers</td>
+<td>The TA-owned half is the shipped default since v1.7.1; the step re-asserts it over <code>local/</code> overrides left by older versions of this script, and retunes the <code>SA-ThreatIntelligence</code>-owned risk rule, which conf layering cannot reach</td>
 </tr>
 <tr>
 <td>9. Verify</td>
@@ -235,6 +235,10 @@ input[type=checkbox] { margin-right: .5rem; }
 <td>13. Smoke test (<code>--soar-smoke-test</code>)</td>
 <td>Runs test connectivity / get user / disable user for <code>t.nguyen</code> on a scratch container and closes it</td>
 </tr>
+<tr>
+<td>14. Add <code>gen_ai_log</code> to the default search indexes of <code>admin</code>, <code>ess_admin</code>, <code>ess_analyst</code></td>
+<td>Roles belong to Splunk and ES; a TA must not redefine them in <code>default/</code> (§5.4)</td>
+</tr>
 </tbody>
 </table>
 <p>Steps 10–13 run <strong>first</strong> so that step 4 can turn the plan's <code>suggestions.soar_binding[]</code> entries into real task actions with that tenant's app/asset ids. Without SOAR credentials step 4 drops the binding and preserves whatever actions/playbooks the live record already carries per task.</p>
@@ -246,7 +250,7 @@ python3 tools/show_postdeploy.py --stack https://esp-shw-xxxx.splunkcloud.com \
 </code></pre>
 <p>Drop <code>--dry-run</code> to apply. It is idempotent — re-running updates in place. <code>--soar-only</code> runs steps 10–13 alone.</p>
 <blockquote>
-<p><strong>Verification status.</strong> Steps 3, 4 and 8 use endpoints confirmed against a live ES 8.6 stack; steps 5, 6 and 7 were corrected against the <code>missioncontrol</code> Python data models and REST handlers (not <code>collections.conf</code>). Steps 1 and 2 are built from Splunk's documented ACS API and were <strong>not</strong> executed end-to-end. Steps 10–13 were executed end-to-end on a SOAR Cloud 8.6.0 tenant paired with ES 8.6 (2026-09-03), and the task-action record step 4 writes was validated against the <code>missioncontrol</code> <code>Action</code> model. Run <code>--dry-run</code> first and read the per-step report.</p>
+<p><strong>Verification status.</strong> Steps 3, 4 and 8 use endpoints confirmed against a live ES 8.6 stack; steps 5, 6 and 7 were corrected against the <code>missioncontrol</code> Python data models and REST handlers (not <code>collections.conf</code>). Steps 1 and 2 are built from Splunk's documented ACS API and were <strong>not</strong> executed end-to-end. Steps 10–13 were executed end-to-end on a SOAR Cloud 8.6.0 tenant paired with ES 8.6 (2026-09-03), and the task-action record step 4 writes was validated against the <code>missioncontrol</code> <code>Action</code> model. Step 14 uses the documented <code>authorization/roles</code> endpoint and has <strong>not</strong> been executed against a live stack. Run <code>--dry-run</code> first and read the per-step report.</p>
 </blockquote>
 <h3 id="23-demobot">2.3 DemoBot</h3>
 <p>Streams live over HEC. The spray toggle is specified in <code>demobot-spray-attack-spec.md</code> — <strong>specification only, no implementation.</strong></p>
@@ -314,14 +318,18 @@ python3 tools/show_postdeploy.py --stack https://esp-shw-xxxx.splunkcloud.com \
 <h3 id="52-bypass-the-rba-hop-for-the-live-loop">5.2 Bypass the RBA hop for the live loop</h3>
 <p><code>Risk - 24 Hour Risk Threshold Exceeded - Rule</code> searches <code>-2h@h</code> → <code>-10m@m</code>. That <code>-10m@m</code> bound makes recent events invisible for ten minutes — an unavoidable floor if the Finding depends on it.</p>
 <p>The correlation rule already sets <code>action.notable = 1</code> and raises the Finding itself, so <strong>drive the live demo off the correlation rule.</strong> Post-deploy also sets the risk rule's <code>latest</code> to <code>now</code> and its cron to <code>*/1</code> (skip with <code>--keep-risk-timing</code>), which pulls the RBA narrative into the fast loop too.</p>
-<p>Risk math for the narrative: threshold is <code>100</code>, each blocked injection carries <code>risk_score: 60</code> — <strong>two events cross it</strong>; the default 15-event spray gives 900.</p>
-<h3 id="53-the-suppression-trap">5.3 The suppression trap</h3>
-<p>The correlation rule ships:</p>
+<p>Risk math for the narrative: threshold is <code>100</code>, and risk is written per <strong>finding</strong>, not per blocked turn — each correlation finding adds 80 to the actor and 60 to each source address. One spray (one finding) leaves the actor at 80; <strong>the second spray crosses it</strong> (160). Up to v1.7.0 a single finding wrote the actor twice (140) and the source never, which is why older rehearsals crossed on one spray.</p>
+<h3 id="53-repeat-runs">5.3 Repeat runs</h3>
+<p>As of v1.7.1 the correlation rule ships:</p>
 <pre><code>alert.suppress = 1
 alert.suppress.fields = actor
-alert.suppress.period = 86400s
+alert.suppress.period = 600s
 </code></pre>
-<p><strong>One finding per actor per 24 hours.</strong> Rehearse twice as <code>t.nguyen</code> and the second run silently produces nothing — no error, no finding. Post-deploy step 8 disables it. If you configure a stack by hand, do not skip this.</p>
+<p>and its search emits an actor only while their newest injection attempt is under 5 minutes old. <strong>One finding per spray, and a new one for every later spray</strong> — rehearse as <code>t.nguyen</code> as often as you like. A 5-minute spray raises exactly one finding because its attempts go stale before the 10-minute suppression lapses; a spray that runs longer re-notifies every 10 minutes with the cumulative 24-hour counts.</p>
+<p>Up to v1.7.0 the period was <code>86400s</code> — one finding per actor per day, so a second rehearsal as the same actor silently produced nothing — and post-deploy step 8 worked around it by turning suppression off and narrowing the window to <code>-15m</code>, which instead raised a finding every minute. Those values live in <code>local/</code> and mask the new default, so step 8 now writes the v1.7.1 values explicitly; re-run it on any stack it configured before.</p>
+<h3 id="54-default-search-indexes-for-the-triage-agent">5.4 Default search indexes for the Triage agent</h3>
+<p>The ES Triage agent's evidence searches carry no <code>index=</code>, so they run against the role's default search indexes — <code>main</code> and <code>os</code> on ES. On a stack where <code>gen_ai_log</code> is not among them the agent finds no evidence and its verdicts drift to <em>Benign</em> / <em>False Positive</em>. Post-deploy step 14 appends <code>gen_ai_log</code> to <code>srchIndexesDefault</code> on <code>admin</code>, <code>ess_admin</code> and <code>ess_analyst</code>, keeping each role's existing defaults; it never widens <code>srchIndexesAllowed</code>, and reports a role that cannot already search the index instead of granting access. Roles belong to Splunk and ES, so this cannot ship in the TA's <code>default/authorize.conf</code>.</p>
+<p>The TA covers the field half of the same problem: since v1.7.1 <code>gen_ai_log</code> events carry the CIM <code>user</code>, <code>app</code> and <code>src</code> fields (same values as <code>gen_ai.user.id</code>, <code>gen_ai.app.name</code> and <code>client.address</code>), which is what the agent and Asset &amp; Identity correlation search on.</p>
 <hr />
 <h2 id="6-manual-fallback">6. Manual fallback</h2>
 <p>If the Show Template cannot run arbitrary post-deploy scripts, these are the equivalent manual steps. Order matters.</p>
@@ -329,15 +337,16 @@ alert.suppress.period = 86400s
 <li><strong>Create index <code>gen_ai_log</code></strong> — Settings → Indexes, or ACS.</li>
 <li><strong>Create a HEC token</strong> — default index <code>gen_ai_log</code>, default sourcetype <code>gen_ai:json</code>. Record the token.</li>
 <li><strong>Enable the detections</strong> — ES → Security content → Content management, search <code>AI Governance</code>. <code>Prompt Injection Attack Correlation</code> is already enabled (v1.6.2+); enable the other two.</li>
-<li><strong>Tune the primary detection</strong> — on <code>AI Governance - Prompt Injection Attack Correlation - Rule</code>: cron <code>*/1 * * * *</code>, earliest <code>-15m</code>, latest <code>now</code>, and <strong>turn throttling/suppression OFF</strong>.</li>
+<li><strong>Check the primary detection's timing</strong> — v1.7.1 ships the demo timing as its default (cron <code>*/1 * * * *</code>, earliest <code>-24h</code>, throttle by <code>actor</code> for 600 seconds), so on a fresh install there is nothing to change. On a stack tuned for an older version, restore those values: an override that turns throttling off raises a finding every minute, and the old 86400-second window suppresses every repeat spray.</li>
 <li><strong>Tune the risk rule</strong> <em>(optional)</em> — <code>Risk - 24 Hour Risk Threshold Exceeded - Rule</code> in <code>SA-ThreatIntelligence</code>: latest <code>now</code>, cron <code>*/1 * * * *</code>.</li>
 <li><strong>Create the response plan</strong> — ES → Security content → Response plans → Create. Transcribe the four phases and fifteen tasks from <code>default/data/response_plans/ai_incident_response_plan.json</code>, including the seven embedded searches (<code>suggestions.searches</code>) and, with SOAR paired, the two Containment task actions (<code>suggestions.soar_binding</code> → MedAdvice Identity Provider <code>disable user</code> / <code>clear user sessions</code>). <em>(Tedious — the script exists for this reason.)</em></li>
 <li><strong>Create the investigation type</strong> and associate the response plan, so it auto-applies.</li>
 <li><strong>Create a queue</strong> for AI findings.</li>
 <li><strong>Enable the Triage agent</strong> — ES → Configure → All configurations → Security AI Assistant settings; turn on AI triage and enable it for <code>AI Governance - Prompt Injection Attack Correlation - Rule</code>.</li>
 <li><strong>Point DemoBot</strong> at the HEC token.</li>
+<li><strong>Add <code>gen_ai_log</code> to the default search indexes</strong> — Settings → Roles → <code>admin</code>, <code>ess_admin</code>, <code>ess_analyst</code> → <em>Indexes</em> → tick <strong>Default</strong> for <code>gen_ai_log</code>, keeping the existing defaults. Without it the Triage agent finds no evidence (§5.4).</li>
 </ol>
-<p>Steps 1–4 and 10 are the minimum for a working demo of steps 1–3. Steps 6–7 add step 5. Step 9 adds step 4.</p>
+<p>Steps 1–4 and 10 are the minimum for a working demo of steps 1–3. Steps 6–7 add step 5. Steps 9 and 11 add step 4.</p>
 <hr />
 <h2 id="7-demo-runbook">7. Demo runbook</h2>
 <ol>

@@ -28,7 +28,7 @@ If the toggle ever emits a synthetic verdict that AI Defense did not actually re
 
 The toggle should be **idempotent and re-runnable** — a demo gets rehearsed. Firing it twice must produce two distinct campaigns, not a no-op.
 
-> **Splunk-side counterpart:** the ES correlation rule ships with a 24-hour per-actor suppression window. The Show post-deploy script disables it. If you rehearse against a stack where that script has not run, the second campaign produces **no finding at all**. That is a Splunk-side setting, not a DemoBot bug.
+> **Splunk-side counterpart:** as of TA v1.7.1 the ES correlation rule raises one finding per campaign: it fires only for an actor with an injection attempt in the last 5 minutes and throttles that actor for 10. Up to v1.7.0 it suppressed each actor for 24 hours, so a second campaign under the same actor produced **no finding at all** unless the Show post-deploy script had turned suppression off. That is a Splunk-side setting, not a DemoBot bug.
 
 ---
 
@@ -39,7 +39,7 @@ The toggle should be **idempotent and re-runnable** — a demo gets rehearsed. F
 | Parameter | Value | Why it matters downstream |
 |---|---|---|
 | Primary actor | 1 (`t.nguyen`) | The correlation rule aggregates by actor; risk accrues to one `risk_object` |
-| Total turns | 12–20 over ~10 min | 15 blocked × `risk_score` 60 = 900 vs a threshold of 100 |
+| Total turns | 12–20 over ~10 min | Volume for the dashboards and the Triage agent's evidence; risk accrues per finding, not per turn (§7) |
 | Distinct sessions | 3–5 | Populates `distinct_sessions` — shows persistence across sessions |
 | Applications targeted | 2–3 | Populates `apps_targeted` — shows lateral probing |
 | Models targeted | 2–3 | Populates `models_targeted` |
@@ -132,13 +132,14 @@ The Show post-deploy script provisions the index and token and prints both.
 
 Verified against ES 8.6: `Risk - 24 Hour Risk Threshold Exceeded - Rule` evaluates `risk_threshold=100`, summing `calculated_risk_score` per `risk_object`.
 
-| Blocked turns | Risk accrued | Threshold | Result |
-|---|---|---|---|
-| 1 | 60 | 100 | below |
-| **2** | **120** | 100 | **crosses** |
-| 15 (default) | 900 | 100 | 9× over |
+Risk is written once per **finding**, not per turn. Each finding from `AI Governance - Prompt Injection Attack Correlation - Rule` adds 80 to the actor (`user`) and 60 to each distinct source address (`src`, type system). As of TA v1.7.1 a spray of up to about 5 minutes raises exactly one finding, and every later spray raises another. Verified live on splunk104, 2026-10-07.
 
-Two events are enough. The default of 15 exists for narrative texture — distinct sessions, multiple apps and models, several techniques — not to reach the threshold. If you need a shorter demo, intensity can drop to 5 and still cross comfortably.
+| Findings for the actor in 24 h | Actor risk | Each source's risk (if seen in every finding) | Threshold | Actor result |
+|---|---|---|---|---|
+| 1 (one spray) | 80 | 60 | 100 | below |
+| **2** (a repeat spray) | **160** | **120** | 100 | **crosses** |
+
+So the actor crosses the 24-hour threshold on the second spray, not the first. Up to TA v1.7.0 one finding wrote the actor twice (80 + 60), so the actor crossed at 140 on a single spray and the source address never got any risk at all. The default 15 turns exist for narrative texture — distinct sessions, multiple apps and models, several techniques — not to reach the threshold.
 
 ---
 
@@ -158,7 +159,7 @@ Two events are enough. The default of 15 exists for narrative texture — distin
 
 - [ ] Toggle drives real AI Defense turns; no verdict is fabricated.
 - [ ] Re-running produces a fresh campaign with all-new `event_id` / `trace_id` / `session_id`.
-- [ ] Primary actor produces ≥ 2 blocked turns (threshold) — default 15.
+- [ ] Primary actor produces ≥ 2 blocked turns — default 15. (The actor's risk crosses the threshold on its second finding, i.e. a repeat spray; §7.)
 - [ ] ≥ 3 distinct `session_id`, ≥ 2 `app_name`, ≥ 2 `model_name`.
 - [ ] ≥ 5 distinct injection technique families represented.
 - [ ] ~15% of turns allowed through, carrying real token counts and a genuine model response.

@@ -4,7 +4,7 @@
 
 **Splunk Technology Add-on for Generative AI Common Information Model**
 
-Version: 1.7.0  
+Version: 1.7.1  
 Author: Splunk AI Governance Team  
 License: Apache 2.0
 
@@ -549,9 +549,10 @@ The TA includes **15+ pre-configured alerts** in `savedsearches.conf`:
 > `disabled = 0` as of v1.6.2 so a fresh install lights up the
 > dashboard → correlation search → Mission Control Finding path with no manual
 > enablement step. It is read-only — no email, no ServiceNow, no outbound call —
-> runs every minute over a 24-hour window, and suppresses per actor for 24
-> hours. Turn it off in `local/savedsearches.conf` if you do not want it
-> scheduled.
+> runs every minute over a 24-hour window, fires only for an actor with an
+> injection attempt in the last 5 minutes, and suppresses that actor for 10
+> minutes, so each burst of attempts raises one finding. Turn it off in
+> `local/savedsearches.conf` if you do not want it scheduled.
 
 ### Safety & Compliance
 - **GenAI - Safety Violation Alert** - Detects safety policy violations
@@ -1338,7 +1339,8 @@ writes hops 2 and 3 (update-or-create, hourly and on startup).
 |---|---|---|
 | Response plan | `mc_response_templates` `_key ai_incident_response_plan` — the shipped JSON, URL-encoded on write; actions/playbooks already attached to a task in the ES UI are preserved unless a shipped `soar_binding` replaces them | `seed_response_plan = true` |
 | Investigation type | `mc_incident_types` `_key ai security incident`, this plan first in `response_template_ids` (existing ids kept) | same |
-| Queue | `queues` `_key ai_findings_queue` — *AI Findings*, `search_name="AI Governance*"` | same |
+| Queue | `queues` `_key ai_findings_queue` — *AI Findings*. Seeded with no routing rule, so findings stay in the default *Analyst Queue* | same |
+| Queue routing | Give the queue the rule `(rule_title =~ "^GenAI Prompt Injection")` (Mission Control rule-engine syntax, not SPL) so AI Governance findings land there. Grant analyst roles access to the queue in ES first: Mission Control shows a non-default queue only to admins until then | `route_findings_to_queue = false` |
 | SOAR binding | Through Mission Control's pairing proxy (`/v1/soar/...`, no SOAR credential in the TA): if the **MedAdvice Identity Provider** app is installed on the paired SOAR, create its `medadvice_idp` asset and resolve the plan's `soar_binding` entries into real task actions (`disable user`, `clear user sessions`). Otherwise skip and preserve | `bind_soar_actions = true` |
 | Simulator install | Install the app itself from `soar_apps/medadvice_idp/` when missing. The proxy has no install route, so this needs a `soar` account in `ta_gen_ai_cim_account.conf` (`url`, `auth_type = token` or `basic`, secret stored as the account password) | `install_simulator = false` |
 | Triage agent | `ai_triage_enabled = 1` + allowlist the primary detection (no-op without the `allow_ai_triage` entitlement) | `enable_triage_agent = false` |
@@ -1396,11 +1398,13 @@ app/asset ids. `--soar-only` runs just the SOAR steps.
 Let the correlation search fire, open the Finding, escalate it to an
 investigation, and confirm the four phases populate.
 
-> **Repeat runs:** the correlation rule ships with
-> `alert.suppress.period = 86400s` keyed on `actor`. That is one Finding per
-> actor per day — a second demo run against the same actor produces nothing and
-> looks like a broken pipeline. Set `alert.suppress = 0` in
-> `local/savedsearches.conf` while rehearsing.
+> **Repeat runs:** since v1.7.1 every spray raises its own Finding, including
+> repeats against the same actor: the rule emits an actor only while their
+> newest injection attempt is under 5 minutes old and throttles that actor for
+> `600s`. Up to v1.7.0 it throttled for `86400s` — one Finding per actor per day
+> — and the documented workaround was `alert.suppress = 0` in
+> `local/savedsearches.conf`. Remove that override when you upgrade: it masks
+> the new default and raises a Finding every minute.
 
 ### AI Triage agent (optional)
 
@@ -1426,6 +1430,7 @@ no-op rather than an error:
 | Splunk Cloud on AWS | |
 | Splunk SOAR paired with ES | |
 | AI Assistant turned on | Role needs `es_ai_edit_settings` |
+| `gen_ai_log` is a **default** search index for `admin`, `ess_admin` and `ess_analyst` | The agent's evidence searches carry no `index=`, so they run against the role's default indexes (`main` and `os` on ES); without `gen_ai_log` they find nothing and verdicts drift to *Benign* / *False Positive*. Settings → Roles → *Indexes* → **Default**, or `tools/show_postdeploy.py` step 14. A TA must not redefine those roles in `default/authorize.conf`, so this is per stack |
 
 Everything else in this section — the response plan, the investigation type, the
 findings and the risk scoring — works on ES 8.x without the agent.
@@ -1433,6 +1438,97 @@ findings and the risk scoring — works on ES 8.x without the agent.
 ---
 
 ## Version History
+
+### v1.7.1 (2026-10-07)
+
+**Fixes from the AI Trust workshop dry run**
+
+- FIXED: `| genaiseedes` crashed on every run since v1.7.0, so the shipped
+  search *GenAI - ES - Seed Response Plan and SOAR Binding* never wrote
+  anything: no AI Incident Response Plan, no `ai security incident`
+  investigation type, no AI Findings queue and no `medadvice_idp` SOAR asset,
+  on any stack. That is why the dry run's findings were all type *default*
+  with 0 response plans and why the rule's investigation type "did not exist".
+  Two collisions with splunklib's `SearchCommand`, the second hidden behind the
+  first: `generate()` assigned `self.logger`, a read-only property
+  (`AttributeError ... has no setter`), and called `self._service()`, a method
+  shadowed by the `None` that `SearchCommand.__init__` stores in
+  `self._service` (`'NoneType' object is not callable`). The logger is now
+  module level and the method is `_connect()`. Verified on ES 8.5.1: the
+  `run_on_startup` run created the plan, the investigation type and the queue
+  with 0 failures. A new offline test,
+  `tools/soar/tests/test_genaiseedes_command.py`, drives `generate()` end to
+  end and checks that no method is shadowed by a splunklib instance attribute.
+  The existing tests only covered the seeding core.
+- FIXED: the correlation rule suppressed each actor for 24 hours, so repeat
+  sprays under one actor produced at most one finding per day. It now emits an
+  actor only while their newest injection attempt is under 5 minutes old and
+  suppresses that actor for 600s. The result is one finding per spray, and a
+  new one for every later spray, with the cumulative 24-hour counts. The
+  `-24h` window is unchanged because the containment standard counts attempts
+  over 24 hours.
+- FIXED: risk (RBA) on all three AI Governance rules wrote only one of the two
+  configured risk objects. Each search ended with
+  `| eval risk_object=..., risk_object_type=...`, and ES `risk_extractor.py`
+  uses a result-level `risk_object` in place of every `_risk` entry, so the
+  `src`/system risk (score 60) was written as a duplicate of the first object.
+  The evals and the matching `nes_fields` entries are removed. Mission
+  Control's Entity column, which the evals were added to populate (commit
+  `4d61c09`), now comes from `action.notable.param._entities`. For a
+  correlation search ES applies that list to the finding only. The entity is
+  `user` on the correlation rule and `app` on the other two. `src` is also
+  cleared of loopback and placeholder values (`127.x`, `::1`, `null`,
+  `unknown`, `-`), so those never become risk objects. Verified live with
+  DemoBot sprays: each finding carries `risk_object` = the actor, and the risk
+  index gets the actor at 80 plus every source address at 60.
+- CHANGED (follows from the risk fix): one correlation firing now adds 80 to
+  the actor, not 140. The extra 60 was the duplicate. So the actor no longer
+  crosses ES's *Risk - 24 Hour Risk Threshold Exceeded* (100) on a single
+  spray. It crosses on its second finding within 24 hours, for example a
+  repeat spray, and each source address crosses on its second finding too.
+- FIXED: the AI Findings queue never matched. `| genaiseedes` seeded the
+  SPL-style rule `search_name="AI Governance*"`, but Mission Control evaluates
+  queue rules with its `rule_engine` library. That string is a syntax error
+  there and was logged to `notable_modalert.log` on every finding. It could
+  not have matched even if valid: `notable.py` assigns the queue before the
+  finding gets a `search_name`. The queue now carries
+  `(rule_title =~ "^GenAI Prompt Injection")` plus the matching structured
+  `rules`, both generated the way the ES UI builds them, so the queue stays
+  editable. The rule matches the literal titles of all three AI Governance
+  rules, and the tests check it with Mission Control's own engine
+  (`tools/soar/tests/test_seed.py`, R-CONF-007). Verified live: a finding
+  routed to *AI Findings*. Routing now ships **off** behind a new switch,
+  `route_findings_to_queue = false` in `ta_gen_ai_cim_es.conf` (and
+  `--route-findings-to-queue` in `tools/show_postdeploy.py`). A routed
+  finding leaves the default *Analyst Queue*, where analysts and AI Trust Lab
+  4.4 look, and Mission Control shows a non-default queue only to admins until
+  roles are granted on it. Until v1.7.1 findings stayed in the Analyst Queue
+  only because the rule was broken, so off preserves the behaviour everyone
+  has seen. Turn it on per stack once queue permissions are set.
+- FIXED: the ES Triage agent could not find the evidence. `gen_ai_log` events
+  had no CIM `user`, `app` or `src`; identity lived only in `gen_ai.user.id`.
+  `[gen_ai:json]` now calculates `user`, `app` and `src` with the same
+  expressions as `gen_ai.user.id`, `gen_ai.app.name` and `client.address`.
+  They are EVALs rather than aliases because an alias cannot read a calculated
+  field. `[demobot:audit]` gains `user`/`src`, `[demobot:escalation]` gains
+  `user` and `[medadvice:json]` gains `app`. The other half of that root cause
+  is per stack: the agent's searches carry no `index=`, so `gen_ai_log` must
+  be a default search index for `admin`, `ess_admin` and `ess_analyst`. A TA
+  must not redefine those roles, so `tools/show_postdeploy.py` gains step 14,
+  which appends it while keeping existing defaults and never widening
+  `srchIndexesAllowed`. The README Triage agent prerequisites list it too.
+- FIXED: AI Governance Overview. The *PII Detected* tile now counts events
+  flagged by `gen_ai.pii.detected` (the application / AI Defense signal) as
+  well as either scoring pipeline, once per `gen_ai.event.id`. Before, it read
+  only scoring output and showed 0 wherever the models were not running. The
+  *Retries* tile is removed: nothing in the TA maps `gen_ai.retry.count`, so it
+  always read 0. The *ML Detection Summary* and *GenAI Detection Summary*
+  panels are removed.
+- CHANGED: `tools/show_postdeploy.py` step 8 now writes the v1.7.1 throttle
+  (`actor`, `600s`, `-24h`) instead of turning suppression off with a `-15m`
+  window. That old override lives in `local/` and masks the new default,
+  raising a finding every minute, so re-run step 8 on any stack it configured
+  before. Step 9 checks for the new values.
 
 ### v1.7.0 (2026-09-03)
 

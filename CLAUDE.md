@@ -154,8 +154,8 @@ ML detections, and a ServiceNow AI Case Management integration.
   Findings queue) and, via the ES/SOAR pairing proxy, the `medadvice_idp`
   asset + the plan's SOAR task actions when the simulator app is on the
   paired SOAR. Update-or-create, live task actions preserved, no event data
-  read; `install_simulator` and `enable_triage_agent` ship off in
-  `ta_gen_ai_cim_es.conf`.
+  read; `install_simulator`, `enable_triage_agent` and
+  `route_findings_to_queue` ship off in `ta_gen_ai_cim_es.conf`.
   Do not add further exceptions without the same stanza rationale comment, a
   README changelog entry, and an R-SEC-002 amendment in VALIDATION_RULES.md.
 - Data models: `AI_Inference`, `AI_Safety`, `AI_Evaluation`
