@@ -28,7 +28,7 @@ If the toggle ever emits a synthetic verdict that AI Defense did not actually re
 
 The toggle should be **idempotent and re-runnable** — a demo gets rehearsed. Firing it twice must produce two distinct campaigns, not a no-op.
 
-> **Splunk-side counterpart:** as of TA v1.7.1 the ES correlation rule raises one finding per campaign: it fires only for an actor with an injection attempt in the last 5 minutes and throttles that actor for 10. Up to v1.7.0 it suppressed each actor for 24 hours, so a second campaign under the same actor produced **no finding at all** unless the Show post-deploy script had turned suppression off. That is a Splunk-side setting, not a DemoBot bug.
+> **Splunk-side counterpart:** as of TA v1.7.1 the ES correlation rule raises one finding per campaign of up to about 5 minutes (the AI Trust lab uses 300 s): it fires only for an actor with an injection attempt in the last 5 minutes and throttles that actor for 10. A longer campaign re-notifies about every 10 minutes with the cumulative counts. Up to v1.7.0 it suppressed each actor for 24 hours, so a second campaign under the same actor produced **no finding at all** unless the Show post-deploy script had turned suppression off. That is a Splunk-side setting, not a DemoBot bug.
 
 ---
 
@@ -132,7 +132,7 @@ The Show post-deploy script provisions the index and token and prints both.
 
 Verified against ES 8.6: `Risk - 24 Hour Risk Threshold Exceeded - Rule` evaluates `risk_threshold=100`, summing `calculated_risk_score` per `risk_object`.
 
-Risk is written once per **finding**, not per turn. Each finding from `AI Governance - Prompt Injection Attack Correlation - Rule` adds 80 to the actor (`user`) and 60 to each distinct source address (`src`, type system). As of TA v1.7.1 a spray of up to about 5 minutes raises exactly one finding, and every later spray raises another. Verified live on splunk104, 2026-10-07.
+Risk is written once per **finding**, not per turn. Each finding from `AI Governance - Prompt Injection Attack Correlation - Rule` adds 80 to the actor (`user`) and 60 to each distinct source address (`src`, type system). As of TA v1.7.1 a spray of up to about 5 minutes raises exactly one finding, and every later spray raises another. A campaign at this spec's ~10-minute default raises two, one at the start and one about 10 minutes later, so the actor reaches 160 and crosses on the campaign itself. Verified live on splunk104 (2026-10-07) and by a replay of real spray timestamps (62 of 62 bursts of 5 minutes or less gave exactly one finding).
 
 | Findings for the actor in 24 h | Actor risk | Each source's risk (if seen in every finding) | Threshold | Actor result |
 |---|---|---|---|---|

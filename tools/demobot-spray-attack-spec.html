@@ -122,7 +122,7 @@ input[type=checkbox] { margin-right: .5rem; }
 </table></div>
 <p>The toggle should be <strong>idempotent and re-runnable</strong> — a demo gets rehearsed. Firing it twice must produce two distinct campaigns, not a no-op.</p>
 <blockquote>
-<p><strong>Splunk-side counterpart:</strong> as of TA v1.7.1 the ES correlation rule raises one finding per campaign: it fires only for an actor with an injection attempt in the last 5 minutes and throttles that actor for 10. Up to v1.7.0 it suppressed each actor for 24 hours, so a second campaign under the same actor produced <strong>no finding at all</strong> unless the Show post-deploy script had turned suppression off. That is a Splunk-side setting, not a DemoBot bug.</p>
+<p><strong>Splunk-side counterpart:</strong> as of TA v1.7.1 the ES correlation rule raises one finding per campaign of up to about 5 minutes (the AI Trust lab uses 300 s): it fires only for an actor with an injection attempt in the last 5 minutes and throttles that actor for 10. A longer campaign re-notifies about every 10 minutes with the cumulative counts. Up to v1.7.0 it suppressed each actor for 24 hours, so a second campaign under the same actor produced <strong>no finding at all</strong> unless the Show post-deploy script had turned suppression off. That is a Splunk-side setting, not a DemoBot bug.</p>
 </blockquote>
 <hr />
 <h2>3. Emission profile</h2>
@@ -307,7 +307,7 @@ input[type=checkbox] { margin-right: .5rem; }
 <hr />
 <h2>7. Worked risk math</h2>
 <p>Verified against ES 8.6: <code>Risk - 24 Hour Risk Threshold Exceeded - Rule</code> evaluates <code>risk_threshold=100</code>, summing <code>calculated_risk_score</code> per <code>risk_object</code>.</p>
-<p>Risk is written once per <strong>finding</strong>, not per turn. Each finding from <code>AI Governance - Prompt Injection Attack Correlation - Rule</code> adds 80 to the actor (<code>user</code>) and 60 to each distinct source address (<code>src</code>, type system). As of TA v1.7.1 a spray of up to about 5 minutes raises exactly one finding, and every later spray raises another. Verified live on splunk104, 2026-10-07.</p>
+<p>Risk is written once per <strong>finding</strong>, not per turn. Each finding from <code>AI Governance - Prompt Injection Attack Correlation - Rule</code> adds 80 to the actor (<code>user</code>) and 60 to each distinct source address (<code>src</code>, type system). As of TA v1.7.1 a spray of up to about 5 minutes raises exactly one finding, and every later spray raises another. A campaign at this spec's ~10-minute default raises two, one at the start and one about 10 minutes later, so the actor reaches 160 and crosses on the campaign itself. Verified live on splunk104 (2026-10-07) and by a replay of real spray timestamps (62 of 62 bursts of 5 minutes or less gave exactly one finding).</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>

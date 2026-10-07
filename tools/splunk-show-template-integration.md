@@ -147,6 +147,8 @@ alert.suppress.period = 600s
 
 and its search emits an actor only while their newest injection attempt is under 5 minutes old. **One finding per spray, and a new one for every later spray** — rehearse as `t.nguyen` as often as you like. A 5-minute spray raises exactly one finding because its attempts go stale before the 10-minute suppression lapses; a spray that runs longer re-notifies every 10 minutes with the cumulative 24-hour counts.
 
+**The scheduler has to run.** The gate is relative to the run time, so if every run is skipped for 5 or more minutes after the last attempt (10 or more for a 300-second spray), that burst raises nothing. The usual cause is the instance-wide concurrent-search limit (`status=skipped ... maximum number of concurrent historical scheduled searches`). A healthy stack runs the rule every minute. If a spray raises no finding, check `scheduler.log` for skipped runs before suspecting the rule.
+
 Up to v1.7.0 the period was `86400s` — one finding per actor per day, so a second rehearsal as the same actor silently produced nothing — and post-deploy step 8 worked around it by turning suppression off and narrowing the window to `-15m`, which instead raised a finding every minute. Those values live in `local/` and mask the new default, so step 8 now writes the v1.7.1 values explicitly; re-run it on any stack it configured before.
 
 ### 5.4 Default search indexes for the Triage agent

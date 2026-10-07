@@ -78,7 +78,10 @@ Pick one:
 
 As of v1.7.1 nothing needs tuning: the correlation rule fires only for an
 actor with an injection attempt in the last 5 minutes and throttles that actor
-for 600 seconds, so every spray as `t.nguyen` raises exactly one new finding.
+for 600 seconds, so every spray of up to about 5 minutes as `t.nguyen` raises
+exactly one new finding, and a longer one re-notifies about every 10 minutes. If
+a spray raises nothing, look for skipped runs in `scheduler.log`: the rule needs
+at least one run within 5 minutes of the last attempt.
 Up to v1.7.0 it throttled for 86400 seconds, and `tools/show_postdeploy.py`
 step 8 turned throttling off (`alert.suppress = 0`, `-15m` window), which raised
 a finding every minute instead. Those overrides sit in `local/` and mask the new
