@@ -1560,6 +1560,23 @@ findings and the risk scoring — works on ES 8.x without the agent.
   *Retries* tile is removed: nothing in the TA maps `gen_ai.retry.count`, so it
   always read 0. The *ML Detection Summary* and *GenAI Detection Summary*
   panels are removed.
+- FIXED: Prompt Injection Detection. The tiles disagreed: *Total Scanned* and
+  *Injections Detected* counted detector output rows, and AI Defense
+  contributed only the prompts it blocked, so where only AI Defense ran the
+  two always matched (for example 19 and 19). *Detection Rate* divided by
+  every prompt instead (5%). A prompt flagged by both AI Defense and the GenAI
+  judge also counted twice (186 detections for 138 prompts over 30 days on the
+  dev stack). The dashboard now has one base search that keeps one row per
+  `gen_ai.event.id`, so every tile, the trend and the tables count distinct
+  prompts from the same total. *Clean prompts* on the trend was always 0 and
+  is now plotted. *Sessions* in *Top Injection Sources* was always 0 and is
+  now counted. AI Defense injections are now recognised by its own
+  `gen_ai.safety.categories` verdict ("Prompt Injection") rather than
+  DemoBot's `prompt_category` label, which other emitters do not set. Their
+  technique is now the AI Defense rule names, not a fixed `ai_defense_block`.
+  An AI Defense block counts as *high* severity and is left out of
+  *Confidence Distribution*, because a block carries no score. Before, both
+  donuts read DemoBot's `evaluation_score_label`.
 - CHANGED: `tools/show_postdeploy.py` step 8 now writes the v1.7.1 throttle
   (`actor`, `600s`, `-24h`) instead of turning suppression off with a `-15m`
   window. That old override lives in `local/` and masks the new default,

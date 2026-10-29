@@ -1,11 +1,11 @@
 
 <dashboard version="2" theme="dark">
     <label>Prompt Injection Detection</label>
-    <description>Detection of adversarial prompt injection attacks targeting AI models.</description>
+    <description>Detection of adversarial prompt injection attacks targeting AI models. Every count is distinct prompts: a prompt flagged by more than one detector (AI Defense, the ML model, the GenAI judge) counts once.</description>
     <definition><![CDATA[
 {
     "title": "Prompt Injection Detection",
-    "description": "Detection of adversarial prompt injection attacks targeting AI models.",
+    "description": "Detection of adversarial prompt injection attacks targeting AI models. Every count is distinct prompts: a prompt flagged by more than one detector (AI Defense, the ML model, the GenAI judge) counts once.",
     "inputs": {
         "input_model": {
             "dataSources": {
@@ -225,6 +225,7 @@
                 "yAxisTitleText": "Technique"
             },
             "title": "Injections by Technique",
+            "description": "A prompt can count under several techniques. AI Defense entries are the guardrail rules that fired on the prompt.",
             "type": "splunk.bar"
         },
         "viz_severity_distribution": {
@@ -243,6 +244,7 @@
                 "showDonutHole": true
             },
             "title": "Severity Distribution",
+            "description": "Highest severity any detector gave the prompt. An AI Defense block counts as high.",
             "type": "splunk.pie"
         },
         "viz_confidence_distribution": {
@@ -261,6 +263,7 @@
                 "showDonutHole": true
             },
             "title": "Confidence Distribution",
+            "description": "ML model and GenAI judge scores only. An AI Defense block carries no confidence score.",
             "type": "splunk.pie"
         },
         "viz_top_sources": {
@@ -342,7 +345,7 @@
         },
         "ds_pi_base": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" ( sourcetype=\"ai_cim:prompt_injection:ml_scoring\" OR (sourcetype=\"genai_scoring\" genai_scoring_pipeline=\"prompt_injection\") OR (gen_ai.policy.blocked=\"true\" prompt_category=\"prompt_injection\") ) | eval detection_source=case(sourcetype==\"ai_cim:prompt_injection:ml_scoring\",\"ML\", sourcetype==\"genai_scoring\",\"GenAI\", 1=1,\"AI Defense\") | eval pi_detected=case(detection_source==\"ML\",'gen_ai.prompt_injection.ml_detected', detection_source==\"GenAI\",'gen_ai.prompt_injection.genai_detected', 1=1,\"true\") | eval pi_risk_score=case(detection_source==\"AI Defense\", if(isnum(risk_score), if(risk_score>1, round(risk_score/100,4), risk_score), null()), 1=1,'gen_ai.prompt_injection.risk_score') | eval pi_confidence=case(detection_source==\"AI Defense\", coalesce(evaluation_score_label,\"high\"), 1=1,'gen_ai.prompt_injection.confidence') | eval pi_severity=case(detection_source==\"ML\",'gen_ai.prompt_injection.severity', detection_source==\"AI Defense\", coalesce(evaluation_score_label,\"medium\"), 1=1, case('pi_risk_score'>0.9,\"critical\",'pi_risk_score'>0.7,\"high\",'pi_risk_score'>0.5,\"medium\",'pi_risk_score'>0.3,\"low\",1=1,\"none\")) | eval pi_technique=case(detection_source==\"ML\",'gen_ai.prompt_injection.technique', detection_source==\"GenAI\", coalesce(mvindex('gen_ai.prompt_injection.types',0),\"unknown\"), 1=1,\"ai_defense_block\") | eval src=coalesce('client.address',\"unknown\"), Request_ID='gen_ai.request.id', Service='gen_ai.app.name', Model='gen_ai.request.model'",
+                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" ((`exclude_scoring_sourcetypes`) OR sourcetype=\"ai_cim:prompt_injection:ml_scoring\" OR (sourcetype=\"genai_scoring\" genai_scoring_pipeline=\"prompt_injection\")) | eval detector=case(sourcetype==\"ai_cim:prompt_injection:ml_scoring\",\"ML model\", sourcetype==\"genai_scoring\",\"GenAI judge\"), is_prompt=if(isnull(detector), 1, 0) | eval pid=coalesce('gen_ai.event.id', 'gen_ai.request.id', if(is_prompt=1, splunk_server.\":\"._cd, null())) | eval ad_hit=if(is_prompt=1 AND 'gen_ai.policy.blocked'==\"true\" AND isnotnull(mvfind('gen_ai.safety.categories', \"(?i)prompt.?injection\")), 1, 0), ml_hit=if(detector==\"ML model\" AND 'gen_ai.prompt_injection.ml_detected'==\"true\", 1, 0), gj_hit=if(detector==\"GenAI judge\" AND 'gen_ai.prompt_injection.genai_detected'==\"true\", 1, 0) | eval ad_cats=if(ad_hit=1, mvjoin('gen_ai.safety.categories', \" | \"), null()) | rex field=ad_cats max_match=0 \"\\((?<ad_rules>[^)]+)\\)\" | eval ad_rules=split(mvjoin(ad_rules, \",\"), \",\") | eval ad_rules=mvdedup(mvmap(ad_rules, \"AI Defense: \".trim(ad_rules))) | eval technique=case(ml_hit=1, 'gen_ai.prompt_injection.technique', gj_hit=1, coalesce('gen_ai.prompt_injection.types{}', 'gen_ai.prompt_injection.types', \"unknown\"), ad_hit=1, coalesce(ad_rules, \"AI Defense: Prompt Injection\")) | eval hit_risk=case(ml_hit=1 OR gj_hit=1, tonumber('gen_ai.prompt_injection.risk_score'), ad_hit=1, if(tonumber(risk_score)>1, tonumber(risk_score)/100, tonumber(risk_score))) | eval sev=case(ml_hit=1, 'gen_ai.prompt_injection.severity', gj_hit=1, case(hit_risk>0.9,\"critical\", hit_risk>0.7,\"high\", hit_risk>0.5,\"medium\", hit_risk>0.3,\"low\", 1=1,\"none\"), ad_hit=1, \"high\"), conf=if(ml_hit=1 OR gj_hit=1, 'gen_ai.prompt_injection.confidence', null()) | eval sev_rank=case(sev==\"critical\",4, sev==\"high\",3, sev==\"medium\",2, sev==\"low\",1, isnotnull(sev),0), conf_rank=case(conf==\"very_high\",4, conf==\"high\",3, conf==\"medium\",2, conf==\"low\",1, conf==\"very_low\",0) | stats min(_time) as _time, max(is_prompt) as is_prompt, max(ad_hit) as ad_hit, max(ml_hit) as ml_hit, max(gj_hit) as gj_hit, max(sev_rank) as sev_rank, max(conf_rank) as conf_rank, max(hit_risk) as risk, values(technique) as Technique, values(gen_ai.request.id) as Request_ID, values(gen_ai.session.id) as session, values(client.address) as src, values(gen_ai.app.name) as Service, values(gen_ai.request.model) as Model by pid | where is_prompt=1 | eval detected=if(ad_hit+ml_hit+gj_hit>0, 1, 0) | appendpipe [ bin _time span=1h | stats count as prompts, sum(detected) as detected_prompts by _time | eval clean_prompts=prompts-detected_prompts, row=\"hour\" ] | where row==\"hour\" OR detected=1 | eval row=coalesce(row, \"prompt\"), src=if(row==\"prompt\", coalesce(src, \"unknown\"), null()) | eval Severity=mvindex(split(\"none,low,medium,high,critical\", \",\"), sev_rank), Confidence=mvindex(split(\"very_low,low,medium,high,very_high\", \",\"), conf_rank), Risk_Score=round(risk, 2), Detectors=mvappend(if(ad_hit=1, \"AI Defense\", null()), if(ml_hit=1, \"ML model\", null()), if(gj_hit=1, \"GenAI judge\", null())) | fields _time, row, prompts, detected_prompts, clean_prompts, Request_ID, session, src, Service, Model, Severity, Confidence, Technique, Risk_Score, Detectors",
                 "queryParameters": {
                     "earliest": "$time.earliest$",
                     "latest": "$time.latest$"
@@ -353,80 +356,77 @@
         "ds_total_scanned": {
             "options": {
                 "extend": "ds_pi_base",
-                "query": "| stats count as total_scanned | eval total_scanned=coalesce(total_scanned, 0)"
+                "query": "| where row=\"hour\" | stats sum(prompts) as total_scanned | eval total_scanned=coalesce(total_scanned, 0)"
             },
             "type": "ds.chain"
         },
         "ds_injections_detected": {
             "options": {
                 "extend": "ds_pi_base",
-                "query": "| where pi_detected=\"true\" | stats count as injections_detected | eval injections_detected=coalesce(injections_detected, 0)"
+                "query": "| where row=\"prompt\" | stats count as injections_detected"
             },
             "type": "ds.chain"
         },
         "ds_critical_severity": {
             "options": {
                 "extend": "ds_pi_base",
-                "query": "| where pi_detected=\"true\" AND pi_severity=\"critical\" | stats count as critical_count | eval critical_count=coalesce(critical_count, 0)"
+                "query": "| where row=\"prompt\" AND Severity=\"critical\" | stats count as critical_count"
             },
             "type": "ds.chain"
         },
         "ds_high_severity": {
             "options": {
                 "extend": "ds_pi_base",
-                "query": "| where pi_detected=\"true\" AND pi_severity=\"high\" | stats count as high_count | eval high_count=coalesce(high_count, 0)"
+                "query": "| where row=\"prompt\" AND Severity=\"high\" | stats count as high_count"
             },
             "type": "ds.chain"
         },
         "ds_detection_rate": {
             "options": {
-                "query": "index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" `exclude_scoring_sourcetypes` | stats count as baseline | appendcols [ search index=gen_ai_log gen_ai.app.name=\"$service_filter$\" gen_ai.request.model=\"$model_filter$\" ( (sourcetype=\"ai_cim:prompt_injection:ml_scoring\" gen_ai.prompt_injection.ml_detected=\"true\") OR (sourcetype=\"genai_scoring\" genai_scoring_pipeline=\"prompt_injection\" gen_ai.prompt_injection.genai_detected=\"true\") OR (gen_ai.policy.blocked=\"true\" prompt_category=\"prompt_injection\") ) | stats count as detected ] | eval detected=coalesce(detected,0) | eval detection_rate=round(detected/coalesce(baseline,1)*100,1) | fields detection_rate",
-                "queryParameters": {
-                    "earliest": "$time.earliest$",
-                    "latest": "$time.latest$"
-                }
+                "extend": "ds_pi_base",
+                "query": "| where row=\"hour\" | stats sum(prompts) as scanned, sum(detected_prompts) as detected | eval detection_rate=if(scanned>0, round(detected/scanned*100, 1), 0) | fields detection_rate"
             },
-            "type": "ds.search"
+            "type": "ds.chain"
         },
         "ds_detection_trend": {
             "options": {
                 "extend": "ds_pi_base",
-                "query": "| timechart span=1h count(eval(pi_detected=\"true\")) as injections_detected, count(eval(pi_detected=\"false\")) as clean_prompts"
+                "query": "| where row=\"hour\" | timechart span=1h sum(detected_prompts) as injections_detected, sum(clean_prompts) as clean_prompts | fillnull value=0 injections_detected clean_prompts"
             },
             "type": "ds.chain"
         },
         "ds_technique_distribution": {
             "options": {
                 "extend": "ds_pi_base",
-                "query": "| where pi_detected=\"true\" | stats count as Count by pi_technique | rename pi_technique as Technique | sort -Count"
+                "query": "| where row=\"prompt\" | stats count as Count by Technique | sort -Count"
             },
             "type": "ds.chain"
         },
         "ds_severity_distribution": {
             "options": {
                 "extend": "ds_pi_base",
-                "query": "| where pi_detected=\"true\" | stats count by pi_severity | rename pi_severity as Severity"
+                "query": "| where row=\"prompt\" | stats count by Severity"
             },
             "type": "ds.chain"
         },
         "ds_confidence_distribution": {
             "options": {
                 "extend": "ds_pi_base",
-                "query": "| where pi_detected=\"true\" | stats count by pi_confidence | rename pi_confidence as Confidence"
+                "query": "| where row=\"prompt\" AND isnotnull(Confidence) | stats count by Confidence"
             },
             "type": "ds.chain"
         },
         "ds_top_sources": {
             "options": {
                 "extend": "ds_pi_base",
-                "query": "| where pi_detected=\"true\" | stats count as Injection_Count, dc(gen_ai.session.id) as Sessions, values(pi_technique) as Techniques, values(detection_source) as Sources by src | rename src as Source_IP | sort -Injection_Count | head 10"
+                "query": "| where row=\"prompt\" | stats count as Injection_Count, dc(session) as Sessions, values(Technique) as Techniques, values(Detectors) as Detectors by src | rename src as Source_IP | sort -Injection_Count | head 10"
             },
             "type": "ds.chain"
         },
         "ds_recent_detections": {
             "options": {
                 "extend": "ds_pi_base",
-                "query": "| eval Timestamp=strftime(_time, \"%Y-%m-%d %H:%M:%S\"), Source=detection_source, Detected=pi_detected, Severity=pi_severity, Technique=pi_technique, Confidence=pi_confidence, Risk_Score=pi_risk_score | table Request_ID, Timestamp, Source, Service, Model, Detected, Severity, Technique, Confidence, Risk_Score | sort -Timestamp | head 25"
+                "query": "| where row=\"prompt\" | sort 25 -_time | eval Timestamp=strftime(_time, \"%Y-%m-%d %H:%M:%S\") | table Request_ID, Timestamp, Detectors, Service, Model, Severity, Technique, Confidence, Risk_Score"
             },
             "type": "ds.chain"
         }
