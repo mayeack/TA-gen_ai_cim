@@ -6,8 +6,8 @@ Offline tests for bin/genai_es_seed.py - the seeding core shared by the
 Fake splunkd and SOAR transports stand in for the network, so the tests cover
 the logic that matters: soar_binding resolution into Mission Control Action
 records, stripping of the soar_binding key, merge-preserve of live actions
-without double-encoding, investigation-type array handling, the simulator
-install/asset sequence, and the in-memory SOAR app package.
+without double-encoding, that no investigation type is ever written, the
+simulator install/asset sequence, and the in-memory SOAR app package.
 
     /opt/splunk104/bin/splunk cmd python3.13 -m unittest discover -s tools/soar/tests -v
 """
@@ -15,6 +15,8 @@ install/asset sequence, and the in-memory SOAR app package.
 import io
 import json
 import os
+import re
+import subprocess
 import sys
 import tarfile
 import unittest
@@ -193,16 +195,12 @@ class StepTests(unittest.TestCase):
         self.assertNotIn('soar_binding', json.dumps(body))
         self.assertNotIn('_comment', body)
 
-    def test_investigation_type_keeps_existing_ids_and_puts_ours_first(self):
-        splunkd = FakeSplunkd(live={'ai security incident': {
-            '_key': 'ai security incident', 'response_template_ids': ['other'],
-            'create_time': 1, 'description': 'custom'}})
+    def test_seed_writes_no_investigation_type(self):
+        splunkd = FakeSplunkd()
         rep = seed.Reporter()
-        seed.step_investigation_type(splunkd, rep, 'tmpl')
-        body = splunkd.writes[0][2]
-        self.assertEqual(body['response_template_ids'], ['tmpl', 'other'])
-        self.assertEqual(body['description'], 'custom')
-        self.assertEqual(body['create_time'], 1)
+        seed.seed(splunkd, rep, soar=None)
+        self.assertEqual([w for w in splunkd.writes if 'mc_incident_types' in w[0]], [])
+        self.assertFalse(hasattr(seed, 'step_investigation_type'))
 
     def test_queue_step(self):
         splunkd = FakeSplunkd()
@@ -240,6 +238,62 @@ class StepTests(unittest.TestCase):
         actions = plan_write['phases'][1]['tasks'][0]['suggestions']['actions']
         self.assertEqual(len(actions), 1)
         self.assertEqual(actions[0]['asset'], 34)
+
+
+MISSIONCONTROL = os.path.join(os.environ.get('SPLUNK_HOME', '/opt/splunk104'), 'etc', 'apps', 'missioncontrol')
+
+
+@unittest.skipUnless(os.path.isdir(os.path.join(MISSIONCONTROL, 'lib', 'rule_engine')),
+                     'missioncontrol (ES) is not installed beside this TA')
+class QueueRuleTests(unittest.TestCase):
+    """The queue rule is Mission Control rule_engine syntax, not SPL. The
+    SPL-style 'search_name="AI Governance*"' seeded up to 1.7.0 was a syntax
+    error logged on every finding. Validated with missioncontrol's own engine
+    and UI builder, in a subprocess so its lib/ never shadows this TA's splunklib."""
+
+    def run_mc(self, code):
+        out = subprocess.run([sys.executable, '-c', code], cwd=MISSIONCONTROL,
+                             capture_output=True, text=True, timeout=120)
+        self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+        return json.loads(out.stdout.strip().splitlines()[-1])
+
+    def test_rule_string_parses_and_routes_only_ai_governance(self):
+        # The finding at queue-assignment time: notable params (rule_title with
+        # literal $tokens$) plus the result row, and no search_name yet.
+        conf = open(os.path.join(REPO, 'default', 'savedsearches.conf'), encoding='utf-8').read()
+        titles = [t for t in re.findall(r'^action\.notable\.param\.rule_title = (.*)$', conf, re.M)
+                  if t.startswith('GenAI Prompt Injection')]
+        self.assertEqual(len(titles), 3, titles)
+        other = 'Risk Threshold Exceeded For $risk_object_type$=$risk_object$'
+        result = self.run_mc(
+            "import sys, json; sys.path[:0] = ['lib', 'bin']; import rule_engine; "
+            "r = rule_engine.Rule({!r}); "
+            "print(json.dumps([r.matches({{'rule_title': t}}) for t in {!r}]))".format(
+                seed.QUEUE_RULE_STRING, titles + [other]))
+        self.assertEqual(result, [True, True, True, False])
+
+    def test_rule_string_is_what_the_es_ui_builds_from_rules(self):
+        built = self.run_mc(
+            "import sys, json; sys.path[:0] = ['lib', 'bin']; "
+            "from blueridge.data_models.models.queues import Queues; "
+            "print(json.dumps(Queues.build_rule_string({!r})))".format(seed.QUEUE_RULES))
+        self.assertEqual(built, seed.QUEUE_RULE_STRING)
+
+    def test_queue_record_carries_rules_as_a_json_string_when_routing(self):
+        splunkd, rep = FakeSplunkd(), seed.Reporter()
+        seed.step_queue(splunkd, rep, route=True)
+        record = splunkd.live['ai_findings_queue']
+        self.assertEqual(json.loads(record['rules']), seed.QUEUE_RULES)
+        self.assertEqual(record['rule_string'], seed.QUEUE_RULE_STRING)
+
+    def test_routing_is_off_by_default(self):
+        # Findings must stay in the Analyst Queue unless routing is opted into:
+        # rule_executor skips an empty rule_string.
+        splunkd, rep = FakeSplunkd(), seed.Reporter()
+        seed.step_queue(splunkd, rep)
+        record = splunkd.live['ai_findings_queue']
+        self.assertEqual((record['rule_string'], json.loads(record['rules'])), ('', []))
+        self.assertIn(('SKIP', 'queue routing'), [(s, step) for s, step, _ in rep.rows])
 
 
 if __name__ == '__main__':

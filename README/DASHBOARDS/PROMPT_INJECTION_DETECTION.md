@@ -34,26 +34,39 @@ Built using **Dashboard Studio (JSON)** embedded in SimpleXML, providing modern 
 
 ## Panels
 
+Every panel reads one base search (`ds_pi_base`) that keeps one row per prompt
+(`gen_ai.event.id`). A prompt is detected when any of three detectors flagged
+it:
+
+| Detector | Signal |
+|----------|--------|
+| **AI Defense** | Inference event with `gen_ai.policy.blocked="true"` and "Prompt Injection" in `gen_ai.safety.categories` |
+| **ML model** | `ai_cim:prompt_injection:ml_scoring` event with `gen_ai.prompt_injection.ml_detected="true"` |
+| **GenAI judge** | `genai_scoring` event (`genai_scoring_pipeline="prompt_injection"`) with `gen_ai.prompt_injection.genai_detected="true"` |
+
+A prompt flagged by more than one detector counts once. Clean prompts are kept
+as hourly counts, and detected prompts as one row each.
+
 ### KPI Summary Row
 
 | Panel | Description | Color Coding |
 |-------|-------------|--------------|
-| **Total Scanned** | Total prompts analyzed | Green (informational) |
-| **Injections Detected** | Count of detected attacks | Green (0), Yellow (1-9), Red (10+) |
-| **Critical Severity** | Critical-level attacks | Green (0), Red (1+) |
-| **High Severity** | High-level attacks | Green (0), Yellow (1-4), Red (5+) |
-| **Detection Rate** | Percentage of prompts flagged | Green (<2%), Yellow (2-5%), Red (>5%) |
+| **Total Scanned** | Distinct prompts in scope (non-scoring events with the selected app and model) | Green (informational) |
+| **Injections Detected** | Distinct prompts flagged by any detector | Green (0), Yellow (1-9), Red (10+) |
+| **Critical Severity** | Detected prompts whose highest severity is critical | Green (0), Red (1+) |
+| **High Severity** | Detected prompts whose highest severity is high | Green (0), Yellow (1-4), Red (5+) |
+| **Detection Rate** | Injections Detected ÷ Total Scanned | Green (<2%), Yellow (2-5%), Red (>5%) |
 
 ### Visualizations
 
 | Panel | Type | Description |
 |-------|------|-------------|
-| **Detection Trend** | Line chart | Injections detected vs clean prompts over time |
-| **Injections by Technique** | Horizontal bar chart | Breakdown by attack technique |
-| **Severity Distribution** | Pie/Donut chart | critical, high, medium, low, none breakdown |
-| **Confidence Distribution** | Pie/Donut chart | very_high, high, medium, low, very_low breakdown |
-| **Top Injection Sources** | Table | Source IPs with most injection attempts |
-| **Recent Detections** | Table | Latest detections with severity highlighting |
+| **Detection Trend** | Line chart | Detected vs clean prompts per hour |
+| **Injections by Technique** | Horizontal bar chart | ML technique, GenAI judge types and AI Defense rule names; a prompt can count under several |
+| **Severity Distribution** | Pie/Donut chart | Highest severity any detector gave the prompt (critical, high, medium, low, none) |
+| **Confidence Distribution** | Pie/Donut chart | ML model and GenAI judge confidence only (very_high … very_low); AI Defense blocks carry no score |
+| **Top Injection Sources** | Table | Source IPs with the most detected prompts, their sessions, techniques and detectors |
+| **Recent Detections** | Table | Latest 25 detected prompts with the detectors that flagged them and severity highlighting |
 
 ## Attack Techniques Detected
 
@@ -75,6 +88,11 @@ Built using **Dashboard Studio (JSON)** embedded in SimpleXML, providing modern 
 | **Medium** | Risk score >= 0.5 | Yellow (`#F8BE34`) |
 | **Low** | Risk score >= 0.3 | Green (`#53A051`) |
 | **None** | Risk score < 0.3 | Blue (`#6AB7C7`) |
+
+The ML model writes its own `gen_ai.prompt_injection.severity`. The GenAI
+judge's severity is derived from its risk score with the thresholds above. An
+AI Defense block counts as **High**. A prompt takes the highest severity among
+the detectors that flagged it.
 
 ## Output Fields
 
@@ -109,4 +127,4 @@ index=gen_ai_log gen_ai.request.id="<REQUEST_ID>"
 
 ---
 
-**Last Updated:** 2026-01-28
+**Last Updated:** 2026-10-29

@@ -94,7 +94,7 @@ agent runs returns <code>"simulated": true</code>.</p>
 </tr>
 <tr>
 <td><code>\| genaiseedes</code> (hourly, on startup)</td>
-<td>Response plan <em>AI Incident Response Plan</em> with the two Containment task actions bound, investigation type <code>ai security incident</code> → plan, queue <em>AI Findings</em>, <code>medadvice_idp</code> asset on SOAR (when the app is there)</td>
+<td>Response plan <em>AI Incident Response Plan</em> with the two Containment task actions bound, queue <em>AI Findings</em>, <code>medadvice_idp</code> asset on SOAR (when the app is there)</td>
 </tr>
 <tr>
 <td><code>tools/show_postdeploy.py --soar-only</code> (already run on this SOAR, 2026-09-03)</td>
@@ -149,16 +149,30 @@ writing.</p>
   confirms whether ES keeps <code>$user$</code> in action parameters. If it does not, the
   agent and the analyst supply the username at run time — the simulator
   rejects an unsubstituted token rather than "disabling" it.</li>
-<li><strong>Configure → Findings and investigations → Investigation types →
-  <code>ai security incident</code></strong>: <em>AI Incident Response Plan</em> listed first.</li>
+<li><strong>Configure → Findings and investigations → Investigation types</strong>: the TA
+  creates none, so findings open as the default type. For the plan to
+  auto-apply, create a type, assign the plan, and select the type on the
+  detection (README, <em>Enterprise Security integration → Option B</em>); otherwise
+  add it per investigation in E6.</li>
 <li>Open the correlation detection → <em>Adaptive response actions → Create a
   finding</em>: <strong>Next steps</strong> and <strong>Recommended actions</strong> are populated from conf.</li>
 </ul>
 <h2 id="e4-demo-timing-workshop-stacks-only">E4. Demo timing (workshop stacks only)</h2>
-<p>The correlation rule ships <code>alert.suppress.period = 86400s</code> per actor: a
-<code>t.nguyen</code> finding already exists today, so with suppression on the next spray
-produces nothing. <code>tools/show_postdeploy.py</code> step 8 turns it off (<code>alert.suppress
-= 0</code>, cron <code>*/1</code>, <code>-15m</code> window); by hand: detection → <em>Throttling</em>.</p>
+<p>As of v1.7.1 nothing needs tuning: the correlation rule fires only for an
+actor with an injection attempt in the last 5 minutes and throttles that actor
+for 600 seconds, so every spray of up to about 5 minutes as <code>t.nguyen</code> raises
+exactly one new finding, and a longer one re-notifies about every 10 minutes. If
+a spray raises nothing, look for skipped runs in <code>scheduler.log</code>: the rule needs
+at least one run within 5 minutes of the last attempt.
+Up to v1.7.0 it throttled for 86400 seconds, and <code>tools/show_postdeploy.py</code>
+step 8 turned throttling off (<code>alert.suppress = 0</code>, <code>-15m</code> window), which raised
+a finding every minute instead. Those overrides sit in <code>local/</code> and mask the new
+default, so re-run step 8 on a stack it configured before; by hand: detection →
+<em>Throttling</em> → by <code>actor</code>, 600 seconds.</p>
+<p>The Triage agent's evidence searches carry no <code>index=</code>, so <code>gen_ai_log</code> must be
+a default search index for <code>admin</code>, <code>ess_admin</code> and <code>ess_analyst</code> (post-deploy
+step 14, or Settings → Roles → <em>Indexes</em> → <strong>Default</strong>). Without it the agent
+finds no evidence and its verdicts drift to <em>Benign</em> / <em>False Positive</em>.</p>
 <h2 id="e5-permissions-1-min">E5. Permissions (1 min)</h2>
 <p>The attendee role needs <code>edit_tokens_own</code>, <code>edit_tokens_all</code> and
 <code>edit_correlationsearches</code> for the sparkle chat. No SOAR change is needed: the
@@ -169,8 +183,10 @@ approvals are off.</p>
 <li>DemoBot → toggle the <strong>Prompt-Injection Spray</strong> (Lab 4.1.2). Within ~90 s a
    fresh <strong>GenAI Prompt Injection Attack: t.nguyen (critical)</strong> finding appears
    with the shipped next steps; the Triage Analysis panel renders.</li>
-<li>Finding → <strong>Start investigation</strong> → <strong>Response</strong> tab shows <em>AI Incident
-   Response Plan</em>; the Containment task shows the <code>disable user</code> action.</li>
+<li>Finding → <strong>Start investigation</strong> → <strong>Response</strong> tab → <strong>Add response
+   plan</strong> → <em>AI Incident Response Plan</em> (already listed if you bound it to an
+   investigation type in E3); the Containment task shows the <code>disable user</code>
+   action.</li>
 <li>Sparkle chat with the investigation selected:
    <em>How should I respond to the prompt injection attempt from t.nguyen?</em> →
    the recommendation names account inactivation via MedAdvice Identity
@@ -186,8 +202,7 @@ approvals are off.</p>
 <h2 id="rollback">Rollback</h2>
 <ul>
 <li>ES: set <code>seed_response_plan = false</code> (or disable the seed search) in
-  <code>local/</code>, then delete the plan, the investigation type association and the
-  queue in the UI if wanted; existing findings and investigations are
+  <code>local/</code>, then delete the plan and the queue in the UI if wanted; existing findings and investigations are
   unaffected. The finding next steps revert with the TA version.</li>
 <li>SOAR: delete the <code>medadvice_idp</code> asset and the <em>MedAdvice Identity Provider</em>
   app; re-select the other connectors in the ES Guided Response list.</li>

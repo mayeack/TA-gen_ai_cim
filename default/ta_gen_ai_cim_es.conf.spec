@@ -5,9 +5,9 @@
 
 [es_integration]
 seed_response_plan = <bool>
-* Seed the AI Incident Response Plan, the "ai security incident" investigation
-  type and the AI Findings queue into Mission Control (idempotent, TA-owned
-  records only)
+* Seed the AI Incident Response Plan and the AI Findings queue into Mission
+  Control (idempotent, TA-owned records only). No investigation type is
+  seeded; assign the plan to one in ES
 * Default: true
 
 bind_soar_actions = <bool>
@@ -27,4 +27,11 @@ enable_triage_agent = <bool>
 * Set ai_triage_enabled = 1 and allowlist the primary prompt-injection
   detection for the ES Triage agent (no-op without the allow_ai_triage
   entitlement)
+* Default: false
+
+route_findings_to_queue = <bool>
+* Give the seeded AI Findings queue the routing rule
+  (rule_title =~ "^GenAI Prompt Injection") so AI Governance findings land there
+  instead of the default Analyst Queue. Grant analyst roles access to the queue
+  in ES, or only admins will see those findings.
 * Default: false
