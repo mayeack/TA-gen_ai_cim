@@ -72,8 +72,8 @@ input[type=checkbox] { margin-right: .5rem; }
 <p>This folder is deliberately separate from the rest of the add-on. Splunk SOAR is
 a different product with its own connector format and Python runtime, so its
 apps install on the SOAR instance, not on the Splunk search head. Keeping them
-here means the folder, or the tarball beside it, can be lifted straight out of a
-checkout and uploaded to SOAR on its own.</p>
+here means the folder can be lifted straight out of the add-on and uploaded to
+SOAR on its own.</p>
 <table>
 <thead>
 <tr>
@@ -84,11 +84,11 @@ checkout and uploaded to SOAR on its own.</p>
 <tbody>
 <tr>
 <td><code>medadvice_idp/</code></td>
-<td>Source of the <strong>MedAdvice Identity Provider</strong> app</td>
+<td>Source of the <strong>MedAdvice Identity Provider</strong> app. Ships in the TA package</td>
 </tr>
 <tr>
 <td><code>medadvice_idp.tgz</code></td>
-<td>The same app, packaged and ready to upload. Rebuild with <code>bash tools/soar/build.sh</code></td>
+<td>The same app, packaged and ready to upload. <strong>Git checkout only:</strong> <code>package.sh</code> leaves it out of the TA package so the add-on holds no nested tarball. Rebuild with <code>bash tools/soar/build.sh</code></td>
 </tr>
 </tbody>
 </table>
@@ -108,7 +108,28 @@ SOAR. Without an identity app there, asking the agent to disable a user makes it
 reach for whatever identity connectors do exist, and on a demo tenant those are
 usually mock assets that fail.</p>
 <h2 id="upload-it-to-soar">Upload it to SOAR</h2>
-<p>In the SOAR UI: <strong>Apps</strong>, then <strong>Install App</strong>, then drop in
+<p>SOAR installs an app from a <code>.tgz</code> whose top-level directory is the app
+directory, <code>medadvice_idp/</code>. Get one of two ways:</p>
+<ul>
+<li><p><strong>From the TA package</strong> (<code>TA-gen_ai_cim-&lt;version&gt;.tgz</code>, the file you install
+  on Splunk). It ships the app's source but not the prebuilt tarball, so build
+  the tarball from that source:</p>
+<pre><code class="language-bash">tar -xzf TA-gen_ai_cim-&lt;version&gt;.tgz TA-gen_ai_cim/soar_apps/medadvice_idp
+COPYFILE_DISABLE=1 tar --no-xattrs --exclude='__pycache__' --exclude='*.pyc' \
+    -czf medadvice_idp.tgz -C TA-gen_ai_cim/soar_apps medadvice_idp
+</code></pre>
+<p>Archive from the parent directory (<code>-C</code>) as shown, not from inside
+  <code>medadvice_idp/</code>, or the tarball has no top-level app directory. On Splunk
+  Enterprise you can skip the extract and point <code>-C</code> at
+  <code>$SPLUNK_HOME/etc/apps/TA-gen_ai_cim/soar_apps</code>. <code>COPYFILE_DISABLE=1</code> and
+  <code>--no-xattrs</code> stop macOS tar adding <code>._*</code> members and extended-attribute
+  headers that GNU tar on SOAR cannot read; drop <code>--no-xattrs</code> if your <code>tar</code>
+  does not recognise it. Building from the package keeps the SOAR app at the
+  same version as the add-on whose response plan binds to it.</p></li>
+<li><p><strong>From a git checkout:</strong> use the prebuilt <code>medadvice_idp.tgz</code> beside this
+  file.</p></li>
+</ul>
+<p>Then, in the SOAR UI: <strong>Apps</strong>, then <strong>Install App</strong>, then drop in
 <code>medadvice_idp.tgz</code>. Create an asset named <code>medadvice_idp</code> and leave <code>mode</code> at
 <code>simulate</code>.</p>
 <p>The rest is automatic. The add-on's hourly seeding search notices the app, ensures
@@ -117,15 +138,18 @@ the asset, and binds the AI Incident Response Plan's Containment tasks to
 the Guided Response agent's pre-selected list by ES itself.</p>
 <p>Two alternatives to the manual upload:</p>
 <ul>
-<li><code>python3 tools/show_postdeploy.py --soar-only --soar-url https://&lt;tenant&gt;.soar.splunkcloud.com --soar-smoke-test</code>
-  with a SOAR password or token exported.</li>
 <li>Configure a <code>soar</code> account in <code>ta_gen_ai_cim_account.conf</code> and set
   <code>install_simulator = true</code> in <code>ta_gen_ai_cim_es.conf</code>. The add-on then
-  installs it over the SOAR REST API on the next seeding run. This route needs a
-  SOAR credential because Mission Control's pairing proxy, which the add-on uses
-  for everything else, has no app-install route.</li>
+  installs it over the SOAR REST API on the next seeding run, packaging
+  <code>medadvice_idp/</code> in memory, so this works from the TA package with no
+  tarball. This route needs a SOAR credential because Mission Control's pairing
+  proxy, which the add-on uses for everything else, has no app-install route.</li>
+<li>From a git checkout only (<code>tools/</code> is not in the TA package):
+  <code>python3 tools/show_postdeploy.py --soar-only --soar-url https://&lt;tenant&gt;.soar.splunkcloud.com --soar-smoke-test</code>
+  with a SOAR password or token exported.</li>
 </ul>
 <h2 id="build-and-test">Build and test</h2>
+<p>These need a git checkout; <code>tools/</code> is not in the TA package.</p>
 <pre><code class="language-bash">python3 tools/soar/gen_personas.py          # only after editing lookups/medadvice_identities.csv
 PYTHONPATH=tools/soar/tests/phantom_shim:soar_apps/medadvice_idp \
   /opt/splunk104/bin/splunk cmd python3.13 -m unittest discover -s tools/soar/tests -v
