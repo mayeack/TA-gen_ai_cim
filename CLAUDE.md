@@ -120,7 +120,7 @@ ML detections, and a ServiceNow AI Case Management integration.
   (`missioncontrol/bin/blueridge/incident_types.py` rejects uppercase), and the
   conf value must match the `_key` exactly or the plan silently fails to attach.
   The TA ships and seeds only the plan: **no investigation type** and **no
-  `investigation_type` on its detections** (removed in 1.7.1). Mission
+  `investigation_type` on its detections** (removed in 1.7.2). Mission
   Control's investigation-type API answers `DELETE` with 405, so a seeded type
   outlives the TA, and a detection naming a type the stack lacks is flagged
   as missing. Customers bind the plan to their own type in ES; never seed
