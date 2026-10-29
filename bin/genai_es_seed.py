@@ -699,8 +699,8 @@ def step_soar_simulator(soar, rep, install=False, tgz_bytes=None, label='SOAR si
     elif install:
         rep.skip('{} app'.format(label),
                  'not installed; {} cannot install apps - configure the `soar` account '
-                 'in ta_gen_ai_cim_account.conf, upload soar_apps/medadvice_idp.tgz '
-                 'in the SOAR UI, or run tools/show_postdeploy.py'.format(soar.name))
+                 'in ta_gen_ai_cim_account.conf, or upload the app in the SOAR UI '
+                 '(see soar_apps/README.md)'.format(soar.name))
         return None, None
     else:
         rep.skip('{} app'.format(label),

@@ -1577,6 +1577,14 @@ findings and the risk scoring — works on ES 8.x without the agent.
   An AI Defense block counts as *high* severity and is left out of
   *Confidence Distribution*, because a block carries no score. Before, both
   donuts read DemoBot's `evaluation_score_label`.
+- FIXED: the SOAR simulator's upload steps only worked from a git checkout.
+  `package.sh` leaves `soar_apps/medadvice_idp.tgz` out of the TA package and
+  never packages `tools/`, yet `soar_apps/README.md` said to upload that
+  tarball, and `| genaiseedes`, when it could not install the app, pointed at
+  the tarball and `tools/show_postdeploy.py`. The README now builds the
+  tarball from the shipped `soar_apps/medadvice_idp/` source (a checkout can
+  still use the prebuilt one), and the skip message points at
+  `soar_apps/README.md`.
 - CHANGED: `tools/show_postdeploy.py` step 8 now writes the v1.7.1 throttle
   (`actor`, `600s`, `-24h`) instead of turning suppression off with a `-15m`
   window. That old override lives in `local/` and masks the new default,
