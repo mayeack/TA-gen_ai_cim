@@ -20,7 +20,8 @@ immediately, from the outside, with explicit credentials:
   4. seed the AI Incident Response Plan          (missioncontrol namespace; SOAR
                                                   task actions bound when SOAR
                                                   credentials are given)
-  5. create an investigation type bound to it    (makes the plan auto-apply)
+  5. no investigation type - assign the plan     (Mission Control's API cannot
+     to one in the ES UI                          delete a seeded type)
   6. create the AI findings queue                (missioncontrol namespace)
   7. turn the Triage agent on for those rules    (missioncontrol namespace)
   8. tune demo timing                            (incl. an ES-owned search)
@@ -33,7 +34,7 @@ immediately, from the outside, with explicit credentials:
  14. add gen_ai_log to the default search indexes  (roles belong to Splunk and
      of admin, ess_admin and ess_analyst            ES, so never in default/)
 
-Steps 4-7 and 10-12 are the same code the TA runs in-product
+Steps 4, 6, 7 and 10-12 are the same code the TA runs in-product
 (bin/genai_es_seed.py); this script only supplies the transports. SOAR steps run
 first so that step 4 can translate each task's suggestions.soar_binding[] into
 real suggestions.actions[] (app/asset ids are tenant-specific). Without SOAR
@@ -502,8 +503,8 @@ def main():
     step_enable_detections(splunkd, rep)
     step_role_default_indexes(splunkd, rep)
     binder = soar if (soar_app and soar_asset) else None
-    template_id = seed.step_response_plan(splunkd, rep, binder, label='4. response plan')
-    seed.step_investigation_type(splunkd, rep, template_id, label='5. investigation type')
+    seed.step_response_plan(splunkd, rep, binder, label='4. response plan')
+    rep.skip('5. investigation type', 'not seeded; assign the plan to an investigation type in ES')
     seed.step_queue(splunkd, rep, label='6. queue', route=args.route_findings_to_queue)
     if args.skip_triage:
         rep.skip('7. triage agent', '--skip-triage set')

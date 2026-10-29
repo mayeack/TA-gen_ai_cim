@@ -119,9 +119,12 @@ ML detections, and a ServiceNow AI Case Management integration.
   `mc_response_templates`. Investigation type names must be **lowercase**
   (`missioncontrol/bin/blueridge/incident_types.py` rejects uppercase), and the
   conf value must match the `_key` exactly or the plan silently fails to attach.
-  Both collections live in the `missioncontrol` app, so the TA ships the
-  `investigation_type` key and the plan asset; the KV records come from
-  `tools/show_postdeploy.py` or the manual steps in `README.md`.
+  The TA ships and seeds only the plan: **no investigation type** and **no
+  `investigation_type` on its detections** (removed in 1.7.1). Mission
+  Control's investigation-type API answers `DELETE` with 405, so a seeded type
+  outlives the TA, and a detection naming a type the stack lacks is flagged
+  as missing. Customers bind the plan to their own type in ES; never seed
+  `mc_incident_types` or reintroduce the conf key.
 - The ES **Triage agent** gates on an allowlist, not on annotations, risk, or
   severity: `es_ai_settings.conf [ai_triage_detections] enabled` keyed on
   `"<search name>+<app name>"` (see `triage_agent_utils.py`), plus
@@ -150,8 +153,8 @@ ML detections, and a ServiceNow AI Case Management integration.
   (3) `GenAI - ES - Seed Response Plan and SOAR Binding` (unreleased) ships
   `disabled = 0` + `run_on_startup = 1` and runs `| genaiseedes`: it writes
   the TA-owned records a TA cannot ship as conf into the `missioncontrol`
-  namespace (response plan, `ai security incident` investigation type, AI
-  Findings queue) and, via the ES/SOAR pairing proxy, the `medadvice_idp`
+  namespace (response plan, AI Findings queue; never an investigation type)
+  and, via the ES/SOAR pairing proxy, the `medadvice_idp`
   asset + the plan's SOAR task actions when the simulator app is on the
   paired SOAR. Update-or-create, live task actions preserved, no event data
   read; `install_simulator`, `enable_triage_agent` and

@@ -108,8 +108,8 @@ input[type=checkbox] { margin-right: .5rem; }
 </tr>
 <tr>
 <td>5</td>
-<td><strong>Investigate</strong> — AI IR Plan auto-applies</td>
-<td>Response plan asset + investigation type</td>
+<td><strong>Investigate</strong> — AI IR Plan on the investigation</td>
+<td>Response plan asset (+ an investigation type you create, for auto-apply)</td>
 <td><strong>No SOAR required</strong></td>
 </tr>
 <tr>
@@ -201,7 +201,7 @@ input[type=checkbox] { margin-right: .5rem; }
 </tr>
 <tr>
 <td>5. Investigation type → plan</td>
-<td><code>missioncontrol</code> KV namespace</td>
+<td>Not done: the TA seeds no investigation type, because Mission Control's API cannot delete one. Create it in ES (§6 step 7) for the plan to auto-apply</td>
 </tr>
 <tr>
 <td>6. Create the AI findings queue</td>
@@ -341,7 +341,7 @@ alert.suppress.period = 600s
 <li><strong>Check the primary detection's timing</strong> — v1.7.1 ships the demo timing as its default (cron <code>*/1 * * * *</code>, earliest <code>-24h</code>, throttle by <code>actor</code> for 600 seconds), so on a fresh install there is nothing to change. On a stack tuned for an older version, restore those values: an override that turns throttling off raises a finding every minute, and the old 86400-second window suppresses every repeat spray.</li>
 <li><strong>Tune the risk rule</strong> <em>(optional)</em> — <code>Risk - 24 Hour Risk Threshold Exceeded - Rule</code> in <code>SA-ThreatIntelligence</code>: latest <code>now</code>, cron <code>*/1 * * * *</code>.</li>
 <li><strong>Create the response plan</strong> — ES → Security content → Response plans → Create. Transcribe the four phases and fifteen tasks from <code>default/data/response_plans/ai_incident_response_plan.json</code>, including the seven embedded searches (<code>suggestions.searches</code>) and, with SOAR paired, the two Containment task actions (<code>suggestions.soar_binding</code> → MedAdvice Identity Provider <code>disable user</code> / <code>clear user sessions</code>). <em>(Tedious — the script exists for this reason.)</em></li>
-<li><strong>Create the investigation type</strong> and associate the response plan, so it auto-applies.</li>
+<li><strong>Create an investigation type</strong> <em>(optional)</em>, associate the response plan, and select the type on the three AI Governance detections, so the plan auto-applies. Without it, add the plan to each investigation with <strong>Add response plan</strong>.</li>
 <li><strong>Create a queue</strong> for AI findings.</li>
 <li><strong>Enable the Triage agent</strong> — ES → Configure → All configurations → Security AI Assistant settings; turn on AI triage and enable it for <code>AI Governance - Prompt Injection Attack Correlation - Rule</code>.</li>
 <li><strong>Point DemoBot</strong> at the HEC token.</li>
@@ -357,7 +357,7 @@ alert.suppress.period = 600s
 <li><strong>Wait ~60–90 seconds</strong> — the raw-events search fills this naturally.</li>
 <li><strong>Finding appears</strong> in the queue, attributed to <code>t.nguyen</code> — the identity lookup ships <code>t.nguyen</code> and <code>x.collins</code>, so entity attribution resolves.</li>
 <li><strong>Triage agent disposition</strong> — rationale and recommended next steps, grounded in the AI IR Plan.</li>
-<li><strong>Escalate to an Investigation</strong> — the AI IR Plan auto-applies via the investigation type.</li>
+<li><strong>Escalate to an Investigation</strong> — add the AI IR Plan with <strong>Add response plan</strong> (it auto-applies if you bound it to an investigation type in §6 step 7).</li>
 <li><strong>Work Identification</strong> — especially <em>Review prompts that were NOT blocked</em>: the ~15% that got through are why this escalates rather than closing.</li>
 <li><strong>Run Containment actions</strong> — Suspend User, Revoke Session, Tighten Guardrail. Show <strong>View results</strong>.</li>
 <li><strong>Close it out</strong> — show the audit trail from §4.</li>

@@ -17,7 +17,7 @@ Stack: `stg-shw-051e9803c1c971.stg.splunkcloud.com` (ES 8.6, paired with SOAR
 | Done by | What |
 |---|---|
 | Conf on the detections | Finding **Next steps** (containment standard + the SOAR action to run) and **Recommended actions** on all three AI Governance rules |
-| `\| genaiseedes` (hourly, on startup) | Response plan *AI Incident Response Plan* with the two Containment task actions bound, investigation type `ai security incident` → plan, queue *AI Findings*, `medadvice_idp` asset on SOAR (when the app is there) |
+| `\| genaiseedes` (hourly, on startup) | Response plan *AI Incident Response Plan* with the two Containment task actions bound, queue *AI Findings*, `medadvice_idp` asset on SOAR (when the app is there) |
 | `tools/show_postdeploy.py --soar-only` (already run on this SOAR, 2026-09-03) | The simulator app itself (id 198) and its asset (id 34); smoke test passed |
 
 `| genaiseedes dry_run=true` in the search bar shows the per-step report without
@@ -69,8 +69,11 @@ Pick one:
   confirms whether ES keeps `$user$` in action parameters. If it does not, the
   agent and the analyst supply the username at run time — the simulator
   rejects an unsubstituted token rather than "disabling" it.
-- **Configure → Findings and investigations → Investigation types →
-  `ai security incident`**: *AI Incident Response Plan* listed first.
+- **Configure → Findings and investigations → Investigation types**: the TA
+  creates none, so findings open as the default type. For the plan to
+  auto-apply, create a type, assign the plan, and select the type on the
+  detection (README, *Enterprise Security integration → Option B*); otherwise
+  add it per investigation in E6.
 - Open the correlation detection → *Adaptive response actions → Create a
   finding*: **Next steps** and **Recommended actions** are populated from conf.
 
@@ -105,8 +108,10 @@ approvals are off.
 1. DemoBot → toggle the **Prompt-Injection Spray** (Lab 4.1.2). Within ~90 s a
    fresh **GenAI Prompt Injection Attack: t.nguyen (critical)** finding appears
    with the shipped next steps; the Triage Analysis panel renders.
-2. Finding → **Start investigation** → **Response** tab shows *AI Incident
-   Response Plan*; the Containment task shows the `disable user` action.
+2. Finding → **Start investigation** → **Response** tab → **Add response
+   plan** → *AI Incident Response Plan* (already listed if you bound it to an
+   investigation type in E3); the Containment task shows the `disable user`
+   action.
 3. Sparkle chat with the investigation selected:
    *How should I respond to the prompt injection attempt from t.nguyen?* →
    the recommendation names account inactivation via MedAdvice Identity
@@ -122,8 +127,7 @@ approvals are off.
 ## Rollback
 
 - ES: set `seed_response_plan = false` (or disable the seed search) in
-  `local/`, then delete the plan, the investigation type association and the
-  queue in the UI if wanted; existing findings and investigations are
+  `local/`, then delete the plan and the queue in the UI if wanted; existing findings and investigations are
   unaffected. The finding next steps revert with the TA version.
 - SOAR: delete the `medadvice_idp` asset and the *MedAdvice Identity Provider*
   app; re-select the other connectors in the ES Guided Response list.

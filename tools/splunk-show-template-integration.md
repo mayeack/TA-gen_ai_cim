@@ -12,7 +12,7 @@ How the `TA-gen_ai_cim` v1.5.0 tarball and the post-deploy script combine to con
 | 2 | **Operationalize** — signal becomes an ES detection | TA ships 3 registered detections | Detection ships; the *Detection Builder agent* is a separate ES entitlement |
 | 3 | **Alert** — Finding on risk threshold | Correlation rule + ES risk rule | Works; see §5 for which raises the Finding |
 | 4 | **Triage** — agent dispositions the Finding | Post-deploy enables it | Needs ES 8.6 + Premier + Cloud + paired SOAR |
-| 5 | **Investigate** — AI IR Plan auto-applies | Response plan asset + investigation type | **No SOAR required** |
+| 5 | **Investigate** — AI IR Plan on the investigation | Response plan asset (+ an investigation type you create, for auto-apply) | **No SOAR required** |
 | 6 | **Respond** — containment executed | Simulated response actions | Real SOAR optional; see §4 |
 | 7 | **Resolve** — close with audit trail | ES investigation + action audit records | Works |
 | 8 | **Improve** — detection tuning | Post-Incident phase tasks | Manual; the *Detection Builder agent* is a separate entitlement |
@@ -50,7 +50,7 @@ Since the TA seeds Mission Control on its own (the shipped search *GenAI - ES - 
 | 2. Create HEC token | Provisioning, not app content |
 | 3. Enable the 3 detections | The primary correlation rule ships enabled (v1.6.2+); the other two ship disabled by design. The step is idempotent |
 | 4. Seed the response plan | `missioncontrol` KV namespace |
-| 5. Investigation type → plan | `missioncontrol` KV namespace |
+| 5. Investigation type → plan | Not done: the TA seeds no investigation type, because Mission Control's API cannot delete one. Create it in ES (§6 step 7) for the plan to auto-apply |
 | 6. Create the AI findings queue | `missioncontrol` KV namespace |
 | 7. `ai_triage_enabled = 1` | `missioncontrol` conf namespace |
 | 8. Demo timing | The TA-owned half is the shipped default since v1.7.1; the step re-asserts it over `local/` overrides left by older versions of this script, and retunes the `SA-ThreatIntelligence`-owned risk rule, which conf layering cannot reach |
@@ -169,7 +169,7 @@ If the Show Template cannot run arbitrary post-deploy scripts, these are the equ
 4. **Check the primary detection's timing** — v1.7.1 ships the demo timing as its default (cron `*/1 * * * *`, earliest `-24h`, throttle by `actor` for 600 seconds), so on a fresh install there is nothing to change. On a stack tuned for an older version, restore those values: an override that turns throttling off raises a finding every minute, and the old 86400-second window suppresses every repeat spray.
 5. **Tune the risk rule** *(optional)* — `Risk - 24 Hour Risk Threshold Exceeded - Rule` in `SA-ThreatIntelligence`: latest `now`, cron `*/1 * * * *`.
 6. **Create the response plan** — ES → Security content → Response plans → Create. Transcribe the four phases and fifteen tasks from `default/data/response_plans/ai_incident_response_plan.json`, including the seven embedded searches (`suggestions.searches`) and, with SOAR paired, the two Containment task actions (`suggestions.soar_binding` → MedAdvice Identity Provider `disable user` / `clear user sessions`). *(Tedious — the script exists for this reason.)*
-7. **Create the investigation type** and associate the response plan, so it auto-applies.
+7. **Create an investigation type** *(optional)*, associate the response plan, and select the type on the three AI Governance detections, so the plan auto-applies. Without it, add the plan to each investigation with **Add response plan**.
 8. **Create a queue** for AI findings.
 9. **Enable the Triage agent** — ES → Configure → All configurations → Security AI Assistant settings; turn on AI triage and enable it for `AI Governance - Prompt Injection Attack Correlation - Rule`.
 10. **Point DemoBot** at the HEC token.
@@ -187,7 +187,7 @@ Steps 1–4 and 10 are the minimum for a working demo of steps 1–3. Steps 6–
 4. **Wait ~60–90 seconds** — the raw-events search fills this naturally.
 5. **Finding appears** in the queue, attributed to `t.nguyen` — the identity lookup ships `t.nguyen` and `x.collins`, so entity attribution resolves.
 6. **Triage agent disposition** — rationale and recommended next steps, grounded in the AI IR Plan.
-7. **Escalate to an Investigation** — the AI IR Plan auto-applies via the investigation type.
+7. **Escalate to an Investigation** — add the AI IR Plan with **Add response plan** (it auto-applies if you bound it to an investigation type in §6 step 7).
 8. **Work Identification** — especially *Review prompts that were NOT blocked*: the ~15% that got through are why this escalates rather than closing.
 9. **Run Containment actions** — Suspend User, Revoke Session, Tighten Guardrail. Show **View results**.
 10. **Close it out** — show the audit trail from §4.

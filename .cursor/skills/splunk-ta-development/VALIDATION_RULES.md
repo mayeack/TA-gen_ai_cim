@@ -286,6 +286,24 @@ in the stanza, README changelog entry naming the exception, R-SEC-001 with no
 exception. Any enabled search that writes a record it does not own, or that
 reads from an index, needs a new amendment here first.
 
+**Amendment (2026-10-28).** The third exception is narrowed: `| genaiseedes`
+no longer writes `mc_incident_types`, and `ai security incident` leaves the
+TA-owned `_key` list above. Mission Control's investigation-type API answers
+`DELETE` with 405, so a seeded type outlives the TA on every stack it ever ran
+on. The three AI Governance rules also stop setting
+`action.notable.param.investigation_type`: ES reports a detection whose type
+the stack lacks as missing, which is what the workshop dry run hit while the
+v1.7.0 seeder was crashing (R-PY-001). Customers bind the plan to an
+investigation type of their own in ES. Re-adding either needs a new amendment
+here first.
+
+**Check.** Both must print `0`:
+
+```bash
+grep -c '^action.notable.param.investigation_type' default/savedsearches.conf
+grep -c "'mc_incident_types'" bin/genai_es_seed.py tools/show_postdeploy.py
+```
+
 ### R-SEC-003 · No secrets, no content logging
 
 **Rule.** No credentials, tokens, or API keys in conf files, code, or URLs —
@@ -531,3 +549,4 @@ and verified on a real instance. Numbers, not adjectives.
 | — (live verification 2026-10-07, not a reviewer) | `verify-1007-entity` | — | — | bug | Removing the result-level `risk_object` (R-CONF-006) without `_entities` would have reverted `4d61c09` and blanked Mission Control's Entity column | R-CONF-006 (amended) |
 | — (live verification 2026-10-07, not a reviewer) | `verify-1007-queue` | — | — | bug | Seeded queue `rule_string` was SPL, a Mission Control rule-engine syntax error; the queue never matched and every finding logged an ERROR | R-CONF-007 |
 | — (workshop dry run 2026-10-07, not a reviewer) | `dryrun-1007-seedes` | — | — | bug | `genaiseedes` assigned the read-only `self.logger` and called a `_service()` shadowed by splunklib's `self._service = None`; the enabled seeding search wrote nothing on any stack from v1.7.0 | R-PY-001 |
+| — (deliberate design decision, not a finding) | `R-SEC-002/amend-3` | — | — | security | Seeding narrowed: no `mc_incident_types` write and no `investigation_type` on the rules, because Mission Control cannot delete a seeded investigation type | R-SEC-002 (amended) |

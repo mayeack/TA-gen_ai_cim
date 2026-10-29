@@ -52,8 +52,10 @@
     "BINDING: a response plan does NOT attach to a detection. The chain is",
     "savedsearches.conf action.notable.param.investigation_type -> KV",
     "mc_incident_types (_key = that name, response_template_ids = [template_id])",
-    "-> this record. Investigation type names must be LOWERCASE",
-    "(missioncontrol/bin/blueridge/incident_types.py rejects uppercase).",
+    "-> this record. The TA seeds this plan but no investigation type and sets",
+    "no investigation_type on its detections: assign the plan to a type in ES,",
+    "or add it to an investigation by hand. Investigation type names must be",
+    "LOWERCASE (missioncontrol/bin/blueridge/incident_types.py rejects uppercase).",
     "",
     "Placeholder tokens <actor>, <app> and <session> are replaced by the analyst",
     "(or by the Triage agent) with values from the finding."

@@ -19,12 +19,16 @@ Used by two callers with different transports:
     splunkd with basic auth and to SOAR directly with a password or token.
 
 Everything written is a TA-owned record: the response plan
-(`mc_response_templates` _key ai_incident_response_plan), the investigation type
-(`mc_incident_types` _key "ai security incident"), the findings queue (`queues`
-_key ai_findings_queue) and, on SOAR, the asset `medadvice_idp` of the
+(`mc_response_templates` _key ai_incident_response_plan), the findings queue
+(`queues` _key ai_findings_queue) and, on SOAR, the asset `medadvice_idp` of the
 "MedAdvice Identity Provider" app. Writes are idempotent (update-then-create),
 and the plan write is merge-preserving: any actions[]/playbooks[] a task already
 carries on the live record survive a re-run unless a soar_binding replaces them.
+
+No investigation type is seeded (`mc_incident_types` is never written): Mission
+Control's investigation-type API answers DELETE with 405, so a seeded type would
+outlive the TA unless someone deleted its KV record by hand. The plan is
+assigned to an investigation type in the ES UI instead.
 
 No event data is read. Nothing here logs prompt or response content.
 
@@ -44,7 +48,6 @@ import urllib.parse
 import urllib.request
 
 APP_NAME = 'TA-gen_ai_cim'
-INVESTIGATION_TYPE = 'ai security incident'          # lowercase is mandatory
 QUEUE_TITLE = 'AI Findings'
 # Mission Control evaluates queue rules with its vendored rule_engine library,
 # not SPL: the SPL-style 'search_name="AI Governance*"' this used to seed is a
@@ -635,26 +638,6 @@ def step_response_plan(splunkd, rep, soar=None, plan_path=RESPONSE_PLAN_PATH,
     return plan.get('template_id')
 
 
-def step_investigation_type(splunkd, rep, template_id, label='investigation type'):
-    if not template_id:
-        rep.skip(label, 'no template_id from the response plan step')
-        return
-    live = kv_get(splunkd, 'mc_incident_types', INVESTIGATION_TYPE) or {}
-    ids = list(live.get('response_template_ids') or [])
-    if template_id not in ids:
-        ids.insert(0, template_id)      # first listed = default plan for the type
-    record = {
-        '_key': INVESTIGATION_TYPE,
-        'description': live.get('description') or
-        'GenAI/LLM security incidents surfaced by Cisco AI Defense.',
-        'response_template_ids': ids,   # an ARRAY - incident_types_cleanup.py iterates it
-        'create_time': live.get('create_time') or int(time.time()),
-        'update_time': int(time.time()),
-    }
-    kv_upsert(splunkd, rep, 'mc_incident_types', INVESTIGATION_TYPE, record,
-              '{} "{}"'.format(label, INVESTIGATION_TYPE))
-
-
 def step_queue(splunkd, rep, label='queue', route=False):
     """Upsert the AI Findings queue. Routing is opt-in (route_findings_to_queue):
     a routed finding leaves the default Analyst Queue, and in Mission Control a
@@ -825,7 +808,6 @@ def seed(splunkd, rep, soar=None, install_simulator=False, enable_triage=False,
         step_competing_idp_assets(soar, rep)
     binder = soar if (app and asset) else None
     template_id = step_response_plan(splunkd, rep, binder, plan_path)
-    step_investigation_type(splunkd, rep, template_id)
     step_queue(splunkd, rep, route=route_queue)
     if enable_triage:
         step_triage_agent(splunkd, rep)

@@ -1,10 +1,10 @@
 # encoding=utf-8
 """
 genaiseedes.py - `| genaiseedes` generating command: seed Splunk Enterprise
-Security (Mission Control) with the AI Incident Response Plan, the
-"ai security incident" investigation type bound to it, the AI Findings queue,
-and - through the ES/SOAR pairing - the simulated "MedAdvice Identity Provider"
-asset plus the response plan's SOAR task actions.
+Security (Mission Control) with the AI Incident Response Plan and the AI
+Findings queue, and - through the ES/SOAR pairing - the simulated "MedAdvice
+Identity Provider" asset plus the response plan's SOAR task actions. No
+investigation type is seeded; the plan is assigned to one in the ES UI.
 
 Run by the shipped search "GenAI - ES - Seed Response Plan and SOAR Binding"
 (enabled, run_on_startup, hourly) so a fresh install converges on its own; it
@@ -14,7 +14,7 @@ Every step is idempotent and touches only TA-owned records (see
 genai_es_seed.py). No event data is read and nothing content-bearing is logged.
 
 Options (defaults come from ta_gen_ai_cim_es.conf [es_integration]):
-  seed_response_plan   seed plan/type/queue                          (default true)
+  seed_response_plan   seed plan/queue                               (default true)
   bind_soar_actions    reach the paired SOAR through the ES proxy    (default true)
   install_simulator    install the simulator app if a `soar` account (default false)
                        exists in ta_gen_ai_cim_account.conf

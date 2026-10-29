@@ -7,8 +7,8 @@ test_seed.py covers genai_es_seed.py but never ran the command class, and the
 class carried a crash that only the real dispatch hit: generate() assigned
 self.logger, which splunklib's SearchCommand defines as a read-only property.
 Every scheduled run of "GenAI - ES - Seed Response Plan and SOAR Binding" died
-with AttributeError before writing anything, so on every stack the
-"ai security incident" investigation type and the response plan were missing.
+with AttributeError before writing anything, so on every stack the response
+plan and the queue were missing.
 This test drives generate() end to end against the fake splunkd so that class
 of bug fails here instead of on a workshop stack.
 
@@ -50,14 +50,18 @@ def run_command(settings):
 
 class GenerateTest(unittest.TestCase):
 
-    def test_generate_seeds_the_investigation_type(self):
+    def test_generate_seeds_plan_and_queue(self):
         fake, steps = run_command({'bind_soar_actions': 'false'})
-        key = genaiseedes.seed.INVESTIGATION_TYPE
-        self.assertEqual(steps.get('investigation type "{}"'.format(key)), 'OK', steps)
-        self.assertIn(key, fake.live)
-        self.assertEqual(fake.live[key]['response_template_ids'],
-                         [fake.live['ai_incident_response_plan']['template_id']])
+        self.assertIn('ai_incident_response_plan', fake.live)
+        self.assertIn('ai_findings_queue', fake.live)
         self.assertNotIn('FAIL', steps.values(), steps)
+
+    def test_generate_never_writes_an_investigation_type(self):
+        # Mission Control's investigation-type API refuses DELETE (405), so a
+        # seeded type would outlive the TA on every stack it ever ran on.
+        fake, steps = run_command({'bind_soar_actions': 'false'})
+        self.assertEqual([w for w in fake.writes if 'mc_incident_types' in w[0]], [])
+        self.assertFalse([s for s in steps if s.startswith('investigation type')], steps)
 
     def test_generate_honours_seed_response_plan_off(self):
         fake, steps = run_command({'seed_response_plan': 'false', 'bind_soar_actions': 'false'})

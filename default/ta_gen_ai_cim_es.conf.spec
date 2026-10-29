@@ -5,9 +5,9 @@
 
 [es_integration]
 seed_response_plan = <bool>
-* Seed the AI Incident Response Plan, the "ai security incident" investigation
-  type and the AI Findings queue into Mission Control (idempotent, TA-owned
-  records only)
+* Seed the AI Incident Response Plan and the AI Findings queue into Mission
+  Control (idempotent, TA-owned records only). No investigation type is
+  seeded; assign the plan to one in ES
 * Default: true
 
 bind_soar_actions = <bool>

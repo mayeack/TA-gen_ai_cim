@@ -6,8 +6,8 @@ Offline tests for bin/genai_es_seed.py - the seeding core shared by the
 Fake splunkd and SOAR transports stand in for the network, so the tests cover
 the logic that matters: soar_binding resolution into Mission Control Action
 records, stripping of the soar_binding key, merge-preserve of live actions
-without double-encoding, investigation-type array handling, the simulator
-install/asset sequence, and the in-memory SOAR app package.
+without double-encoding, that no investigation type is ever written, the
+simulator install/asset sequence, and the in-memory SOAR app package.
 
     /opt/splunk104/bin/splunk cmd python3.13 -m unittest discover -s tools/soar/tests -v
 """
@@ -195,16 +195,12 @@ class StepTests(unittest.TestCase):
         self.assertNotIn('soar_binding', json.dumps(body))
         self.assertNotIn('_comment', body)
 
-    def test_investigation_type_keeps_existing_ids_and_puts_ours_first(self):
-        splunkd = FakeSplunkd(live={'ai security incident': {
-            '_key': 'ai security incident', 'response_template_ids': ['other'],
-            'create_time': 1, 'description': 'custom'}})
+    def test_seed_writes_no_investigation_type(self):
+        splunkd = FakeSplunkd()
         rep = seed.Reporter()
-        seed.step_investigation_type(splunkd, rep, 'tmpl')
-        body = splunkd.writes[0][2]
-        self.assertEqual(body['response_template_ids'], ['tmpl', 'other'])
-        self.assertEqual(body['description'], 'custom')
-        self.assertEqual(body['create_time'], 1)
+        seed.seed(splunkd, rep, soar=None)
+        self.assertEqual([w for w in splunkd.writes if 'mc_incident_types' in w[0]], [])
+        self.assertFalse(hasattr(seed, 'step_investigation_type'))
 
     def test_queue_step(self):
         splunkd = FakeSplunkd()
