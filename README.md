@@ -4,7 +4,7 @@
 
 **Splunk Technology Add-on for Generative AI Common Information Model**
 
-Version: 1.7.1  
+Version: 1.7.2  
 Author: Splunk AI Governance Team  
 License: Apache 2.0
 
@@ -1336,7 +1336,7 @@ detections — in the detection editor or with
 
 The TA leaves hops 1 and 2 alone because Mission Control's investigation-type
 API refuses deletes (`DELETE` answers 405), so a type the TA created could not
-be cleaned up afterwards. From v1.6.3 to v1.7.0 the detections named a type,
+be cleaned up afterwards. From v1.6.3 to v1.7.1 the detections named a type,
 `ai security incident`, for the seeder to create. On a stack where it never was,
 ES reported the detection's investigation type as missing.
 
@@ -1459,6 +1459,52 @@ findings and the risk scoring — works on ES 8.x without the agent.
 
 ## Version History
 
+### v1.7.2 (2026-10-29)
+
+**Follow-ups to the AI Trust workshop dry run**
+
+- CHANGED: the TA no longer creates the `ai security incident` investigation
+  type, and the three AI Governance rules no longer set
+  `action.notable.param.investigation_type`. Neither `| genaiseedes` nor
+  `tools/show_postdeploy.py` writes `mc_incident_types` (step 5 now reports
+  SKIP). Mission Control's investigation-type API refuses deletes (`DELETE`
+  answers 405), so a type the TA seeded could not be removed afterwards.
+  Findings now open as the stack's default type. The AI Incident Response Plan
+  is still seeded; an analyst adds it to an investigation with **Add response
+  plan**. To have it apply automatically, assign it to an investigation type of
+  your own and select that type on the detections (*Enterprise Security
+  integration → Option B*). Until then the ES AI triage settings list no
+  response plan for these detections, because they resolve plans through the
+  detection's investigation type. A stack that ran v1.7.1 or
+  `tools/show_postdeploy.py` keeps its `ai security incident` record until
+  someone deletes it from the KV store:
+  `DELETE /servicesNS/nobody/missioncontrol/storage/collections/data/mc_incident_types/ai%20security%20incident`.
+- FIXED: Prompt Injection Detection. The tiles disagreed: *Total Scanned* and
+  *Injections Detected* counted detector output rows, and AI Defense
+  contributed only the prompts it blocked, so where only AI Defense ran the
+  two always matched (for example 19 and 19). *Detection Rate* divided by
+  every prompt instead (5%). A prompt flagged by both AI Defense and the GenAI
+  judge also counted twice (186 detections for 138 prompts over 30 days on the
+  dev stack). The dashboard now has one base search that keeps one row per
+  `gen_ai.event.id`, so every tile, the trend and the tables count distinct
+  prompts from the same total. *Clean prompts* on the trend was always 0 and
+  is now plotted. *Sessions* in *Top Injection Sources* was always 0 and is
+  now counted. AI Defense injections are now recognised by its own
+  `gen_ai.safety.categories` verdict ("Prompt Injection") rather than
+  DemoBot's `prompt_category` label, which other emitters do not set. Their
+  technique is now the AI Defense rule names, not a fixed `ai_defense_block`.
+  An AI Defense block counts as *high* severity and is left out of
+  *Confidence Distribution*, because a block carries no score. Before, both
+  donuts read DemoBot's `evaluation_score_label`.
+- FIXED: the SOAR simulator's upload steps only worked from a git checkout.
+  `package.sh` leaves `soar_apps/medadvice_idp.tgz` out of the TA package and
+  never packages `tools/`, yet `soar_apps/README.md` said to upload that
+  tarball, and `| genaiseedes`, when it could not install the app, pointed at
+  the tarball and `tools/show_postdeploy.py`. The README now builds the
+  tarball from the shipped `soar_apps/medadvice_idp/` source (a checkout can
+  still use the prebuilt one), and the skip message points at
+  `soar_apps/README.md`.
+
 ### v1.7.1 (2026-10-07)
 
 **Fixes from the AI Trust workshop dry run**
@@ -1475,27 +1521,11 @@ findings and the risk scoring — works on ES 8.x without the agent.
   shadowed by the `None` that `SearchCommand.__init__` stores in
   `self._service` (`'NoneType' object is not callable`). The logger is now
   module level and the method is `_connect()`. Verified on ES 8.5.1: the
-  `run_on_startup` run created the plan and the queue with 0 failures. A new
-  offline test,
+  `run_on_startup` run created the plan, the investigation type and the queue
+  with 0 failures. A new offline test,
   `tools/soar/tests/test_genaiseedes_command.py`, drives `generate()` end to
   end and checks that no method is shadowed by a splunklib instance attribute.
   The existing tests only covered the seeding core.
-- CHANGED: the TA no longer creates the `ai security incident` investigation
-  type, and the three AI Governance rules no longer set
-  `action.notable.param.investigation_type`. Neither `| genaiseedes` nor
-  `tools/show_postdeploy.py` writes `mc_incident_types` (step 5 now reports
-  SKIP). Mission Control's investigation-type API refuses deletes (`DELETE`
-  answers 405), so a type the TA seeded could not be removed afterwards.
-  Findings now open as the stack's default type. The AI Incident Response Plan
-  is still seeded; an analyst adds it to an investigation with **Add response
-  plan**. To have it apply automatically, assign it to an investigation type of
-  your own and select that type on the detections (*Enterprise Security
-  integration → Option B*). Until then the ES AI triage settings list no
-  response plan for these detections, because they resolve plans through the
-  detection's investigation type. A stack that ran `show_postdeploy.py`, or an
-  earlier 1.7.1 build of the seeder, keeps its `ai security incident` record
-  until someone deletes it from the KV store:
-  `DELETE /servicesNS/nobody/missioncontrol/storage/collections/data/mc_incident_types/ai%20security%20incident`.
 - FIXED: the correlation rule suppressed each actor for 24 hours, so repeat
   sprays under one actor produced at most one finding per day. It now emits an
   actor only while their newest injection attempt is under 5 minutes old and
@@ -1560,31 +1590,6 @@ findings and the risk scoring — works on ES 8.x without the agent.
   *Retries* tile is removed: nothing in the TA maps `gen_ai.retry.count`, so it
   always read 0. The *ML Detection Summary* and *GenAI Detection Summary*
   panels are removed.
-- FIXED: Prompt Injection Detection. The tiles disagreed: *Total Scanned* and
-  *Injections Detected* counted detector output rows, and AI Defense
-  contributed only the prompts it blocked, so where only AI Defense ran the
-  two always matched (for example 19 and 19). *Detection Rate* divided by
-  every prompt instead (5%). A prompt flagged by both AI Defense and the GenAI
-  judge also counted twice (186 detections for 138 prompts over 30 days on the
-  dev stack). The dashboard now has one base search that keeps one row per
-  `gen_ai.event.id`, so every tile, the trend and the tables count distinct
-  prompts from the same total. *Clean prompts* on the trend was always 0 and
-  is now plotted. *Sessions* in *Top Injection Sources* was always 0 and is
-  now counted. AI Defense injections are now recognised by its own
-  `gen_ai.safety.categories` verdict ("Prompt Injection") rather than
-  DemoBot's `prompt_category` label, which other emitters do not set. Their
-  technique is now the AI Defense rule names, not a fixed `ai_defense_block`.
-  An AI Defense block counts as *high* severity and is left out of
-  *Confidence Distribution*, because a block carries no score. Before, both
-  donuts read DemoBot's `evaluation_score_label`.
-- FIXED: the SOAR simulator's upload steps only worked from a git checkout.
-  `package.sh` leaves `soar_apps/medadvice_idp.tgz` out of the TA package and
-  never packages `tools/`, yet `soar_apps/README.md` said to upload that
-  tarball, and `| genaiseedes`, when it could not install the app, pointed at
-  the tarball and `tools/show_postdeploy.py`. The README now builds the
-  tarball from the shipped `soar_apps/medadvice_idp/` source (a checkout can
-  still use the prebuilt one), and the skip message points at
-  `soar_apps/README.md`.
 - CHANGED: `tools/show_postdeploy.py` step 8 now writes the v1.7.1 throttle
   (`actor`, `600s`, `-24h`) instead of turning suppression off with a `-15m`
   window. That old override lives in `local/` and masks the new default,
