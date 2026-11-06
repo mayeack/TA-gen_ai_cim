@@ -1,0 +1,675 @@
+<dashboard version="2" theme="dark">
+    <label>AI Governance</label>
+    <description>Home: one card per AI Governance dashboard with a live count, and the scoreboard</description>
+    <definition><![CDATA[
+{
+    "title": "AI Governance",
+    "description": "Home: one card per AI Governance dashboard with a live count, and the scoreboard",
+    "dataSources": {
+        "ds_card_01": {
+            "type": "ds.search",
+            "name": "AI Governance Overview",
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` | stats count as v",
+                "queryParameters": {
+                    "earliest": "-24h",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_card_02": {
+            "type": "ds.search",
+            "name": "Tokenomics",
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` eventtype=gen_ai_inference | stats sum(gen_ai.usage.total_tokens) as v",
+                "queryParameters": {
+                    "earliest": "-24h",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_card_03": {
+            "type": "ds.search",
+            "name": "AI Asset Discovery",
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` eventtype=gen_ai_inference | stats dc(gen_ai.app.name) as v",
+                "queryParameters": {
+                    "earliest": "-24h",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_card_04": {
+            "type": "ds.search",
+            "name": "PII Detection",
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.pii.detected=\"true\" | stats count as v",
+                "queryParameters": {
+                    "earliest": "-24h",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_card_05": {
+            "type": "ds.search",
+            "name": "Prompt Injection Detection",
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.policy.blocked=\"true\" | stats count as v",
+                "queryParameters": {
+                    "earliest": "-24h",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_card_06": {
+            "type": "ds.search",
+            "name": "Compromised Identity",
+            "options": {
+                "query": "`genai_cii_failed_checks` | stats count as v",
+                "queryParameters": {
+                    "earliest": "-7d",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_score_1": {
+            "type": "ds.search",
+            "name": "GenAI events",
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` | stats count as v",
+                "queryParameters": {
+                    "earliest": "-24h",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_score_2": {
+            "type": "ds.search",
+            "name": "Users",
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` | stats dc(user) as v",
+                "queryParameters": {
+                    "earliest": "-24h",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_score_3": {
+            "type": "ds.search",
+            "name": "Policy blocks",
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.policy.blocked=\"true\" | stats count as v",
+                "queryParameters": {
+                    "earliest": "-24h",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_score_4": {
+            "type": "ds.search",
+            "name": "Safety violations",
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.safety.violated=\"true\" | stats count as v",
+                "queryParameters": {
+                    "earliest": "-24h",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_score_5": {
+            "type": "ds.search",
+            "name": "PII detections",
+            "options": {
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.pii.detected=\"true\" | stats count as v",
+                "queryParameters": {
+                    "earliest": "-24h",
+                    "latest": "now"
+                }
+            }
+        }
+    },
+    "visualizations": {
+        "viz_header": {
+            "type": "splunk.markdown",
+            "options": {
+                "fontColor": "#FFFFFF",
+                "backgroundColor": "transparent",
+                "markdown": "# AI Governance\n\nTA-gen_ai_cim normalizes GenAI telemetry from index gen_ai_log into the gen_ai.* schema and turns it into governance: safety, privacy, cost, prompt injection and, with Cisco Identity Intelligence, compromised identities. Each card opens a dashboard; the number on the right is that dashboard's own data."
+            }
+        },
+        "viz_rect_01": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_md_01": {
+            "type": "splunk.markdown",
+            "options": {
+                "fontColor": "#FFFFFF",
+                "backgroundColor": "transparent",
+                "markdown": "## 01 AI Governance Overview\nSafety, privacy, policy and cost posture across every GenAI application  \n[Open AI Governance Overview](/app/TA-gen_ai_cim/ai_governance_overview)"
+            }
+        },
+        "viz_count_01": {
+            "type": "splunk.singlevalue",
+            "dataSources": {
+                "primary": "ds_card_01"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "underLabel": "GenAI events, last 24h",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_rect_02": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_md_02": {
+            "type": "splunk.markdown",
+            "options": {
+                "fontColor": "#FFFFFF",
+                "backgroundColor": "transparent",
+                "markdown": "## 02 Tokenomics\nToken usage and calculated cost by provider, model and application  \n[Open Tokenomics](/app/TA-gen_ai_cim/tokenomics)"
+            }
+        },
+        "viz_count_02": {
+            "type": "splunk.singlevalue",
+            "dataSources": {
+                "primary": "ds_card_02"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "underLabel": "tokens, last 24h",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_rect_03": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_md_03": {
+            "type": "splunk.markdown",
+            "options": {
+                "fontColor": "#FFFFFF",
+                "backgroundColor": "transparent",
+                "markdown": "## 03 AI Asset Discovery\nThe AI applications and models seen in the data, and their inventory status  \n[Open AI Asset Discovery](/app/TA-gen_ai_cim/ai_asset_discovery)"
+            }
+        },
+        "viz_count_03": {
+            "type": "splunk.singlevalue",
+            "dataSources": {
+                "primary": "ds_card_03"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "underLabel": "AI applications seen, last 24h",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_rect_04": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_md_04": {
+            "type": "splunk.markdown",
+            "options": {
+                "fontColor": "#FFFFFF",
+                "backgroundColor": "transparent",
+                "markdown": "## 04 PII Detection\nPII and PHI detected in prompts and responses, by type and application  \n[Open PII Detection](/app/TA-gen_ai_cim/pii_detection)"
+            }
+        },
+        "viz_count_04": {
+            "type": "splunk.singlevalue",
+            "dataSources": {
+                "primary": "ds_card_04"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "underLabel": "PII detections, last 24h",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_rect_05": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_md_05": {
+            "type": "splunk.markdown",
+            "options": {
+                "fontColor": "#FFFFFF",
+                "backgroundColor": "transparent",
+                "markdown": "## 05 Prompt Injection Detection\nPrompt-injection attempts from Cisco AI Defense, the ML model and the GenAI judge  \n[Open Prompt Injection Detection](/app/TA-gen_ai_cim/prompt_injection_detection)"
+            }
+        },
+        "viz_count_05": {
+            "type": "splunk.singlevalue",
+            "dataSources": {
+                "primary": "ds_card_05"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "underLabel": "policy blocks, last 24h",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_rect_06": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_md_06": {
+            "type": "splunk.markdown",
+            "options": {
+                "fontColor": "#FFFFFF",
+                "backgroundColor": "transparent",
+                "markdown": "## 06 Compromised Identity\nCisco Identity Intelligence failed checks joined with Cisco AI Defense blocks (Lab 5)  \n[Open Compromised Identity](/app/TA-gen_ai_cim/compromised_identity)"
+            }
+        },
+        "viz_count_06": {
+            "type": "splunk.singlevalue",
+            "dataSources": {
+                "primary": "ds_card_06"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "underLabel": "CII failed checks, last 7d",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_score_title": {
+            "type": "splunk.markdown",
+            "options": {
+                "fontColor": "#FFFFFF",
+                "backgroundColor": "transparent",
+                "markdown": "## Scoreboard, last 24h\nHeadline numbers from gen_ai_log (scoring and response-action write-backs excluded)."
+            }
+        },
+        "viz_score_1": {
+            "type": "splunk.singlevalue",
+            "title": "GenAI events",
+            "dataSources": {
+                "primary": "ds_score_1"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_score_2": {
+            "type": "splunk.singlevalue",
+            "title": "Users",
+            "dataSources": {
+                "primary": "ds_score_2"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_score_3": {
+            "type": "splunk.singlevalue",
+            "title": "Policy blocks",
+            "dataSources": {
+                "primary": "ds_score_3"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_score_4": {
+            "type": "splunk.singlevalue",
+            "title": "Safety violations",
+            "dataSources": {
+                "primary": "ds_score_4"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_score_5": {
+            "type": "splunk.singlevalue",
+            "title": "PII detections",
+            "dataSources": {
+                "primary": "ds_score_5"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        }
+    },
+    "inputs": {},
+    "layout": {
+        "type": "absolute",
+        "options": {
+            "width": 1440,
+            "height": 1130,
+            "showTitleAndDescription": true,
+            "backgroundColor": "#171D21"
+        },
+        "structure": [
+            {
+                "item": "viz_header",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 0,
+                    "w": 1440,
+                    "h": 100
+                }
+            },
+            {
+                "item": "viz_rect_01",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 110,
+                    "w": 1440,
+                    "h": 120
+                }
+            },
+            {
+                "item": "viz_md_01",
+                "type": "block",
+                "position": {
+                    "x": 24,
+                    "y": 118,
+                    "w": 1000,
+                    "h": 104
+                }
+            },
+            {
+                "item": "viz_count_01",
+                "type": "block",
+                "position": {
+                    "x": 1100,
+                    "y": 120,
+                    "w": 320,
+                    "h": 100
+                }
+            },
+            {
+                "item": "viz_rect_02",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 240,
+                    "w": 1440,
+                    "h": 120
+                }
+            },
+            {
+                "item": "viz_md_02",
+                "type": "block",
+                "position": {
+                    "x": 24,
+                    "y": 248,
+                    "w": 1000,
+                    "h": 104
+                }
+            },
+            {
+                "item": "viz_count_02",
+                "type": "block",
+                "position": {
+                    "x": 1100,
+                    "y": 250,
+                    "w": 320,
+                    "h": 100
+                }
+            },
+            {
+                "item": "viz_rect_03",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 370,
+                    "w": 1440,
+                    "h": 120
+                }
+            },
+            {
+                "item": "viz_md_03",
+                "type": "block",
+                "position": {
+                    "x": 24,
+                    "y": 378,
+                    "w": 1000,
+                    "h": 104
+                }
+            },
+            {
+                "item": "viz_count_03",
+                "type": "block",
+                "position": {
+                    "x": 1100,
+                    "y": 380,
+                    "w": 320,
+                    "h": 100
+                }
+            },
+            {
+                "item": "viz_rect_04",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 500,
+                    "w": 1440,
+                    "h": 120
+                }
+            },
+            {
+                "item": "viz_md_04",
+                "type": "block",
+                "position": {
+                    "x": 24,
+                    "y": 508,
+                    "w": 1000,
+                    "h": 104
+                }
+            },
+            {
+                "item": "viz_count_04",
+                "type": "block",
+                "position": {
+                    "x": 1100,
+                    "y": 510,
+                    "w": 320,
+                    "h": 100
+                }
+            },
+            {
+                "item": "viz_rect_05",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 630,
+                    "w": 1440,
+                    "h": 120
+                }
+            },
+            {
+                "item": "viz_md_05",
+                "type": "block",
+                "position": {
+                    "x": 24,
+                    "y": 638,
+                    "w": 1000,
+                    "h": 104
+                }
+            },
+            {
+                "item": "viz_count_05",
+                "type": "block",
+                "position": {
+                    "x": 1100,
+                    "y": 640,
+                    "w": 320,
+                    "h": 100
+                }
+            },
+            {
+                "item": "viz_rect_06",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 760,
+                    "w": 1440,
+                    "h": 120
+                }
+            },
+            {
+                "item": "viz_md_06",
+                "type": "block",
+                "position": {
+                    "x": 24,
+                    "y": 768,
+                    "w": 1000,
+                    "h": 104
+                }
+            },
+            {
+                "item": "viz_count_06",
+                "type": "block",
+                "position": {
+                    "x": 1100,
+                    "y": 770,
+                    "w": 320,
+                    "h": 100
+                }
+            },
+            {
+                "item": "viz_score_title",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 900,
+                    "w": 1440,
+                    "h": 70
+                }
+            },
+            {
+                "item": "viz_score_1",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 980,
+                    "w": 280,
+                    "h": 130
+                }
+            },
+            {
+                "item": "viz_score_2",
+                "type": "block",
+                "position": {
+                    "x": 288,
+                    "y": 980,
+                    "w": 280,
+                    "h": 130
+                }
+            },
+            {
+                "item": "viz_score_3",
+                "type": "block",
+                "position": {
+                    "x": 576,
+                    "y": 980,
+                    "w": 280,
+                    "h": 130
+                }
+            },
+            {
+                "item": "viz_score_4",
+                "type": "block",
+                "position": {
+                    "x": 864,
+                    "y": 980,
+                    "w": 280,
+                    "h": 130
+                }
+            },
+            {
+                "item": "viz_score_5",
+                "type": "block",
+                "position": {
+                    "x": 1152,
+                    "y": 980,
+                    "w": 280,
+                    "h": 130
+                }
+            }
+        ]
+    }
+}
+]]></definition>
+</dashboard>

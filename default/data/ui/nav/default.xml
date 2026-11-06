@@ -1,7 +1,8 @@
 <nav search_view="search" color="#3C444D">
   <a href="/app/search/search?q=search%20index%3Dgen_ai_log">Search</a>
+  <view name="TA-gen_ai_cim_home" default='true' label="Home" />
   <collection label="Dashboards">
-    <view name="ai_governance_overview" default='true' label="AI Governance Overview" />
+    <view name="ai_governance_overview" label="AI Governance Overview" />
     <view name="tokenomics" label="Tokenomics" />
     <view name="ai_asset_discovery" label="AI Asset Discovery" />
     <!-- Inactivated: TF-IDF Anomaly Detection
@@ -9,6 +10,7 @@
     -->
     <view name="pii_detection" label="PII Detection" />
     <view name="prompt_injection_detection" label="Prompt Injection Detection" />
+    <view name="compromised_identity" label="Compromised Identity" />
   </collection>
   <!-- Inactivated: Governance Review
   <collection label="Governance Review">

@@ -297,6 +297,21 @@ v1.7.0 seeder was crashing (R-PY-001). Customers bind the plan to an
 investigation type of their own in ES. Re-adding either needs a new amendment
 here first.
 
+**Amendment (2026-11-05, v1.8.0).** The third exception is widened, within the
+same bounds, for AI Trust Lab 5: `| genaiseedes` may seed a **second** TA-owned
+response plan (`_key compromised_identity_response_plan`, content in
+`default/data/response_plans/`) and bind it to a **second** SOAR app,
+"PseudoCo Identity", asset `pseudoco_identity`. Both only when
+`seed_identity_response_plan` is turned on - it ships `false`. The binding is
+read-only on SOAR: unlike the simulator's asset, the seeder never installs that
+app or creates that asset, because the asset holds real Duo Admin API
+credentials; only `tools/show_postdeploy.py --lab5`, with the operator's own
+credentials, creates it. Two writes are narrowed at the same time: live task
+actions are now preserved on every run (not only when a binding was dropped),
+and the ES triage allowlist is merged, never replaced. Still no
+`mc_incident_types` write, no `investigation_type`, no index or event-derived
+field read. Any further plan or bound app needs a new amendment here first.
+
 **Check.** Both must print `0`:
 
 ```bash
@@ -550,3 +565,4 @@ and verified on a real instance. Numbers, not adjectives.
 | — (live verification 2026-10-07, not a reviewer) | `verify-1007-queue` | — | — | bug | Seeded queue `rule_string` was SPL, a Mission Control rule-engine syntax error; the queue never matched and every finding logged an ERROR | R-CONF-007 |
 | — (workshop dry run 2026-10-07, not a reviewer) | `dryrun-1007-seedes` | — | — | bug | `genaiseedes` assigned the read-only `self.logger` and called a `_service()` shadowed by splunklib's `self._service = None`; the enabled seeding search wrote nothing on any stack from v1.7.0 | R-PY-001 |
 | — (deliberate design decision, not a finding) | `R-SEC-002/amend-3` | — | — | security | Seeding narrowed: no `mc_incident_types` write and no `investigation_type` on the rules, because Mission Control cannot delete a seeded investigation type | R-SEC-002 (amended) |
+| — (deliberate design decision, not a finding) | `R-SEC-002/amend-4` | — | — | security | Seeding widened for AI Trust Lab 5: a second TA-owned plan and a second bound app (PseudoCo Identity), both behind `seed_identity_response_plan = false`; the seeder never creates that app's asset (real Duo credentials); live task actions always preserved; triage allowlist merged | R-SEC-002 (amended) |

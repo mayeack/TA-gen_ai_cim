@@ -15,10 +15,14 @@ genai_es_seed.py). No event data is read and nothing content-bearing is logged.
 
 Options (defaults come from ta_gen_ai_cim_es.conf [es_integration]):
   seed_response_plan   seed plan/queue                               (default true)
+  seed_identity_response_plan  seed the Lab 5 Compromised Identity
+                       Response Plan; binds to PseudoCo Identity only if its
+                       app and asset already exist                   (default false)
   bind_soar_actions    reach the paired SOAR through the ES proxy    (default true)
   install_simulator    install the simulator app if a `soar` account (default false)
                        exists in ta_gen_ai_cim_account.conf
-  enable_triage_agent  turn on ES AI triage for the primary detection (default false)
+  enable_triage_agent  turn on ES AI triage for the primary and Lab 5
+                       detections (allowlist merged, never replaced)  (default false)
   route_findings_to_queue  route AI Governance findings to the AI Findings
                        queue instead of the Analyst Queue                 (default false)
   dry_run              print writes without making them              (default false)
@@ -80,6 +84,7 @@ def _truthy(value, default=False):
 @Configuration()
 class GenaiSeedEsCommand(GeneratingCommand):
     seed_response_plan = Option(require=False, validate=validators.Boolean())
+    seed_identity_response_plan = Option(require=False, validate=validators.Boolean())
     bind_soar_actions = Option(require=False, validate=validators.Boolean())
     install_simulator = Option(require=False, validate=validators.Boolean())
     enable_triage_agent = Option(require=False, validate=validators.Boolean())
@@ -145,6 +150,7 @@ class GenaiSeedEsCommand(GeneratingCommand):
             return bool(value)
 
         do_plan = opt('seed_response_plan', True)
+        do_identity = opt('seed_identity_response_plan', False)
         do_bind = opt('bind_soar_actions', True)
         do_install = opt('install_simulator', False)
         do_triage = opt('enable_triage_agent', False)
@@ -166,11 +172,13 @@ class GenaiSeedEsCommand(GeneratingCommand):
         else:
             rep.skip('SOAR', 'bind_soar_actions is off')
 
-        if do_plan:
+        if do_plan or do_identity:
             seed.seed(splunkd, rep, soar=soar, install_simulator=do_install,
-                      enable_triage=do_triage, route_queue=do_route)
+                      enable_triage=do_triage, route_queue=do_route,
+                      seed_ai_plan=do_plan, seed_identity_plan=do_identity)
         else:
             rep.skip('response plan', 'seed_response_plan is off')
+            rep.skip('identity response plan', 'seed_identity_response_plan is off')
             if do_triage:
                 seed.step_triage_agent(splunkd, rep)
 

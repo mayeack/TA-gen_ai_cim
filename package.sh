@@ -124,6 +124,7 @@ COPYFILE_DISABLE=1 tar "${TAR_XATTR_FLAG[@]}" -czvf "${OUTPUT}" \
     --exclude='lookups/__mlspl_*.mlmodel' \
     --exclude='*.json.template' \
     --exclude='soar_apps/*.tgz' \
+    --exclude='soar_apps/pseudoco_identity' \
     --exclude='INSTALL.sh' \
     --exclude='package.sh' \
     --exclude='tools' \
