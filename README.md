@@ -1521,6 +1521,10 @@ Work the Lab 5 one.
   identity's attendee types, so those turns counted as policy blocks and their
   typed text matched the injection patterns: every signed-in victim would have
   raised a prompt-injection finding. Regex and corpus numbers are unchanged.
+  Re-validated on a scratch index (Splunk 10.4, labelled sample events): the
+  1.7.2 rule raised a finding for a victim whose only injection text was a gate
+  block and counted the gate block as an extra attempt and policy block for the
+  sprayed victim; the 1.8.0 rule does neither.
 - ADDED: *Compromised Identity Response Plan* (`_key`
   `compromised_identity_response_plan`, its own `template_id`), seeded by
   `| genaiseedes` when `seed_identity_response_plan = true` (ships **false**) and
