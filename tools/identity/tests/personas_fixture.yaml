@@ -1,0 +1,12 @@
+# The Lab 5 persona cast as section 4.3 of the PseudoCo Assistant lab plan
+# names it. scripts/identity/personas.yaml in the PseudoCo Assistant repo is the
+# source of truth; this fixture only seeds the TA's CSV until that file lands.
+domain: pseudocoassistant.com
+personas:
+  - {username: marcus.bell, role: trusted}
+  - {username: elena.sousa, role: trusted}
+  - {username: grace.lin, role: trusted}
+  - {username: avery.kim, role: victim}
+  - {username: jordan.reyes, role: victim}
+  - {username: casey.wong, role: victim}
+  - {username: nina.osei, role: dry_run}

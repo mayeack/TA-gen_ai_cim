@@ -1,0 +1,425 @@
+{
+    "appid": "de606f9d-4d05-4ff3-81f9-dc234c16381b",
+    "name": "PseudoCo Identity",
+    "description": "Containment for AI Trust Lab 5 (Verify: Cisco Identity Intelligence). Disables the room's victim persona in Duo through the Duo Admin API and reads Lab 5 personas' Duo status. NOT a simulator: results carry simulated=false. It only ever disables the victim configured on the asset, refuses trusted personas and l5-* participant accounts, and has no undo.",
+    "type": "identity management",
+    "product_vendor": "PseudoCo",
+    "product_name": "PseudoCo Identity",
+    "product_version_regex": ".*",
+    "publisher": "Splunk",
+    "package_name": "phantom_pseudocoidentity",
+    "main_module": "pseudoco_identity_connector.py",
+    "license": "Copyright (c) 2026 Splunk Inc. Licensed under the Apache License 2.0.",
+    "app_version": "1.0.0",
+    "utctime_updated": "2026-11-05T12:00:00.000000Z",
+    "python_version": "3.9, 3.13",
+    "min_phantom_version": "6.3.0",
+    "fips_compliant": false,
+    "logo": "logo_pseudoco_identity.svg",
+    "logo_dark": "logo_pseudoco_identity_dark.svg",
+    "app_wizard_version": "1.0.0",
+    "configuration": {
+        "api_host": {
+            "description": "Duo API hostname of the Lab 5 tenant (api-XXXXXXXX.duosecurity.com)",
+            "data_type": "string",
+            "required": true,
+            "order": 0
+        },
+        "ikey": {
+            "description": "Integration key of the Admin API application with Grant resource read + write",
+            "data_type": "string",
+            "required": true,
+            "order": 1
+        },
+        "skey": {
+            "description": "Secret key of that Admin API application",
+            "data_type": "password",
+            "required": true,
+            "order": 2
+        },
+        "victim_username": {
+            "description": "The room's victim persona - the only account disable user acts on",
+            "data_type": "string",
+            "required": true,
+            "order": 3
+        },
+        "room": {
+            "description": "Room label recorded on every result (e.g. the workshop and stack)",
+            "data_type": "string",
+            "required": false,
+            "order": 4
+        }
+    },
+    "actions": [
+        {
+            "action": "test connectivity",
+            "identifier": "test_connectivity",
+            "description": "Validate the asset: sign a Duo Admin API read and look up the configured victim",
+            "type": "test",
+            "read_only": true,
+            "parameters": {},
+            "output": [],
+            "versions": "EQ(*)"
+        },
+        {
+            "action": "get user",
+            "identifier": "get_user",
+            "description": "Read a Lab 5 persona's Duo status (active, disabled, locked out, bypass)",
+            "type": "investigate",
+            "read_only": true,
+            "parameters": {
+                "username": {
+                    "data_type": "string",
+                    "required": true,
+                    "primary": true,
+                    "order": 0,
+                    "contains": [
+                        "user name",
+                        "email"
+                    ],
+                    "description": "Username or email of a Lab 5 persona"
+                }
+            },
+            "output": [
+                {
+                    "data_path": "action_result.parameter.username",
+                    "data_type": "string",
+                    "contains": [
+                        "user name",
+                        "email"
+                    ]
+                },
+                {
+                    "data_path": "action_result.data.*.username",
+                    "data_type": "string",
+                    "contains": [
+                        "user name"
+                    ],
+                    "column_name": "Username",
+                    "column_order": 0
+                },
+                {
+                    "data_path": "action_result.data.*.email",
+                    "data_type": "string",
+                    "contains": [
+                        "email"
+                    ],
+                    "column_name": "Email",
+                    "column_order": 1
+                },
+                {
+                    "data_path": "action_result.data.*.status",
+                    "data_type": "string",
+                    "column_name": "Duo status",
+                    "column_order": 2,
+                    "example_values": [
+                        "active",
+                        "disabled",
+                        "locked out",
+                        "bypass"
+                    ]
+                },
+                {
+                    "data_path": "action_result.data.*.user_id",
+                    "data_type": "string",
+                    "contains": [
+                        "user id"
+                    ]
+                },
+                {
+                    "data_path": "action_result.data.*.is_enrolled",
+                    "data_type": "boolean"
+                },
+                {
+                    "data_path": "action_result.data.*.last_login",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.data.*.lockout_reason",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.data.*.groups.*",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.data.*.is_room_victim",
+                    "data_type": "boolean",
+                    "column_name": "Room victim",
+                    "column_order": 3
+                },
+                {
+                    "data_path": "action_result.data.*.room",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.data.*.source",
+                    "data_type": "string",
+                    "example_values": [
+                        "duo_admin_api"
+                    ]
+                },
+                {
+                    "data_path": "action_result.data.*.simulated",
+                    "data_type": "boolean",
+                    "column_name": "Simulated",
+                    "column_order": 4,
+                    "example_values": [
+                        false
+                    ]
+                },
+                {
+                    "data_path": "action_result.summary.username",
+                    "data_type": "string",
+                    "contains": [
+                        "user name"
+                    ]
+                },
+                {
+                    "data_path": "action_result.summary.status",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.summary.simulated",
+                    "data_type": "boolean",
+                    "example_values": [
+                        false
+                    ]
+                },
+                {
+                    "data_path": "action_result.status",
+                    "data_type": "string",
+                    "example_values": [
+                        "success",
+                        "failed"
+                    ]
+                },
+                {
+                    "data_path": "action_result.message",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "summary.total_objects",
+                    "data_type": "numeric",
+                    "example_values": [
+                        1
+                    ]
+                },
+                {
+                    "data_path": "summary.total_objects_successful",
+                    "data_type": "numeric",
+                    "example_values": [
+                        1
+                    ]
+                }
+            ],
+            "versions": "EQ(*)",
+            "render": {
+                "type": "table",
+                "width": 12,
+                "height": 5,
+                "title": "Get User"
+            }
+        },
+        {
+            "action": "disable user",
+            "identifier": "disable_user",
+            "description": "Disable the room's victim in Duo (status=disabled). Refuses every other account. No undo: re-enable through the Lab 5 persona tooling.",
+            "type": "contain",
+            "read_only": false,
+            "parameters": {
+                "username": {
+                    "data_type": "string",
+                    "required": true,
+                    "primary": true,
+                    "order": 0,
+                    "contains": [
+                        "user name",
+                        "email"
+                    ],
+                    "description": "Username or email of the room's victim persona"
+                },
+                "reason": {
+                    "description": "Free-text reason recorded with the result (optional)",
+                    "data_type": "string",
+                    "required": false,
+                    "order": 1
+                }
+            },
+            "output": [
+                {
+                    "data_path": "action_result.parameter.username",
+                    "data_type": "string",
+                    "contains": [
+                        "user name",
+                        "email"
+                    ]
+                },
+                {
+                    "data_path": "action_result.data.*.username",
+                    "data_type": "string",
+                    "contains": [
+                        "user name"
+                    ],
+                    "column_name": "Username",
+                    "column_order": 0
+                },
+                {
+                    "data_path": "action_result.data.*.email",
+                    "data_type": "string",
+                    "contains": [
+                        "email"
+                    ],
+                    "column_name": "Email",
+                    "column_order": 1
+                },
+                {
+                    "data_path": "action_result.data.*.status",
+                    "data_type": "string",
+                    "column_name": "Duo status",
+                    "column_order": 2,
+                    "example_values": [
+                        "active",
+                        "disabled",
+                        "locked out",
+                        "bypass"
+                    ]
+                },
+                {
+                    "data_path": "action_result.data.*.user_id",
+                    "data_type": "string",
+                    "contains": [
+                        "user id"
+                    ]
+                },
+                {
+                    "data_path": "action_result.data.*.is_enrolled",
+                    "data_type": "boolean"
+                },
+                {
+                    "data_path": "action_result.data.*.last_login",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.data.*.lockout_reason",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.data.*.groups.*",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.data.*.is_room_victim",
+                    "data_type": "boolean",
+                    "column_name": "Room victim",
+                    "column_order": 3
+                },
+                {
+                    "data_path": "action_result.data.*.room",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.data.*.source",
+                    "data_type": "string",
+                    "example_values": [
+                        "duo_admin_api"
+                    ]
+                },
+                {
+                    "data_path": "action_result.data.*.simulated",
+                    "data_type": "boolean",
+                    "column_name": "Simulated",
+                    "column_order": 4,
+                    "example_values": [
+                        false
+                    ]
+                },
+                {
+                    "data_path": "action_result.summary.username",
+                    "data_type": "string",
+                    "contains": [
+                        "user name"
+                    ]
+                },
+                {
+                    "data_path": "action_result.summary.status",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.summary.simulated",
+                    "data_type": "boolean",
+                    "example_values": [
+                        false
+                    ]
+                },
+                {
+                    "data_path": "action_result.parameter.reason",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.data.*.previous_status",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.data.*.reason",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.data.*.transaction_id",
+                    "data_type": "string",
+                    "column_name": "Transaction",
+                    "column_order": 5
+                },
+                {
+                    "data_path": "action_result.data.*.timestamp",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.data.*.message",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.summary.previous_status",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.summary.transaction_id",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "action_result.status",
+                    "data_type": "string",
+                    "example_values": [
+                        "success",
+                        "failed"
+                    ]
+                },
+                {
+                    "data_path": "action_result.message",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "summary.total_objects",
+                    "data_type": "numeric",
+                    "example_values": [
+                        1
+                    ]
+                },
+                {
+                    "data_path": "summary.total_objects_successful",
+                    "data_type": "numeric",
+                    "example_values": [
+                        1
+                    ]
+                }
+            ],
+            "versions": "EQ(*)",
+            "render": {
+                "type": "table",
+                "width": 12,
+                "height": 5,
+                "title": "Disable User"
+            }
+        }
+    ]
+}

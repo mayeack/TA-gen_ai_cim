@@ -240,6 +240,183 @@ class StepTests(unittest.TestCase):
         self.assertEqual(actions[0]['asset'], 34)
 
 
+# ---------------------------------------------------------------------------
+# 1.8.0: several plans, preserve-when-bound, merged triage allowlist
+# ---------------------------------------------------------------------------
+
+SIM_APP = {'id': 198, 'name': seed.SOAR_APP_NAME, 'app_version': '1.1.0', 'type': 'identity management'}
+SIM_ASSET = {'id': 34, 'name': seed.SOAR_ASSET_NAME, 'app': 198}
+PI_APP = {'id': 205, 'name': seed.IDENTITY_SOAR_APP_NAME, 'app_version': '1.0.0', 'type': 'identity management'}
+PI_ASSET = {'id': 77, 'name': seed.IDENTITY_SOAR_ASSET_NAME, 'app': 205}
+
+
+def plan_writes(splunkd):
+    return dict((w[2]['_key'], w[2]) for w in splunkd.writes
+                if 'mc_response_templates' in w[0] and isinstance(w[2], dict))
+
+
+def task_actions(record, phase, task):
+    for ph in record['phases']:
+        if urllib.parse.unquote(ph['name']) == phase:
+            for t in ph['tasks']:
+                if urllib.parse.unquote(t['name']) == task:
+                    return (t.get('suggestions') or {}).get('actions') or []
+    raise KeyError((phase, task))
+
+
+class RecordingSoar(FakeSoar):
+    def __init__(self, *a, **kw):
+        FakeSoar.__init__(self, *a, **kw)
+        self.created = []
+
+    def create_asset(self, record, app):
+        self.created.append(record['name'])
+        return FakeSoar.create_asset(self, record, app)
+
+
+class MultiPlanTests(unittest.TestCase):
+
+    def test_identity_plan_is_off_by_default(self):
+        splunkd, rep = FakeSplunkd(), seed.Reporter()
+        seed.seed(splunkd, rep, soar=None)
+        self.assertEqual(sorted(plan_writes(splunkd)), [seed.AI_PLAN_KEY])
+        self.assertIn(('SKIP', 'identity response plan'), [(s, step) for s, step, _ in rep.rows])
+
+    def test_identity_plan_has_its_own_key_and_template(self):
+        splunkd, rep = FakeSplunkd(), seed.Reporter()
+        seed.seed(splunkd, rep, soar=None, seed_identity_plan=True)
+        writes = plan_writes(splunkd)
+        self.assertEqual(sorted(writes), [seed.AI_PLAN_KEY, seed.IDENTITY_PLAN_KEY])
+        self.assertNotEqual(writes[seed.AI_PLAN_KEY]['template_id'], writes[seed.IDENTITY_PLAN_KEY]['template_id'])
+        self.assertNotIn('soar_binding', json.dumps(writes[seed.IDENTITY_PLAN_KEY]))
+        self.assertEqual(rep.failures(), 0, rep.rows)
+
+    def test_identity_binding_skips_without_the_app_and_never_creates_the_asset(self):
+        for apps, assets in (([SIM_APP], [SIM_ASSET]), ([SIM_APP, PI_APP], [SIM_ASSET])):
+            soar = RecordingSoar(apps=list(apps), assets=list(assets))
+            splunkd, rep = FakeSplunkd(), seed.Reporter()
+            seed.seed(splunkd, rep, soar=soar, seed_identity_plan=True)
+            self.assertEqual(rep.failures(), 0, rep.rows)
+            self.assertNotIn(seed.IDENTITY_SOAR_ASSET_NAME, soar.created)
+            record = plan_writes(splunkd)[seed.IDENTITY_PLAN_KEY]
+            self.assertEqual(task_actions(record, 'Containment', 'Disable the identity in Duo'), [])
+            self.assertIn('SKIP', [s for s, step, _ in rep.rows if step.startswith('identity response plan SOAR binding')])
+
+    def test_each_plan_binds_its_own_app(self):
+        soar = RecordingSoar(apps=[SIM_APP, PI_APP], assets=[SIM_ASSET, PI_ASSET])
+        splunkd, rep = FakeSplunkd(), seed.Reporter()
+        seed.seed(splunkd, rep, soar=soar, seed_identity_plan=True)
+        self.assertEqual(rep.failures(), 0, rep.rows)
+        writes = plan_writes(splunkd)
+        pi = task_actions(writes[seed.IDENTITY_PLAN_KEY], 'Containment', 'Disable the identity in Duo')
+        sim = task_actions(writes[seed.AI_PLAN_KEY], 'Containment', "Inactivate the offending identity's account")
+        self.assertEqual([(a['app_id'], a['asset'], urllib.parse.unquote(a['action'])) for a in pi],
+                         [(205, 77, 'disable user')])
+        self.assertEqual([(a['app_id'], a['asset']) for a in sim], [(198, 34)])
+        self.assertEqual(soar.created, [])
+
+    def test_never_writes_an_investigation_type(self):
+        soar = RecordingSoar(apps=[SIM_APP, PI_APP], assets=[SIM_ASSET, PI_ASSET])
+        splunkd, rep = FakeSplunkd(), seed.Reporter()
+        seed.seed(splunkd, rep, soar=soar, seed_identity_plan=True, enable_triage=False)
+        self.assertEqual([w for w in splunkd.writes if 'mc_incident_types' in w[0]], [])
+
+
+class PreserveTests(unittest.TestCase):
+
+    UI_ACTION = {'last_job_id': None, 'name': 'UI added', 'description': 'by an analyst', 'action': 'run query',
+                 'type': 'investigate', 'app_id': 9, 'asset': 9, 'parameters': [{}]}
+
+    def live_with_ui_action(self, path, phase, task):
+        live = seed.encode_plan(seed.load_plan(path))
+        for ph in live['phases']:
+            if urllib.parse.unquote(ph['name']) == phase:
+                for t in ph['tasks']:
+                    if urllib.parse.unquote(t['name']) == task:
+                        t.setdefault('suggestions', {})['actions'] = [seed.encode_plan(self.UI_ACTION)]
+        live.pop('_comment', None)
+        return live
+
+    def test_ui_action_survives_a_run_whose_bindings_all_resolve(self):
+        # 1.7.2 preserved live actions only when a binding was dropped.
+        task = 'Tighten the guardrail profile'
+        live = self.live_with_ui_action(seed.RESPONSE_PLAN_PATH, 'Containment', task)
+        splunkd = FakeSplunkd(live={seed.AI_PLAN_KEY: live})
+        rep = seed.Reporter()
+        soar = FakeSoar(apps=[SIM_APP], assets=[SIM_ASSET])
+        seed.step_response_plan(splunkd, rep, soar)
+        record = plan_writes(splunkd)[seed.AI_PLAN_KEY]
+        self.assertEqual([urllib.parse.unquote(a['name']) for a in task_actions(record, 'Containment', task)],
+                         ['UI added'])
+        self.assertEqual(len(task_actions(record, 'Containment', "Inactivate the offending identity's account")), 1)
+
+    def test_ui_action_survives_when_nothing_binds(self):
+        task = 'Confirm Duo and the application took effect'
+        live = self.live_with_ui_action(seed.IDENTITY_PLAN_PATH, 'Containment', task)
+        splunkd = FakeSplunkd(live={seed.IDENTITY_PLAN_KEY: live})
+        rep = seed.Reporter()
+        seed.step_identity_plan(splunkd, rep, None)
+        record = plan_writes(splunkd)[seed.IDENTITY_PLAN_KEY]
+        self.assertEqual([urllib.parse.unquote(a['name']) for a in task_actions(record, 'Containment', task)],
+                         ['UI added'])
+
+
+class ConfSplunkd(FakeSplunkd):
+    """FakeSplunkd plus canned conf endpoints for the triage steps."""
+
+    def __init__(self, allowlist=None, allowlist_code=200):
+        FakeSplunkd.__init__(self)
+        self.allowlist = allowlist
+        self.allowlist_code = allowlist_code
+
+    def get_json(self, path, timeout=60):
+        if path.endswith('conf-mc_sa_spl_context/settings'):
+            return 200, {'entry': [{'content': {'allow_ai_triage': '1'}}]}
+        if path.endswith('conf-es_ai_settings/ai_triage_detections'):
+            if self.allowlist_code != 200:
+                return self.allowlist_code, None
+            return 200, {'entry': [{'content': {'enabled': json.dumps(self.allowlist or {})}}]}
+        return FakeSplunkd.get_json(self, path, timeout)
+
+
+class TriageAllowlistTests(unittest.TestCase):
+
+    def posted_allowlist(self, splunkd):
+        posts = [w for w in splunkd.writes if w[0].endswith('ai_triage_detections')]
+        return json.loads(posts[-1][2]['enabled']) if posts else None
+
+    def test_allowlist_is_merged_not_replaced(self):
+        splunkd, rep = ConfSplunkd(allowlist={'Other Rule+OtherApp': None}), seed.Reporter()
+        seed.step_triage_agent(splunkd, rep)
+        merged = self.posted_allowlist(splunkd)
+        self.assertIn('Other Rule+OtherApp', merged)
+        for name in seed.TRIAGE_DETECTIONS:
+            self.assertIn('{}+{}'.format(name, seed.APP_NAME), merged)
+        self.assertEqual(rep.failures(), 0, rep.rows)
+
+    def test_no_write_when_already_allowlisted(self):
+        current = dict(('{}+{}'.format(n, seed.APP_NAME), None) for n in seed.TRIAGE_DETECTIONS)
+        splunkd, rep = ConfSplunkd(allowlist=current), seed.Reporter()
+        seed.step_triage_agent(splunkd, rep)
+        self.assertIsNone(self.posted_allowlist(splunkd))
+
+    def test_unreadable_allowlist_is_left_alone(self):
+        splunkd, rep = ConfSplunkd(allowlist_code=500), seed.Reporter()
+        seed.step_triage_agent(splunkd, rep)
+        self.assertIsNone(self.posted_allowlist(splunkd))
+        self.assertEqual(rep.failures(), 1)
+
+
+class CompetingAssetTests(unittest.TestCase):
+
+    def test_both_ta_apps_are_excluded(self):
+        okta = {'id': 300, 'name': 'Okta', 'type': 'identity management'}
+        soar = FakeSoar(apps=[SIM_APP, PI_APP, okta],
+                        assets=[SIM_ASSET, PI_ASSET, {'id': 301, 'name': 'okta_demo', 'app': 300}])
+        rows = seed.step_competing_idp_assets(soar, seed.Reporter())
+        self.assertEqual(rows, ['okta_demo (Okta)'])
+
+
 MISSIONCONTROL = os.path.join(os.environ.get('SPLUNK_HOME', '/opt/splunk104'), 'etc', 'apps', 'missioncontrol')
 
 
@@ -262,15 +439,15 @@ class QueueRuleTests(unittest.TestCase):
         # literal $tokens$) plus the result row, and no search_name yet.
         conf = open(os.path.join(REPO, 'default', 'savedsearches.conf'), encoding='utf-8').read()
         titles = [t for t in re.findall(r'^action\.notable\.param\.rule_title = (.*)$', conf, re.M)
-                  if t.startswith('GenAI Prompt Injection')]
-        self.assertEqual(len(titles), 3, titles)
+                  if t.startswith(('GenAI Prompt Injection', 'GenAI Compromised Identity'))]
+        self.assertEqual(len(titles), 4, titles)
         other = 'Risk Threshold Exceeded For $risk_object_type$=$risk_object$'
         result = self.run_mc(
             "import sys, json; sys.path[:0] = ['lib', 'bin']; import rule_engine; "
             "r = rule_engine.Rule({!r}); "
             "print(json.dumps([r.matches({{'rule_title': t}}) for t in {!r}]))".format(
                 seed.QUEUE_RULE_STRING, titles + [other]))
-        self.assertEqual(result, [True, True, True, False])
+        self.assertEqual(result, [True, True, True, True, False])
 
     def test_rule_string_is_what_the_es_ui_builds_from_rules(self):
         built = self.run_mc(

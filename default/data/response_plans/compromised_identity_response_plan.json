@@ -1,0 +1,219 @@
+{
+  "_comment": [
+    "Compromised Identity Response Plan - AI Trust Lab 5 (\"Verify: Cisco Identity",
+    "Intelligence\"). Seed asset for the ES Mission Control mc_response_templates KV",
+    "collection, seeded by | genaiseedes when seed_identity_response_plan is on",
+    "(ta_gen_ai_cim_es.conf) and by tools/show_postdeploy.py --lab5.",
+    "",
+    "Same conventions as ai_incident_response_plan.json (read its _comment): plain",
+    "text here, URL-encoded on write; origin is a dict; no investigation type is",
+    "seeded, so add the plan to the investigation with Add response plan.",
+    "",
+    "SOAR BINDING: the containment task binds the PseudoCo Identity app's",
+    "pseudoco_identity asset (soar_apps/pseudoco_identity). Unlike the simulator,",
+    "the seeder never creates that asset - it holds real Duo Admin API credentials -",
+    "so the binding resolves only once show_postdeploy.py --lab5 has installed it;",
+    "until then the task keeps whatever actions the live record already carries.",
+    "",
+    "Placeholder <user> is replaced by the analyst (or the agent) with the finding's",
+    "user. The searches carry index= so they also work for the Triage agent."
+  ],
+  "_key": "compromised_identity_response_plan",
+  "id": "compromised_identity_response_plan",
+  "template_id": "d1417133-5b4b-4623-be4b-fe94a99aa204",
+  "name": "Compromised Identity Response Plan",
+  "description": "Response plan for an identity that Cisco Identity Intelligence reports as taken over (failed checks such as MFA Flood or Impossible Travel) while Cisco AI Defense blocks its GenAI requests. Raised by GenAI Compromised Identity findings (AI Trust Lab 5). Containment disables the account in Duo through the PseudoCo Identity SOAR connector, which also ends its PseudoCo Assistant sessions. Phases follow NIST 800-61.",
+  "is_default": false,
+  "active": true,
+  "version": 1,
+  "ai_generated": false,
+  "origin": {
+    "id": "TA-gen_ai_cim",
+    "name": "TA-gen_ai_cim",
+    "version": 1
+  },
+  "template_status": "published",
+  "source_attachment_id": null,
+  "creator": "nobody",
+  "updated_by": "nobody",
+  "used": false,
+  "phases": [
+    {
+      "name": "Identification (Detection and Analysis)",
+      "order": 0,
+      "tasks": [
+        {
+          "name": "Confirm the identity is failing Cisco Identity Intelligence checks",
+          "order": 0,
+          "description": "Read the identity's failed checks and trust level. cii_provenance says where each event came from: \"CII webhook\" (sent by Identity Intelligence), \"backfill (lab5-setup)\" (re-created from the CII API by the Lab 5 setup tool when the stack did not exist yet) or \"synthetic test event\" (test stacks only - never act on one in a room).\n\nConfirm in Cisco Identity Intelligence that the user is still failing the checks, and record the checks and trust level in the task notes.",
+          "owner": "",
+          "suggestions": {
+            "searches": [
+              {
+                "name": "Failed checks for this identity",
+                "description": "Cisco Identity Intelligence FAILED_CHECK events for the identity, with provenance.",
+                "spl": "`genai_cii_failed_checks` | search identity_user=\"<user>\"\n| table _time, cii_check, cii_check_id, cii_severity, cii_trust_level, cii_provenance\n| sort - _time"
+              }
+            ],
+            "actions": [],
+            "playbooks": []
+          }
+        },
+        {
+          "name": "Correlate with Cisco AI Defense blocks",
+          "order": 1,
+          "description": "List the GenAI requests from this identity that Cisco AI Defense blocked, and the applications, sessions and source addresses involved. Blocks from several sources in a short window point to a credential in more than one attacker's hands.",
+          "owner": "",
+          "suggestions": {
+            "searches": [
+              {
+                "name": "AI Defense blocks for this identity",
+                "description": "Blocked GenAI requests for the identity, last 24 hours.",
+                "spl": "index=gen_ai_log `exclude_scoring_sourcetypes` user=\"<user>\" gen_ai.guardrail.ids=\"cisco_ai_defense\" gen_ai.policy.blocked=\"true\" earliest=-24h\n| table _time, host, gen_ai.session.id, gen_ai.app.name, gen_ai.safety.categories, client.address\n| sort - _time"
+              }
+            ],
+            "actions": [],
+            "playbooks": []
+          }
+        },
+        {
+          "name": "Review the Identity Risk Gate and sign-ins",
+          "order": 2,
+          "description": "PseudoCo Assistant refuses a compromised identity before the model runs. Check which turns the gate blocked, whether anyone pressed Unblock me (identity_override=true), whether the gate could not reach Duo or Identity Intelligence (identity_check=unavailable, which fails open), and the identity's Duo sign-ins.",
+          "owner": "",
+          "suggestions": {
+            "searches": [
+              {
+                "name": "Identity Risk Gate verdicts",
+                "description": "Gate blocks, overrides and unavailable checks for the identity.",
+                "spl": "index=gen_ai_log `exclude_scoring_sourcetypes` user=\"<user>\" (gen_ai.guardrail.ids=\"cisco_identity_intelligence\" OR gen_ai.identity.override=\"true\" OR gen_ai.identity.check=\"unavailable\")\n| table _time, host, gen_ai.session.id, gen_ai.identity.risk.verdict, gen_ai.identity.risk.trust_level, gen_ai.identity.risk.failing_checks, gen_ai.identity.override, gen_ai.identity.check\n| sort - _time"
+              },
+              {
+                "name": "Duo sign-ins to PseudoCo Assistant",
+                "description": "identity_signin_* records (CIM Authentication).",
+                "spl": "index=gen_ai_log user=\"<user>\" eventtype=gen_ai_identity_authentication\n| table _time, host, action, src, authentication_service\n| sort - _time"
+              }
+            ],
+            "actions": [],
+            "playbooks": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "Containment",
+      "order": 1,
+      "tasks": [
+        {
+          "name": "Disable the identity in Duo",
+          "order": 0,
+          "description": "**Containment standard:** an identity failing Cisco Identity Intelligence checks while Cisco AI Defense blocks its GenAI requests is treated as taken over and is disabled pending review.\n\nRun the attached SOAR action **PseudoCo Identity -> disable user** with the finding's user (prompt: \"Using PseudoCo Identity, disable user <user>. Reason: <investigation id> compromised identity\"). It sets the account to disabled in Duo through the Duo Admin API - this is NOT a simulator, and it has no undo. It acts only on the room's configured victim and refuses any other account.\n\nDo not use the MedAdvice Identity Provider: it is the Lab 4 simulator and refuses Lab 5 identities.",
+          "owner": "",
+          "is_note_required": true,
+          "suggestions": {
+            "searches": [],
+            "actions": [],
+            "playbooks": [],
+            "soar_binding": [
+              {
+                "app_name": "PseudoCo Identity",
+                "asset_name": "pseudoco_identity",
+                "action": "disable user",
+                "type": "contain",
+                "name": "Disable in Duo (PseudoCo Identity)",
+                "description": "Disable the finding's user in Duo through the Duo Admin API (real, no undo; room victim only).",
+                "parameters": [
+                  {
+                    "username": "$user$",
+                    "reason": "GenAI compromised identity containment - Compromised Identity Response Plan"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "Confirm Duo and the application took effect",
+          "order": 1,
+          "description": "Run PseudoCo Identity -> get user for the same user: Duo status must read disabled. PseudoCo Assistant re-checks Duo on signed-in requests and revokes the session within about 20 seconds: the attached search shows identity_session_revoked from each instance the identity was signed in to.",
+          "owner": "",
+          "suggestions": {
+            "searches": [
+              {
+                "name": "Session revocations for this identity",
+                "description": "identity_session_revoked records after containment.",
+                "spl": "index=gen_ai_log user=\"<user>\" gen_ai.audit.action=\"identity_session_revoked\"\n| table _time, host, gen_ai.audit.action, src\n| sort - _time"
+              }
+            ],
+            "actions": [],
+            "playbooks": []
+          }
+        },
+        {
+          "name": "Check for overrides after containment",
+          "order": 2,
+          "description": "Unblock me restores an attendee's PseudoCo Assistant session but never touches Duo: the account stays disabled and the containment evidence stays intact. Any identity_unblocked record or identity_override=true turn after the disable is an attendee choice to note on the investigation, not a failed containment.",
+          "owner": "",
+          "suggestions": {
+            "searches": [
+              {
+                "name": "Overrides for this identity",
+                "description": "Unblock me and overridden turns.",
+                "spl": "index=gen_ai_log user=\"<user>\" (gen_ai.audit.action=\"identity_unblocked\" OR gen_ai.audit.action=\"identity_reblocked\" OR gen_ai.identity.override=\"true\")\n| table _time, host, gen_ai.audit.action, gen_ai.identity.override, gen_ai.identity.risk.verdict\n| sort - _time"
+              }
+            ],
+            "actions": [],
+            "playbooks": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "Eradication and Recovery",
+      "order": 2,
+      "tasks": [
+        {
+          "name": "Verify no residual AI activity",
+          "order": 0,
+          "description": "Run the attached search over a window that starts after containment. Expect no AI Defense blocks and no allowed turns from the identity; gate blocks or overrides from a signed-in attendee are expected and are not residual access.",
+          "owner": "",
+          "suggestions": {
+            "searches": [
+              {
+                "name": "Residual activity check",
+                "description": "Turns from the identity in the last 15 minutes, by outcome.",
+                "spl": "index=gen_ai_log `exclude_scoring_sourcetypes` user=\"<user>\" earliest=-15m\n| stats count BY host, gen_ai.policy.blocked, gen_ai.guardrail.ids"
+              }
+            ],
+            "actions": [],
+            "playbooks": []
+          }
+        },
+        {
+          "name": "Restore the identity after review",
+          "order": 1,
+          "description": "There is no SOAR undo by design. When the review closes, the lab's persona tooling re-enables the persona (provision_personas.py --reset), clears Duo step-ups and resets the user's Cisco Identity Intelligence feedback. Record the decision and who made it in the task notes.",
+          "owner": ""
+        }
+      ]
+    },
+    {
+      "name": "Post-Incident Activity",
+      "order": 3,
+      "tasks": [
+        {
+          "name": "Map the incident to threat frameworks",
+          "order": 0,
+          "description": "Baseline mapping:\n- MITRE ATT&CK: T1078 (Valid Accounts), T1621 (Multi-Factor Authentication Request Generation)\n- MITRE ATLAS: AML.T0012 (Valid Accounts), AML.T0051 (LLM Prompt Injection) when the blocked requests were injection attempts\n\nAdjust if the takeover also reached data, and record the final mapping.",
+          "owner": ""
+        },
+        {
+          "name": "Complete the incident record",
+          "order": 1,
+          "description": "Confirm before closing: the Duo disable recorded on the containment task (simulated=false), the CII evidence provenance stated, every override noted, and the disposition set.",
+          "owner": ""
+        }
+      ]
+    }
+  ]
+}

@@ -186,3 +186,15 @@ PERSONAS = {
 }
 
 EMAIL_INDEX = dict((p["email"].lower(), u) for u, p in PERSONAS.items())
+
+# AI Trust Lab 5 identities (lookups/pseudoco_identity_personas.csv). They are
+# real Duo accounts that only the PseudoCo Identity connector may act on, so the
+# simulator refuses them - username and email forms, any account in their
+# domain, and every Lab 5 participant account (l5-*) - instead of faking a
+# containment that never happened.
+REFUSED_USERNAMES = frozenset(["avery.kim", "casey.wong", "elena.sousa", "grace.lin", "jordan.reyes", "marcus.bell", "nina.osei"])
+REFUSED_DOMAINS = frozenset(["pseudocoassistant.com"])
+REFUSED_PREFIXES = ("l5-",)
+MSG_MANAGED_ELSEWHERE = ("'{value}' is a real Duo identity managed by PseudoCo Identity "
+                         "(AI Trust Lab 5), not a MedAdvice persona - this simulator "
+                         "refuses it. Run the PseudoCo Identity app instead.")

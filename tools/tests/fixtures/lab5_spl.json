@@ -1,0 +1,70 @@
+[
+  {
+    "name": "cii webhook FAILED_CHECK is projected and keyed on the local part",
+    "spl": "| makeresults | eval _raw=\"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"account\\\":\\\"227542035969\\\",\\\"time\\\":\\\"2026-11-05T18:00:00Z\\\",\\\"region\\\":\\\"us-east-2\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"mfa-flood\\\",\\\"title\\\":\\\"MFA Flood\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"Avery.Kim@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"untrusted\\\",\\\"published\\\":\\\"2026-11-05T18:00:00.577Z\\\"}}\" | `genai_cii_extract` | `genai_cii_failed_check_rows` | table identity_user, cii_check, cii_trust_level, cii_provenance",
+    "expect": [
+      {
+        "identity_user": "avery.kim",
+        "cii_check": "MFA Flood",
+        "cii_trust_level": "UNTRUSTED",
+        "cii_provenance": "CII webhook"
+      }
+    ]
+  },
+  {
+    "name": "backfill flag and lab5-setup source mark the provenance",
+    "spl": "| makeresults | eval _raw=\"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"lab5-setup\\\",\\\"account\\\":\\\"227542035969\\\",\\\"time\\\":\\\"2026-11-05T18:00:00Z\\\",\\\"region\\\":\\\"us-east-2\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"mfa-flood\\\",\\\"title\\\":\\\"MFA Flood\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"avery.kim@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"untrusted\\\",\\\"published\\\":\\\"2026-11-05T18:00:00.577Z\\\"},\\\"backfill\\\":true}\" | `genai_cii_extract` | `genai_cii_failed_check_rows` | table identity_user, cii_check, cii_trust_level, cii_provenance",
+    "expect": [
+      {
+        "identity_user": "avery.kim",
+        "cii_provenance": "backfill (lab5-setup)"
+      }
+    ]
+  },
+  {
+    "name": "a source of lab5-setup alone is a backfill",
+    "spl": "| makeresults | eval _raw=\"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"lab5-setup\\\",\\\"account\\\":\\\"227542035969\\\",\\\"time\\\":\\\"2026-11-05T18:00:00Z\\\",\\\"region\\\":\\\"us-east-2\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"mfa-flood\\\",\\\"title\\\":\\\"MFA Flood\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"avery.kim@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"untrusted\\\",\\\"published\\\":\\\"2026-11-05T18:00:00.577Z\\\"}}\" | `genai_cii_extract` | `genai_cii_failed_check_rows` | table identity_user, cii_check, cii_trust_level, cii_provenance",
+    "expect": [
+      {
+        "cii_provenance": "backfill (lab5-setup)"
+      }
+    ]
+  },
+  {
+    "name": "synthetic test events are labelled",
+    "spl": "| makeresults | eval _raw=\"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"account\\\":\\\"227542035969\\\",\\\"time\\\":\\\"2026-11-05T18:00:00Z\\\",\\\"region\\\":\\\"us-east-2\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"mfa-flood\\\",\\\"title\\\":\\\"MFA Flood\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"avery.kim@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"untrusted\\\",\\\"published\\\":\\\"2026-11-05T18:00:00.577Z\\\"},\\\"synthetic\\\":true}\" | `genai_cii_extract` | `genai_cii_failed_check_rows` | table identity_user, cii_check, cii_trust_level, cii_provenance",
+    "expect": [
+      {
+        "cii_provenance": "synthetic test event"
+      }
+    ]
+  },
+  {
+    "name": "WebhookTest connectivity probes are dropped",
+    "spl": "| makeresults | eval _raw=\"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"WebhookTest\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"account\\\":\\\"227542035969\\\",\\\"time\\\":\\\"2026-11-05T18:00:00Z\\\",\\\"region\\\":\\\"us-east-2\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"mfa-flood\\\",\\\"title\\\":\\\"MFA Flood\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"user1@example.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"untrusted\\\",\\\"published\\\":\\\"2026-11-05T18:00:00.577Z\\\"}}\" | `genai_cii_extract` | `genai_cii_failed_check_rows` | table identity_user, cii_check, cii_trust_level, cii_provenance",
+    "expect": []
+  },
+  {
+    "name": "join key lowercases and strips the domain",
+    "spl": "| makeresults | eval x=\"Avery.Kim@PseudoCoAssistant.com\", k=`genai_identity_join_key(x)` | table k",
+    "expect": [
+      {
+        "k": "avery.kim"
+      }
+    ]
+  },
+  {
+    "name": "join keeps an identity with both signals and drops participants",
+    "spl": "| makeresults count=6 | streamstats count as n | eval identity_user=case(n<=3, \"avery.kim\", n<=5, \"l5-ws1-03\", 1=1, \"marcus.bell\"), signal=case(n==1 OR n==4 OR n==6, \"ai_defense_block\", n==2 OR n==5, \"cii_failed_check\", 1=1, \"identity_gate\"), gate_blocked=if(n==3, 1, 0), gate_override=0, ai_src=\"203.0.113.10\", ai_session=\"s\".n, ai_category=\"Prompt Injection\", ai_app=\"pseudoco-assistant\", cii_check=\"MFA Flood\", cii_trust_level=\"UNTRUSTED\", cii_provenance=\"CII webhook\" | `genai_identity_ai_attack_join` | table identity_user, ai_defense_blocks, cii_failed_checks, identity_gate_blocks, cii_checks, cii_provenance",
+    "expect": [
+      {
+        "identity_user": "avery.kim",
+        "ai_defense_blocks": "1",
+        "cii_failed_checks": "1",
+        "identity_gate_blocks": "1",
+        "cii_checks": "MFA Flood",
+        "cii_provenance": "CII webhook"
+      }
+    ]
+  }
+]

@@ -52,6 +52,20 @@ Usage:
         [--soar-app-tgz soar_apps/medadvice_idp.tgz] [--soar-smoke-test] \\
         [--soar-only] [--skip-triage] [--route-findings-to-queue] [--dry-run]
 
+AI Trust Lab 5 ("Verify: Cisco Identity Intelligence"), one run per room stack
+after the run above (tools/lab5_steps.py documents each step):
+
+    export SPLUNK_ADMIN_PASSWORD='...' SPLUNK_ACS_TOKEN='...' SOAR_PASSWORD='...'
+    export DUO_IDENTITY_OPS_API_HOST='api-XXXXXXXX.duosecurity.com'
+    export DUO_IDENTITY_OPS_IKEY='...' DUO_IDENTITY_OPS_SKEY='...'   # never argv
+    python3 show_postdeploy.py --stack <url> --soar-url <url> --lab5 \\
+        --lab5-victim avery.kim --lab5-room <workshop>-<room> --out stack.json
+    python3 show_postdeploy.py --stack <url> --soar-url <url> --lab5-teardown
+
+--out PATH writes the stack's HEC URL and tokens (gen_ai_log, and with --lab5
+the CII backfill token) to a 0600 JSON file for the PseudoCo Assistant Lab 5
+setup tool, and prints only their last 4 characters.
+
 Steps 1-2 need ACS (Splunk Cloud only). Supply --acs-token, or pass
 --skip-acs and create the index and HEC token by hand. Steps 3-9 use the
 splunkd REST API on :8089. Steps 10-13 use the SOAR REST API (basic auth or
@@ -86,6 +100,7 @@ APP_ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(APP_ROOT, 'bin'))
 
 import genai_es_seed as seed  # noqa: E402  (shared with the | genaiseedes command)
+import lab5_steps as lab5  # noqa: E402  (AI Trust Lab 5, --lab5 / --lab5-teardown)
 
 INDEX_NAME = 'gen_ai_log'
 HEC_TOKEN_NAME = 'demobot-ai-defense'
@@ -427,7 +442,19 @@ def main():
                             'container'.format(SMOKE_TEST_USER))
     group.add_argument('--soar-only', action='store_true', help='Run only the SOAR steps')
     group.add_argument('--skip-soar', action='store_true', help='Skip the SOAR steps')
+    group = parser.add_argument_group('AI Trust Lab 5 (one run per room stack)')
+    group.add_argument('--lab5', action='store_true',
+                       help='Run only the Lab 5 steps L1-L9 (see tools/lab5_steps.py)')
+    group.add_argument('--lab5-teardown', action='store_true',
+                       help='Reverse --lab5: disable the rule, input and seed switch, delete the '
+                            'pseudoco_identity asset and its Duo secret')
+    group.add_argument('--lab5-victim', help="The room's victim persona (e.g. avery.kim); never an l5-* account")
+    group.add_argument('--lab5-room', default='', help='Room label recorded on the SOAR asset')
+    parser.add_argument('--out', help='Write the HEC URL and token(s) to this 0600 JSON file instead of '
+                                      'printing the token')
     args = parser.parse_args()
+    if args.lab5 or args.lab5_teardown:
+        return run_lab5(args)
 
     soar_wanted = bool(args.soar_url) and not args.skip_soar
     soar_cred = bool(args.soar_token or args.soar_password)
@@ -515,7 +542,11 @@ def main():
 
     failures = summary(rep)
 
-    if out.get('hec_token'):
+    if out.get('hec_token') and args.out:
+        lab5.write_out(args.out, {'hec_url': 'https://http-inputs-{}.splunkcloud.com/services/collector/event'.format(
+            stack_name), 'hec_token': out['hec_token'], 'index': INDEX_NAME, 'sourcetype': HEC_SOURCETYPE})
+        print('\nHEC URL and token ({}) written to {} (mode 0600).'.format(lab5.last4(out['hec_token']), args.out))
+    elif out.get('hec_token'):
         print('\nPoint DemoBot at:')
         print('  URL   : https://http-inputs-{}.splunkcloud.com/services/collector/event'.format(stack_name))
         print('  Token : {}'.format(out['hec_token']))
@@ -526,6 +557,80 @@ def main():
 
     print('\nDemo loop: spray -> detection fires within 60s -> Finding -> '
           'triage dispatch polls every 30s.\nExpect roughly 60-90 seconds end to end, not 30.')
+    return 1 if failures else 0
+
+
+def run_lab5(args):
+    """--lab5 / --lab5-teardown for one room stack (tools/lab5_steps.py)."""
+    if not args.stack or not args.password:
+        print('ERROR: --lab5 needs --stack and $SPLUNK_ADMIN_PASSWORD.', file=sys.stderr)
+        return 2
+    victim = None
+    if args.lab5:
+        victim, problem = lab5.validate_victim(args.lab5_victim)
+        if problem:
+            print('ERROR: --lab5-victim: {}.'.format(problem), file=sys.stderr)
+            return 2
+    rep = seed.Reporter(echo=print)
+    out = {}
+    print('Mode    : {} ({})'.format('DRY RUN' if args.dry_run else 'apply',
+                                    'Lab 5 teardown' if args.lab5_teardown else 'Lab 5 setup'))
+    host = (urllib.parse.urlparse(args.stack.rstrip('/')).netloc or args.stack).split(':')[0]
+    stack_name = host.split('.')[0]
+    splunkd = seed.Splunkd('https://{}:8089'.format(host), username=args.username,
+                           password=args.password, verify=False, dry_run=args.dry_run, echo=print)
+    code, _ = splunkd.get_json('/services/server/info')
+    if code != 200:
+        print('ERROR: cannot reach {} (HTTP {})'.format(splunkd.mgmt, code), file=sys.stderr)
+        return 2
+    soar = None
+    if args.soar_url and (args.soar_token or args.soar_password) and not args.skip_soar:
+        soar = seed.SoarDirect(args.soar_url, args.soar_username, args.soar_password,
+                               token=args.soar_token, dry_run=args.dry_run, echo=print)
+        if not soar.paired():
+            print('ERROR: cannot reach SOAR {}'.format(soar.base), file=sys.stderr)
+            return 2
+
+    if args.lab5_teardown:
+        lab5.step_lab5_switches(splunkd, rep, on=False, prefix='T1')
+        lab5.step_delete_identity_asset(soar, rep)
+        rep.skip('T3. Cisco Security Cloud CII input', 'delete it in the app (this unregisters the CII '
+                 'webhook) and confirm the target is gone in Identity Intelligence before the stack is '
+                 'destroyed')
+        rep.skip('T4. CII API client', "revoke this stack's API client in Identity Intelligence")
+        return 1 if summary(rep) else 0
+
+    skip_acs = args.skip_acs or not args.acs_token
+    acs = AcsClient(stack_name, args.acs_token, dry_run=args.dry_run)
+    lab5.step_cii_index(acs, rep, skip_acs)
+    lab5.step_cii_hec(acs, rep, skip_acs, out)
+    lab5.step_security_cloud_floor(splunkd, rep)
+    lab5.step_lab5_switches(splunkd, rep, on=True)
+    lab5.step_lab5_roles(splunkd, rep)
+    if soar is None:
+        rep.skip('L6-L8. SOAR apps, asset, smoke test', 'no --soar-url / SOAR credential')
+    else:
+        sim_app, sim_asset = seed.step_soar_simulator(soar, rep, install=True,
+                                                      label='L6. SOAR app MedAdvice Identity Provider')
+        app = lab5.step_identity_app(soar, rep)
+        creds, missing = lab5.duo_credentials()
+        if missing:
+            rep.fail('L7. SOAR asset pseudoco_identity', 'set {} in the environment'.format(', '.join(missing)))
+            asset = None
+        else:
+            asset = lab5.step_identity_asset(soar, rep, app, victim, args.lab5_room, creds)
+        lab5.step_identity_smoke(soar, rep, app, asset, victim, soar_run_action)
+    lab5.step_identity_plan(splunkd, rep, soar)
+
+    failures = summary(rep)
+    if args.out:
+        out.update({'stack': stack_name, 'cii_hec_url': 'https://http-inputs-{}.splunkcloud.com/services/collector/event'.format(stack_name)})
+        lab5.write_out(args.out, out)
+        print('\nLab 5 HEC details ({}) written to {} (mode 0600).'.format(
+            lab5.last4(out.get('cii_hec_token')), args.out))
+    print('\nNext: in the Cisco Security Cloud app, create the Identity Intelligence input (Webhook) into '
+          'index {} and assign it to MFA Flood, Impossible Travel and Duo Sign In Threat Detected - '
+          'BEFORE the takeover.'.format(lab5.CII_INDEX))
     return 1 if failures else 0
 
 

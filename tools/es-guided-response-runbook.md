@@ -124,6 +124,25 @@ approvals are off.
 6. Negative checks: Model choice → SecA1 → agent unavailable (switch back);
    deselect the MedAdvice connector → agent cannot run it (re-select).
 
+## E7. AI Trust Lab 5 stacks (TA 1.8.0+)
+
+Lab 5 adds a second, **real** containment app beside the simulator: the
+**PseudoCo Identity** SOAR connector disables the room's victim persona in Duo.
+`tools/show_postdeploy.py --lab5` installs it, creates its `pseudoco_identity`
+asset and binds the Compromised Identity Response Plan to it
+(`tools/lab5-identity-runbook.md`).
+
+1. In the Guided Response connector list keep **both** TA apps selected:
+   MedAdvice Identity Provider for the Lab 4 prompt-injection findings and
+   PseudoCo Identity for the Lab 5 *GenAI Compromised Identity* finding. They
+   do not compete: since 1.1.0 the simulator refuses every Lab 5 identity with
+   "managed by PseudoCo Identity", and PseudoCo Identity acts only on its
+   asset's configured victim.
+2. The Lab 5 prompt names the connector: *"Using PseudoCo Identity, disable
+   user <victim>. Reason: <investigation id> compromised identity"*.
+3. PseudoCo Identity has no undo and results carry `"simulated": false`. The
+   lab's persona tooling re-enables the victim after the debrief.
+
 ## Rollback
 
 - ES: set `seed_response_plan = false` (or disable the seed search) in
