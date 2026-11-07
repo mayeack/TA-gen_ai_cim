@@ -30,28 +30,6 @@
         },
         "ds_card_03": {
             "type": "ds.search",
-            "name": "AI Asset Discovery",
-            "options": {
-                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` eventtype=gen_ai_inference | stats dc(gen_ai.app.name) as v",
-                "queryParameters": {
-                    "earliest": "-24h",
-                    "latest": "now"
-                }
-            }
-        },
-        "ds_card_04": {
-            "type": "ds.search",
-            "name": "PII Detection",
-            "options": {
-                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.pii.detected=\"true\" | stats count as v",
-                "queryParameters": {
-                    "earliest": "-24h",
-                    "latest": "now"
-                }
-            }
-        },
-        "ds_card_05": {
-            "type": "ds.search",
             "name": "Prompt Injection Detection",
             "options": {
                 "query": "index=gen_ai_log `exclude_scoring_sourcetypes` gen_ai.policy.blocked=\"true\" | stats count as v",
@@ -61,7 +39,7 @@
                 }
             }
         },
-        "ds_card_06": {
+        "ds_card_04": {
             "type": "ds.search",
             "name": "Compromised Identity",
             "options": {
@@ -216,7 +194,7 @@
             "options": {
                 "fontColor": "#FFFFFF",
                 "backgroundColor": "transparent",
-                "markdown": "## 03 AI Asset Discovery\nThe AI applications and models seen in the data, and their inventory status  \n[Open AI Asset Discovery](/app/TA-gen_ai_cim/ai_asset_discovery)"
+                "markdown": "## 03 Prompt Injection Detection\nPrompt-injection attempts from Cisco AI Defense, the ML model and the GenAI judge  \n[Open Prompt Injection Detection](/app/TA-gen_ai_cim/prompt_injection_detection)"
             }
         },
         "viz_count_03": {
@@ -227,7 +205,7 @@
             "options": {
                 "backgroundColor": "#31373E",
                 "majorColor": "#FFFFFF",
-                "underLabel": "AI applications seen, last 24h",
+                "underLabel": "policy blocks, last 24h",
                 "sparklineDisplay": "off",
                 "trendDisplay": "off",
                 "numberPrecision": 0
@@ -248,77 +226,13 @@
             "options": {
                 "fontColor": "#FFFFFF",
                 "backgroundColor": "transparent",
-                "markdown": "## 04 PII Detection\nPII and PHI detected in prompts and responses, by type and application  \n[Open PII Detection](/app/TA-gen_ai_cim/pii_detection)"
+                "markdown": "## 04 Compromised Identity\nCisco Identity Intelligence failed checks joined with Cisco AI Defense blocks (Lab 5)  \n[Open Compromised Identity](/app/TA-gen_ai_cim/compromised_identity)"
             }
         },
         "viz_count_04": {
             "type": "splunk.singlevalue",
             "dataSources": {
                 "primary": "ds_card_04"
-            },
-            "options": {
-                "backgroundColor": "#31373E",
-                "majorColor": "#FFFFFF",
-                "underLabel": "PII detections, last 24h",
-                "sparklineDisplay": "off",
-                "trendDisplay": "off",
-                "numberPrecision": 0
-            }
-        },
-        "viz_rect_05": {
-            "type": "splunk.rectangle",
-            "options": {
-                "fillColor": "#31373E",
-                "fillOpacity": 1,
-                "rx": 8,
-                "strokeColor": "#31373E",
-                "strokeWidth": 1
-            }
-        },
-        "viz_md_05": {
-            "type": "splunk.markdown",
-            "options": {
-                "fontColor": "#FFFFFF",
-                "backgroundColor": "transparent",
-                "markdown": "## 05 Prompt Injection Detection\nPrompt-injection attempts from Cisco AI Defense, the ML model and the GenAI judge  \n[Open Prompt Injection Detection](/app/TA-gen_ai_cim/prompt_injection_detection)"
-            }
-        },
-        "viz_count_05": {
-            "type": "splunk.singlevalue",
-            "dataSources": {
-                "primary": "ds_card_05"
-            },
-            "options": {
-                "backgroundColor": "#31373E",
-                "majorColor": "#FFFFFF",
-                "underLabel": "policy blocks, last 24h",
-                "sparklineDisplay": "off",
-                "trendDisplay": "off",
-                "numberPrecision": 0
-            }
-        },
-        "viz_rect_06": {
-            "type": "splunk.rectangle",
-            "options": {
-                "fillColor": "#31373E",
-                "fillOpacity": 1,
-                "rx": 8,
-                "strokeColor": "#31373E",
-                "strokeWidth": 1
-            }
-        },
-        "viz_md_06": {
-            "type": "splunk.markdown",
-            "options": {
-                "fontColor": "#FFFFFF",
-                "backgroundColor": "transparent",
-                "markdown": "## 06 Compromised Identity\nCisco Identity Intelligence failed checks joined with Cisco AI Defense blocks (Lab 5)  \n[Open Compromised Identity](/app/TA-gen_ai_cim/compromised_identity)"
-            }
-        },
-        "viz_count_06": {
-            "type": "splunk.singlevalue",
-            "dataSources": {
-                "primary": "ds_card_06"
             },
             "options": {
                 "backgroundColor": "#31373E",
@@ -413,7 +327,7 @@
         "type": "absolute",
         "options": {
             "width": 1440,
-            "height": 1130,
+            "height": 870,
             "showTitleAndDescription": true,
             "backgroundColor": "#171D21"
         },
@@ -549,71 +463,11 @@
                 }
             },
             {
-                "item": "viz_rect_05",
-                "type": "block",
-                "position": {
-                    "x": 0,
-                    "y": 630,
-                    "w": 1440,
-                    "h": 120
-                }
-            },
-            {
-                "item": "viz_md_05",
-                "type": "block",
-                "position": {
-                    "x": 24,
-                    "y": 638,
-                    "w": 1000,
-                    "h": 104
-                }
-            },
-            {
-                "item": "viz_count_05",
-                "type": "block",
-                "position": {
-                    "x": 1100,
-                    "y": 640,
-                    "w": 320,
-                    "h": 100
-                }
-            },
-            {
-                "item": "viz_rect_06",
-                "type": "block",
-                "position": {
-                    "x": 0,
-                    "y": 760,
-                    "w": 1440,
-                    "h": 120
-                }
-            },
-            {
-                "item": "viz_md_06",
-                "type": "block",
-                "position": {
-                    "x": 24,
-                    "y": 768,
-                    "w": 1000,
-                    "h": 104
-                }
-            },
-            {
-                "item": "viz_count_06",
-                "type": "block",
-                "position": {
-                    "x": 1100,
-                    "y": 770,
-                    "w": 320,
-                    "h": 100
-                }
-            },
-            {
                 "item": "viz_score_title",
                 "type": "block",
                 "position": {
                     "x": 0,
-                    "y": 900,
+                    "y": 640,
                     "w": 1440,
                     "h": 70
                 }
@@ -623,7 +477,7 @@
                 "type": "block",
                 "position": {
                     "x": 0,
-                    "y": 980,
+                    "y": 720,
                     "w": 280,
                     "h": 130
                 }
@@ -633,7 +487,7 @@
                 "type": "block",
                 "position": {
                     "x": 288,
-                    "y": 980,
+                    "y": 720,
                     "w": 280,
                     "h": 130
                 }
@@ -643,7 +497,7 @@
                 "type": "block",
                 "position": {
                     "x": 576,
-                    "y": 980,
+                    "y": 720,
                     "w": 280,
                     "h": 130
                 }
@@ -653,7 +507,7 @@
                 "type": "block",
                 "position": {
                     "x": 864,
-                    "y": 980,
+                    "y": 720,
                     "w": 280,
                     "h": 130
                 }
@@ -663,7 +517,7 @@
                 "type": "block",
                 "position": {
                     "x": 1152,
-                    "y": 980,
+                    "y": 720,
                     "w": 280,
                     "h": 130
                 }

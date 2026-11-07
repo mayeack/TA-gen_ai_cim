@@ -4,11 +4,15 @@
   <collection label="Dashboards">
     <view name="ai_governance_overview" label="AI Governance Overview" />
     <view name="tokenomics" label="Tokenomics" />
+    <!-- Inactivated (1.8.0): AI Asset Discovery - view kept, isVisible="false"
     <view name="ai_asset_discovery" label="AI Asset Discovery" />
+    -->
     <!-- Inactivated: TF-IDF Anomaly Detection
     <view name="governance_safety" label="TF-IDF Anomaly Detection" />
     -->
+    <!-- Inactivated (1.8.0): PII Detection - view kept, isVisible="false"
     <view name="pii_detection" label="PII Detection" />
+    -->
     <view name="prompt_injection_detection" label="Prompt Injection Detection" />
     <view name="compromised_identity" label="Compromised Identity" />
   </collection>
@@ -26,9 +30,14 @@
     <view name="tfidf_feedback_loop_model_registry" label="TF-IDF - Model Registry" />
   </collection>
   -->
+  <!-- Inactivated (1.8.0): Configuration, GenAI Scoring Configuration and
+       Datasets - the two TA views are kept with isVisible="false" and still
+       open by URL (/app/TA-gen_ai_cim/configuration,
+       /app/TA-gen_ai_cim/genai_scoring_config); Datasets is Splunk's own view
   <view name="configuration" label="Configuration" />
   <view name="genai_scoring_config" label="GenAI Scoring" />
   <view name="datasets" />
+  -->
   <view name="reports" />
   <view name="alerts" />
 </nav>

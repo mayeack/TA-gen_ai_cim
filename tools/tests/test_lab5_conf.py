@@ -180,6 +180,21 @@ class PlanAndNavTests(unittest.TestCase):
         self.assertIn('<view name="compromised_identity"', nav)
         self.assertEqual(nav.count("default='true'"), 1)
 
+    def test_hidden_views_are_kept_but_not_shown(self):
+        import xml.etree.ElementTree as ET
+        nav = ET.parse(os.path.join(REPO, 'default', 'data', 'ui', 'nav', 'default.xml')).getroot()
+        shown = [v.get('name') for v in nav.iter('view')]
+        self.assertEqual(shown, ['TA-gen_ai_cim_home', 'ai_governance_overview', 'tokenomics',
+                                 'prompt_injection_detection', 'compromised_identity', 'reports', 'alerts'])
+        for name in ('configuration', 'genai_scoring_config', 'ai_asset_discovery', 'pii_detection'):
+            root = ET.parse(os.path.join(REPO, 'default', 'data', 'ui', 'views', name + '.xml')).getroot()
+            self.assertEqual(root.get('isVisible'), 'false', name)
+        with io.open(os.path.join(REPO, 'default', 'data', 'ui', 'views', 'TA-gen_ai_cim_home.xml'),
+                     encoding='utf-8') as handle:
+            home = handle.read()
+        self.assertNotIn('/ai_asset_discovery', home)
+        self.assertNotIn('/pii_detection', home)
+
 
 if __name__ == '__main__':
     unittest.main()

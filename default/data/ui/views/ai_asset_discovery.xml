@@ -5,7 +5,7 @@
   Displays AI Systems (gen_ai.app.name) and AI Models (gen_ai.response.model)
   with ServiceNow inventory/approval status and actionable links.
 -->
-<dashboard version="2" theme="dark">
+<dashboard isVisible="false" version="2" theme="dark">
     <label>AI Asset Discovery</label>
     <description>Map AI assets from Splunk to ServiceNow. Track inventory and approval status for AI Systems and AI Models.</description>
     <definition><![CDATA[

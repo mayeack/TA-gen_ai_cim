@@ -632,8 +632,9 @@ Pre-built dashboards are **automatically installed** with the TA, providing comp
 | **AI Governance Overview** | Main dashboard with KPIs, safety/compliance metrics, trends | [Details](README/DASHBOARDS/AI_GOVERNANCE_OVERVIEW.md) |
 | **Tokenomics** | Token usage, cost attribution, and spend efficiency by provider, model, app, and user; pricing from the `genai_token_cost` KV store (auto-seeded v1.6.5+) | [Details](README/TOKEN_COST_ADMIN.md) |
 | **TF-IDF Anomaly Detection** | ML-based detection of unusual prompts/responses | [Details](README/DASHBOARDS/TFIDF_ANOMALY_DETECTION.md) |
-| **PII Detection** | ML-powered PII detection and monitoring | [Details](README/DASHBOARDS/PII_DETECTION.md) |
+| **PII Detection** | ML-powered PII detection and monitoring. Hidden since v1.8.0 (`/app/TA-gen_ai_cim/pii_detection`) | [Details](README/DASHBOARDS/PII_DETECTION.md) |
 | **Prompt Injection Detection** | Adversarial attack detection and analysis | [Details](README/DASHBOARDS/PROMPT_INJECTION_DETECTION.md) |
+| **Compromised Identity** | AI Trust Lab 5: CII failed checks joined with AI Defense blocks (v1.8.0) | [Lab 5 section](#ai-trust-lab-5-compromised-identity-v180) |
 | **Review Queue** | Human review workflow and triage | [Details](README/DASHBOARDS/REVIEW_QUEUE.md) |
 
 **Access:** Navigate to **Apps → GenAI Governance** in Splunk Web after installation.
@@ -1158,6 +1159,21 @@ runtime-generated versions on every app upgrade.
 
 ### Views not in the navigation menu
 
+Since v1.8.0 four views are **hidden** but kept: they carry
+`isVisible="false"`, so they appear neither in the navigation menu nor in the
+Dashboards listing, and still open by URL.
+
+| View | URL |
+|---|---|
+| Configuration (ServiceNow account, GenAI summary, detection settings) | `/app/TA-gen_ai_cim/configuration` |
+| GenAI Scoring Configuration | `/app/TA-gen_ai_cim/genai_scoring_config` |
+| AI Asset Discovery | `/app/TA-gen_ai_cim/ai_asset_discovery` |
+| PII Detection | `/app/TA-gen_ai_cim/pii_detection` |
+
+Splunk's own **Datasets** view is no longer in the menu either. To show any of
+them again, uncomment its line in `default/data/ui/nav/default.xml` (or copy
+the nav to `local/`) and drop `isVisible="false"` from the view.
+
 `ai_cost_analysis_dashboard`, `ai_overview_dashboard`, `ai_safety_dashboard`,
 and `genai_governance_overview_studio` ship with the app but are not linked
 from the navigation menu (legacy/alternate views kept for reference —
@@ -1573,7 +1589,12 @@ Work the Lab 5 one.
   `gen_ai_identity_session` and `gen_ai_identity_block`.
 - ADDED: *Compromised Identity* dashboard (Dashboard Studio, dark) and a home
   dashboard (`TA-gen_ai_cim_home`, now the app's default view) with one card
-  and a live count per dashboard and a five-number scoreboard.
+  and a live count per dashboard in the menu and a five-number scoreboard.
+- CHANGED: the navigation menu no longer shows *Configuration*, *GenAI Scoring
+  Configuration*, *Datasets*, *AI Asset Discovery* or *PII Detection*. Nothing
+  is removed: the four TA views get `isVisible="false"` (also out of the
+  Dashboards listing) and still open by URL; their nav lines are commented out
+  (README, "Views not in the navigation menu").
 - ADDED: `tools/show_postdeploy.py --lab5 / --lab5-teardown / --out` (one run
   per room stack; see `tools/lab5-identity-runbook.md`).
 - CHANGED (R-SEC-002): the seeding search's sanctioned writes widen to a
