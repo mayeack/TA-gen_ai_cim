@@ -18,12 +18,22 @@ Used by two callers with different transports:
   * tools/show_postdeploy.py - dev-only Splunk Show post-deploy, which talks to
     splunkd with basic auth and to SOAR directly with a password or token.
 
-Everything written is a TA-owned record: the response plan
-(`mc_response_templates` _key ai_incident_response_plan), the findings queue
-(`queues` _key ai_findings_queue) and, on SOAR, the asset `medadvice_idp` of the
-"MedAdvice Identity Provider" app. Writes are idempotent (update-then-create),
-and the plan write is merge-preserving: any actions[]/playbooks[] a task already
-carries on the live record survive a re-run unless a soar_binding replaces them.
+Everything written is a TA-owned record: the response plans
+(`mc_response_templates` _keys ai_incident_response_plan and, when
+seed_identity_response_plan is on, compromised_identity_response_plan), the
+findings queue (`queues` _key ai_findings_queue) and, on SOAR, the asset
+`medadvice_idp` of the "MedAdvice Identity Provider" app. Writes are idempotent
+(update-then-create), and every plan write is merge-preserving: any
+actions[]/playbooks[] a task already carries on the live record survive a re-run
+unless a soar_binding replaces them - including on a run that binds nothing
+(until 1.8.0 they survived only when a binding had been dropped).
+
+Each plan binds separately, to its own app. The Compromised Identity Response
+Plan binds to the "PseudoCo Identity" app's `pseudoco_identity` asset only when
+both already exist on the paired SOAR: unlike the simulator's asset, the seeder
+never creates that one, because it carries real Duo Admin API credentials
+(tools/show_postdeploy.py --lab5 installs it). The ES triage allowlist is merged,
+never replaced.
 
 No investigation type is seeded (`mc_incident_types` is never written): Mission
 Control's investigation-type API answers DELETE with 405, so a seeded type would
@@ -55,17 +65,31 @@ QUEUE_TITLE = 'AI Findings'
 # The rule keys on rule_title, not search_name: notable.py assigns the queue
 # while the finding holds only the detection's notable params and the result
 # row, and search_name is added later. rule_title is matched with its literal
-# $tokens$ (queue assignment runs before token expansion); all three AI
-# Governance rules' titles start "GenAI Prompt Injection". QUEUE_RULES is the
-# UI's structured form (KV stores it as a JSON string) and QUEUE_RULE_STRING is
-# exactly what missioncontrol's Queues.build_rule_string() renders from it, so
-# the queue also stays editable in the ES UI.
+# $tokens$ (queue assignment runs before token expansion); the three prompt-
+# injection rules' titles start "GenAI Prompt Injection" and the Lab 5 rule's
+# "GenAI Compromised Identity" (1.8.0). QUEUE_RULES is the UI's structured form
+# (KV stores it as a JSON string) and QUEUE_RULE_STRING is exactly what
+# missioncontrol's Queues.build_rule_string() renders from it, so the queue also
+# stays editable in the ES UI.
 QUEUE_RULES = [{'left_op': '', 'filters': [
-    {'left_op': '', 'field': 'rule_title', 'operand': 'starts_with', 'values': 'GenAI Prompt Injection'}]}]
-QUEUE_RULE_STRING = '(rule_title =~ "^GenAI Prompt Injection")'
+    {'left_op': '', 'field': 'rule_title', 'operand': 'starts_with', 'values': 'GenAI Prompt Injection'},
+    {'left_op': 'or', 'field': 'rule_title', 'operand': 'starts_with',
+     'values': 'GenAI Compromised Identity'}]}]
+QUEUE_RULE_STRING = ('(rule_title =~ "^GenAI Prompt Injection" or '
+                     'rule_title =~ "^GenAI Compromised Identity")')
 PRIMARY_DETECTION = 'AI Governance - Prompt Injection Attack Correlation - Rule'
+LAB5_DETECTION = 'AI Governance - Compromised Identity AI Attack Correlation - Rule'
+# Detections the ES Triage agent is allowed to triage when enable_triage_agent
+# is on, keyed "<search name>+<app name>" (triage_agent_utils.py).
+TRIAGE_DETECTIONS = (PRIMARY_DETECTION, LAB5_DETECTION)
 SOAR_APP_NAME = 'MedAdvice Identity Provider'
 SOAR_ASSET_NAME = 'medadvice_idp'
+# The Lab 5 Duo connector (soar_apps/pseudoco_identity, not in the TA package).
+IDENTITY_SOAR_APP_NAME = 'PseudoCo Identity'
+IDENTITY_SOAR_ASSET_NAME = 'pseudoco_identity'
+TA_SOAR_APP_NAMES = (SOAR_APP_NAME, IDENTITY_SOAR_APP_NAME)
+IDENTITY_PLAN_KEY = 'compromised_identity_response_plan'
+AI_PLAN_KEY = 'ai_incident_response_plan'
 SOAR_ASSET_RECORD = {
     'name': SOAR_ASSET_NAME,
     'product_vendor': 'MedAdvice',
@@ -83,6 +107,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 APP_ROOT = os.path.dirname(_HERE)
 RESPONSE_PLAN_PATH = os.path.join(APP_ROOT, 'default', 'data', 'response_plans',
                                   'ai_incident_response_plan.json')
+IDENTITY_PLAN_PATH = os.path.join(APP_ROOT, 'default', 'data', 'response_plans',
+                                  'compromised_identity_response_plan.json')
 # Top level, deliberately outside default/, so the folder can be lifted out of
 # a checkout and uploaded to SOAR on its own. It still ships inside the TA
 # tarball, which is what lets build_soar_app_tgz() package it in memory when
@@ -616,7 +642,11 @@ def step_response_plan(splunkd, rep, soar=None, plan_path=RESPONSE_PLAN_PATH,
     plan = load_plan(plan_path)
     live = kv_get(splunkd, 'mc_response_templates', plan['_key'])
     bound, dropped = bind_soar_actions(plan, soar, rep)
-    inherited = preserve_live_actions(plan, live) if dropped else 0
+    # Always merge the live record's task actions back in. Up to 1.7.2 this ran
+    # only when a binding had been dropped, so the hourly reseed of a plan task
+    # with no soar_binding (or a run where every binding resolved) wiped any
+    # action an analyst had attached to that task in the ES UI.
+    inherited = preserve_live_actions(plan, live)
 
     now = int(time.time())
     if isinstance(live, dict) and live.get('create_time'):
@@ -630,11 +660,15 @@ def step_response_plan(splunkd, rep, soar=None, plan_path=RESPONSE_PLAN_PATH,
                    '{} "{}"'.format(label, plan.get('name')))
     if ok:
         if bound:
-            rep.ok('{} SOAR actions'.format(label), 'bound {} action(s) from soar_binding'.format(bound))
+            rep.ok('{} SOAR actions'.format(label), 'bound {} action(s) from soar_binding; {} other '
+                   'task(s) kept their live actions'.format(bound, inherited))
         elif dropped:
             rep.skip('{} SOAR actions'.format(label),
                      '{} binding(s) not resolved; {} task(s) kept the actions already on '
                      'the live record'.format(dropped, inherited))
+        elif inherited:
+            rep.ok('{} SOAR actions'.format(label),
+                   '{} task(s) kept the actions already on the live record'.format(inherited))
     return plan.get('template_id')
 
 
@@ -733,8 +767,10 @@ def step_competing_idp_assets(soar, rep, label='competing identity assets'):
     if not app_rows or asset_rows is None:
         rep.skip(label, 'could not list apps/assets')
         return []
+    # Neither of the TA's own apps competes: the simulator answers Lab 4, PseudoCo
+    # Identity answers Lab 5, and each plan names its own.
     idp_apps = dict((a['id'], a) for a in app_rows
-                    if a.get('type') in IDP_APP_TYPES and a.get('name') != SOAR_APP_NAME)
+                    if a.get('type') in IDP_APP_TYPES and a.get('name') not in TA_SOAR_APP_NAMES)
     rows = []
     for asset in asset_rows:
         app = idp_apps.get(asset.get('app'))
@@ -745,8 +781,34 @@ def step_competing_idp_assets(soar, rep, label='competing identity assets'):
         rep.ok(label, '{} - deselect them under ES Security AI Assistant settings -> '
                       'Guided Response connectors'.format(', '.join(rows)))
     else:
-        rep.ok(label, 'none besides {}'.format(SOAR_APP_NAME))
+        rep.ok(label, 'none besides {}'.format(' and '.join(TA_SOAR_APP_NAMES)))
     return rows
+
+
+def step_identity_binding(soar, rep, label='identity plan SOAR binding'):
+    """The transport to bind the Compromised Identity Response Plan with, or
+    None. Read-only: binds only when the PseudoCo Identity app AND its
+    `pseudoco_identity` asset already exist on the paired SOAR. Never installs
+    the app or creates the asset - the asset holds real Duo Admin API
+    credentials, so only tools/show_postdeploy.py --lab5 (with the operator's
+    own credentials) creates it."""
+    if soar is None:
+        rep.skip(label, 'no SOAR transport')
+        return None
+    if not soar.paired():
+        rep.skip(label, 'SOAR not reachable/paired via {}'.format(soar.name))
+        return None
+    app = soar.find_one('app', IDENTITY_SOAR_APP_NAME)
+    asset = soar.find_one('asset', IDENTITY_SOAR_ASSET_NAME) if app else None
+    if not app or not asset:
+        rep.skip(label, '{} {} not on the paired SOAR; binding skipped (the seeder never '
+                        'creates it - see tools/show_postdeploy.py --lab5)'.format(
+                            IDENTITY_SOAR_APP_NAME,
+                            'asset "{}"'.format(IDENTITY_SOAR_ASSET_NAME) if app else 'app'))
+        return None
+    rep.ok(label, '{} asset "{}" (id {})'.format(IDENTITY_SOAR_APP_NAME,
+                                                 IDENTITY_SOAR_ASSET_NAME, asset.get('id')))
+    return soar
 
 
 def triage_agent_available(splunkd):
@@ -775,17 +837,47 @@ def step_triage_agent(splunkd, rep, label='triage agent'):
         rep.ok('{} ai_triage_enabled'.format(label), '1')
     else:
         rep.fail('{} ai_triage_enabled'.format(label), 'HTTP {} {}'.format(code, text[:160]))
-    # Key format is "<search name>+<app name>" (triage_agent_utils.py:93).
-    enabled = json.dumps({'{}+{}'.format(PRIMARY_DETECTION, APP_NAME): None})
-    code, text = splunkd.call('{}/ai_triage_detections'.format(base), 'POST', {'enabled': enabled})
+    # Key format is "<search name>+<app name>" (triage_agent_utils.py:93). The
+    # allowlist is ES-wide, so it is MERGED: up to 1.7.2 the hourly reseed
+    # replaced it with this TA's one entry, dropping every detection anyone else
+    # had enabled for triage.
+    allow_label = '{} detection allowlist'.format(label)
+    code, data = splunkd.get_json('{}/ai_triage_detections'.format(base))
+    current = {}
+    if code == 200 and data:
+        try:
+            raw = data['entry'][0]['content'].get('enabled')
+            current = json.loads(raw) if raw else {}
+        except (KeyError, IndexError, TypeError, ValueError):
+            rep.fail(allow_label, 'could not parse the current allowlist; left unchanged')
+            return
+        if not isinstance(current, dict):
+            rep.fail(allow_label, 'current allowlist is not a JSON object; left unchanged')
+            return
+    elif code not in (404,) and not splunkd.dry_run:
+        rep.fail(allow_label, 'could not read the current allowlist (HTTP {}); left unchanged'.format(code))
+        return
+    merged = dict(current)
+    added = []
+    for name in TRIAGE_DETECTIONS:
+        key = '{}+{}'.format(name, APP_NAME)
+        if key not in merged:
+            merged[key] = None
+            added.append(name)
+    if not added:
+        rep.ok(allow_label, 'already allowlisted ({} entries kept)'.format(len(merged)))
+        return
+    code, text = splunkd.call('{}/ai_triage_detections'.format(base), 'POST',
+                              {'enabled': json.dumps(merged)})
     if code in (200, 201):
-        rep.ok('{} detection allowlist'.format(label), PRIMARY_DETECTION)
+        rep.ok(allow_label, 'added {}; {} other entr(ies) kept'.format(
+            ', '.join(added), len(merged) - len(added)))
     else:
-        rep.fail('{} detection allowlist'.format(label), 'HTTP {} {}'.format(code, text[:160]))
+        rep.fail(allow_label, 'HTTP {} {}'.format(code, text[:160]))
 
 
-def step_verify_plan_actions(splunkd, rep, label='verify plan actions'):
-    live = kv_get(splunkd, 'mc_response_templates', 'ai_incident_response_plan')
+def step_verify_plan_actions(splunkd, rep, label='verify plan actions', key=AI_PLAN_KEY):
+    live = kv_get(splunkd, 'mc_response_templates', key)
     if not live:
         rep.fail(label, 'live record not readable')
         return []
@@ -799,19 +891,41 @@ def step_verify_plan_actions(splunkd, rep, label='verify plan actions'):
     return names
 
 
+def step_identity_plan(splunkd, rep, soar=None, plan_path=IDENTITY_PLAN_PATH,
+                       label='identity response plan'):
+    """Seed the Compromised Identity Response Plan (Lab 5) and bind it to
+    PseudoCo Identity when that app and asset are already there."""
+    binder = step_identity_binding(soar, rep, label='{} SOAR binding'.format(label))
+    return step_response_plan(splunkd, rep, binder, plan_path, label=label)
+
+
 def seed(splunkd, rep, soar=None, install_simulator=False, enable_triage=False,
-         plan_path=RESPONSE_PLAN_PATH, route_queue=False):
-    """The whole in-product sequence, in dependency order. Returns template_id."""
-    app = asset = None
-    if soar is not None:
-        app, asset = step_soar_simulator(soar, rep, install=install_simulator)
-        step_competing_idp_assets(soar, rep)
-    binder = soar if (app and asset) else None
-    template_id = step_response_plan(splunkd, rep, binder, plan_path)
-    step_queue(splunkd, rep, route=route_queue)
+         plan_path=RESPONSE_PLAN_PATH, route_queue=False, seed_ai_plan=True,
+         seed_identity_plan=False, identity_plan_path=IDENTITY_PLAN_PATH):
+    """The whole in-product sequence, in dependency order. Each plan seeds and
+    binds on its own. Returns the AI plan's template_id (None when it is off)."""
+    template_id = None
+    if seed_ai_plan:
+        app = asset = None
+        if soar is not None:
+            app, asset = step_soar_simulator(soar, rep, install=install_simulator)
+            step_competing_idp_assets(soar, rep)
+        binder = soar if (app and asset) else None
+        template_id = step_response_plan(splunkd, rep, binder, plan_path)
+        step_queue(splunkd, rep, route=route_queue)
+    else:
+        rep.skip('response plan', 'seed_response_plan is off')
+    if seed_identity_plan:
+        step_identity_plan(splunkd, rep, soar, identity_plan_path)
+    else:
+        rep.skip('identity response plan', 'seed_identity_response_plan is off')
     if enable_triage:
         step_triage_agent(splunkd, rep)
     else:
         rep.skip('triage agent', 'enable_triage_agent is off')
-    step_verify_plan_actions(splunkd, rep)
+    if seed_ai_plan:
+        step_verify_plan_actions(splunkd, rep)
+    if seed_identity_plan:
+        step_verify_plan_actions(splunkd, rep, label='verify identity plan actions',
+                                 key=IDENTITY_PLAN_KEY)
     return template_id

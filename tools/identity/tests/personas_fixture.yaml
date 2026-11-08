@@ -1,0 +1,15 @@
+# The Lab 5 persona cast as section 4.3 of the PseudoCo Assistant lab plan
+# names it, in the shape of that repo's scripts/identity/personas.yaml, which is
+# the source of truth: `email_domain`, and the app's roles trusted | victim |
+# spike (spike is the dry-run victim, used on a test stack only). The real file
+# also carries keys the generator ignores (baseline, hotp, replay, takeover,
+# group, and per persona home and replay_device); they are left out here.
+email_domain: pseudocoassistant.com
+personas:
+  - {username: marcus.bell, name: Marcus Bell, role: trusted}
+  - {username: elena.sousa, name: Elena Sousa, role: trusted}
+  - {username: grace.lin, name: Grace Lin, role: trusted}
+  - {username: avery.kim, name: Avery Kim, role: victim}
+  - {username: jordan.reyes, name: Jordan Reyes, role: victim}
+  - {username: casey.wong, name: Casey Wong, role: victim}
+  - {username: nina.osei, name: Nina Osei, role: spike}

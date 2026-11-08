@@ -53,7 +53,20 @@ ML detections, and a ServiceNow AI Case Management integration.
   `tools/soar/gen_personas.py` (`--check` in `build.sh`). `build.sh` and
   `build_soar_app_tgz()` must produce the same archive shape — only the
   `build.sh` output has been verified to install on SOAR, and a unit test
-  asserts the two match.
+  asserts the two match. `pseudoco_identity/` (v1.8.0) is the AI Trust Lab 5
+  containment connector: **real**, not simulated (`simulated: false`), it
+  disables the room's victim persona in Duo through the Duo Admin API (v5
+  signing, stdlib only, `pseudoco_identity_duo.py`) and nothing else. Its
+  source is excluded from the TA package (`package.sh`); only
+  `tools/show_postdeploy.py --lab5` installs it, and the seeder never creates
+  its asset. `tools/soar/build.sh` builds both apps; `gen_personas.py`
+  generates both apps' persona modules (the simulator's Lab 5 refusal list and
+  PseudoCo Identity's persona lists) from the lookups.
+- `tools/identity/` — `gen_identity_personas.py` builds
+  `lookups/pseudoco_identity_personas.csv` from the PseudoCo Assistant persona
+  file (`scripts/identity/personas.yaml` in that repo). `tools/lab5_steps.py`
+  holds the `show_postdeploy.py --lab5` steps; `tools/tests/` the Lab 5 conf
+  tests, live SPL fixtures and the scratch-index end-to-end script.
 - `elements/`, `README/` — internal docs, excluded from the package.
 - `package.sh` — builds the shippable tarball; keep its exclude list in
   sync when adding assistant/dev files.
@@ -150,17 +163,36 @@ ML detections, and a ServiceNow AI Case Management integration.
   `genai_token_cost` collection and every cost panel renders $0. It writes
   only shipped CSV constants (`lookups/genai_token_cost_seed.csv`) into the
   app's own collection, insert-only and idempotent, and reads no event data.
-  (3) `GenAI - ES - Seed Response Plan and SOAR Binding` (unreleased) ships
+  (3) `GenAI - ES - Seed Response Plan and SOAR Binding` (v1.7.0+) ships
   `disabled = 0` + `run_on_startup = 1` and runs `| genaiseedes`: it writes
   the TA-owned records a TA cannot ship as conf into the `missioncontrol`
   namespace (response plan, AI Findings queue; never an investigation type)
   and, via the ES/SOAR pairing proxy, the `medadvice_idp`
   asset + the plan's SOAR task actions when the simulator app is on the
-  paired SOAR. Update-or-create, live task actions preserved, no event data
-  read; `install_simulator`, `enable_triage_agent` and
-  `route_findings_to_queue` ship off in `ta_gen_ai_cim_es.conf`.
+  paired SOAR. Update-or-create, live task actions always preserved, triage
+  allowlist merged, no event data read; `install_simulator`,
+  `enable_triage_agent`, `route_findings_to_queue` and
+  `seed_identity_response_plan` (the Lab 5 Compromised Identity Response Plan,
+  bound to PseudoCo Identity only when its app and asset already exist) ship
+  off in `ta_gen_ai_cim_es.conf`.
   Do not add further exceptions without the same stanza rationale comment, a
   README changelog entry, and an R-SEC-002 amendment in VALIDATION_RULES.md.
+- **AI Trust Lab 5 content ships off** (v1.8.0): the compromised-identity
+  rule `disabled = 1`, `[identity_manager://pseudoco_identity_personas]`
+  `disabled = true`, `seed_identity_response_plan = false`, and the PseudoCo
+  Identity connector outside the package. Lab personas must never merge into a
+  customer's identities and a lab plan never lands on a customer stack;
+  `show_postdeploy.py --lab5` enables them per room stack. Participant accounts
+  (`l5-<workshop>-<nn>`) are never a victim or a trusted persona: the rule
+  excludes them (`genai_identity_participant_filter`), the generator rejects
+  them and both SOAR apps refuse them.
+- CII (Cisco Identity Intelligence) events belong to the Cisco Security Cloud
+  app's sourcetype, so the TA adds no props for them and reads them with
+  `spath` inside `genai_cii_extract`. The field paths are provisional until a
+  real `FAILED_CHECK` event is captured (Lab 5 spike S6): re-pin the macro, the
+  fixtures (`tools/tests/fixtures/lab5_spl.json`) and the dashboard together.
+  The rule accepts labelled backfill (`backfill=true`, `source=lab5-setup`) and
+  names every finding's evidence provenance (`cii_provenance`).
 - Data models: `AI_Inference`, `AI_Safety`, `AI_Evaluation`
   (acceleration off by default).
 - Custom confs (`ta_gen_ai_cim_*`) need: reload triggers in
@@ -198,7 +230,14 @@ publish MR to `tmm/domane-unreleased-apps`. It is append-only: after submitting
 an MR there, harvest the `codex-ai-mr-bot` findings and fold them back in
 (protocol at the top of that file), then mirror it to `.cursor/skills/`.
 Run `bash .claude/skills/splunk-ta-development/check_package.sh <pkg>.tgz`
-after `package.sh` to enforce the mechanical rules.
+after `package.sh` to enforce the mechanical rules. Offline tests:
+
+```bash
+PYTHONPATH=tools/soar/tests/phantom_shim /opt/splunk104/bin/splunk cmd python3.13 \
+    -m unittest discover -s tools/soar/tests            # seeder + both SOAR apps
+python3 -m unittest discover -s tools/identity/tests   # Lab 5 persona rows
+python3 -m unittest discover -s tools/tests             # Lab 5 conf (+ live SPL with SPLUNK_TEST_*)
+```
 
 ```bash
 /opt/splunk104/bin/splunk cmd python3.9 -m py_compile bin/*.py   # and python3.13

@@ -1,5 +1,5 @@
 
-<dashboard version="2" theme="dark">
+<dashboard isVisible="false" version="2" theme="dark">
     <label>PII Detection</label>
     <description>ML and GenAI-powered detection of Personally Identifiable Information (PII) in AI responses.</description>
     <definition><![CDATA[

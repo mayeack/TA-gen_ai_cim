@@ -1,0 +1,452 @@
+<dashboard version="2" theme="dark">
+    <label>Compromised Identity</label>
+    <description>AI Trust Lab 5: Cisco Identity Intelligence failed checks joined with Cisco AI Defense blocks, Duo sign-ins, the Identity Risk Gate and session revocations</description>
+    <definition><![CDATA[
+{
+    "title": "Compromised Identity",
+    "description": "AI Trust Lab 5: Cisco Identity Intelligence failed checks joined with Cisco AI Defense blocks, Duo sign-ins, the Identity Risk Gate and session revocations",
+    "inputs": {
+        "input_time": {
+            "type": "input.timerange",
+            "title": "Time Range",
+            "options": {
+                "token": "time",
+                "defaultValue": "-7d@d,now"
+            }
+        },
+        "input_user": {
+            "type": "input.text",
+            "title": "User",
+            "options": {
+                "token": "user_filter",
+                "defaultValue": "*"
+            }
+        },
+        "input_instance": {
+            "type": "input.dropdown",
+            "title": "Instance",
+            "dataSources": {
+                "primary": "ds_instances"
+            },
+            "options": {
+                "token": "instance_filter",
+                "defaultValue": "*",
+                "items": [
+                    {
+                        "label": "All instances",
+                        "value": "*"
+                    }
+                ]
+            }
+        }
+    },
+    "dataSources": {
+        "ds_instances": {
+            "type": "ds.search",
+            "options": {
+                "query": "`genai_identity_ai_events` (gen_ai.identity.verified=\"true\" OR eventtype=gen_ai_identity_authentication) | stats count by host | fields host",
+                "queryParameters": {
+                    "earliest": "-7d@d",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_kpi_signins": {
+            "type": "ds.search",
+            "options": {
+                "query": "`genai_identity_ai_events` eventtype=gen_ai_identity_authentication user=\"$user_filter$\" host=\"$instance_filter$\" | stats count(eval(action==\"success\")) as success, count(eval(action==\"failure\")) as failure"
+            }
+        },
+        "ds_kpi_signins_ok": {
+            "type": "ds.chain",
+            "options": {
+                "extend": "ds_kpi_signins",
+                "query": "| fields success"
+            }
+        },
+        "ds_kpi_signins_fail": {
+            "type": "ds.chain",
+            "options": {
+                "extend": "ds_kpi_signins",
+                "query": "| fields failure"
+            }
+        },
+        "ds_kpi_gate": {
+            "type": "ds.search",
+            "options": {
+                "query": "`genai_identity_ai_events` eventtype=gen_ai_identity_block user=\"$user_filter$\" host=\"$instance_filter$\" | stats count"
+            }
+        },
+        "ds_kpi_cii": {
+            "type": "ds.search",
+            "options": {
+                "query": "`genai_cii_failed_checks` | search identity_user=\"$user_filter$\" | stats count"
+            }
+        },
+        "ds_kpi_aid": {
+            "type": "ds.search",
+            "options": {
+                "query": "`genai_identity_ai_events` gen_ai.policy.blocked=\"true\" gen_ai.guardrail.ids=\"cisco_ai_defense\" user=\"$user_filter$\" host=\"$instance_filter$\" | stats count"
+            }
+        },
+        "ds_join": {
+            "type": "ds.search",
+            "options": {
+                "query": "| multisearch [ search `genai_identity_ai_events` gen_ai.policy.blocked=\"true\" gen_ai.guardrail.ids=\"cisco_ai_defense\" | eval signal=\"ai_defense_block\", identity_user=`genai_identity_join_key(user)`, ai_category='gen_ai.safety.categories', ai_session='gen_ai.session.id', ai_src='client.address', ai_app='gen_ai.app.name' ] [ search `genai_identity_ai_events` (gen_ai.guardrail.ids=\"cisco_identity_intelligence\" OR gen_ai.identity.override=\"true\") | eval signal=\"identity_gate\", identity_user=`genai_identity_join_key(user)`, gate_blocked=if(isnotnull(mvfind('gen_ai.guardrail.ids', \"^cisco_identity_intelligence\\b\")) AND 'gen_ai.policy.blocked'==\"true\", 1, 0), gate_override=if('gen_ai.identity.override'==\"true\", 1, 0) ] [ search `genai_cii_failed_checks` | eval signal=\"cii_failed_check\" ] | `genai_identity_ai_attack_join` | search identity_user=\"$user_filter$\" | eval last_ai_defense_block=strftime(lastAiBlockTime, \"%Y-%m-%d %H:%M:%S\"), last_cii_check=strftime(lastCiiTime, \"%Y-%m-%d %H:%M:%S\") | table identity_user, cii_checks, cii_trust_levels, cii_provenance, cii_failed_checks, ai_defense_blocks, identity_gate_blocks, identity_overrides, distinct_sessions, src, last_ai_defense_block, last_cii_check | rename identity_user as user"
+            }
+        },
+        "ds_kpi_joined": {
+            "type": "ds.chain",
+            "options": {
+                "extend": "ds_join",
+                "query": "| stats count"
+            }
+        },
+        "ds_signins": {
+            "type": "ds.search",
+            "options": {
+                "query": "`genai_identity_ai_events` eventtype=gen_ai_identity_authentication user=\"$user_filter$\" host=\"$instance_filter$\" | timechart count by action"
+            }
+        },
+        "ds_gate": {
+            "type": "ds.search",
+            "options": {
+                "query": "`genai_identity_ai_events` (eventtype=gen_ai_identity_block OR gen_ai.identity.override=\"true\" OR gen_ai.identity.check=\"unavailable\") user=\"$user_filter$\" host=\"$instance_filter$\" | eval outcome=case('gen_ai.identity.override'==\"true\", \"allowed (Unblock me)\", 'gen_ai.identity.check'==\"unavailable\", \"allowed (check unavailable, fail open)\", 1=1, \"blocked\") | table _time, host, user, outcome, gen_ai.identity.risk.verdict, gen_ai.identity.risk.trust_level, gen_ai.identity.risk.duo_status, gen_ai.identity.risk.failing_checks | sort - _time"
+            }
+        },
+        "ds_cii": {
+            "type": "ds.search",
+            "options": {
+                "query": "`genai_cii_failed_checks` | search identity_user=\"$user_filter$\" | table _time, identity_user, cii_check, cii_check_id, cii_severity, cii_trust_level, cii_provenance | rename identity_user as user | sort - _time"
+            }
+        },
+        "ds_aid": {
+            "type": "ds.search",
+            "options": {
+                "query": "`genai_identity_ai_events` gen_ai.policy.blocked=\"true\" gen_ai.guardrail.ids=\"cisco_ai_defense\" user=\"$user_filter$\" host=\"$instance_filter$\" | stats count as blocks, dc(gen_ai.session.id) as sessions by user | sort - blocks | head 15"
+            }
+        },
+        "ds_sessions": {
+            "type": "ds.search",
+            "options": {
+                "query": "`genai_identity_ai_events` eventtype=gen_ai_identity_session user=\"$user_filter$\" host=\"$instance_filter$\" | table _time, host, user, gen_ai.audit.action, src | sort - _time"
+            }
+        }
+    },
+    "visualizations": {
+        "viz_header": {
+            "type": "splunk.markdown",
+            "options": {
+                "fontColor": "#ffffff",
+                "markdown": "## Compromised Identity (AI Trust Lab 5)\nCisco Identity Intelligence failed checks joined with Cisco AI Defense blocks for the same identity, plus the PseudoCo Assistant side: Duo sign-ins, the Identity Risk Gate and session revocations. The join is the detection *AI Governance - Compromised Identity AI Attack Correlation - Rule* without its 5-minute freshness limit. Lab 5 participant accounts (l5-*) are left out of the join."
+            }
+        },
+        "viz_kpi_signins_ok": {
+            "type": "splunk.singlevalue",
+            "title": "Duo sign-ins",
+            "dataSources": {
+                "primary": "ds_kpi_signins_ok"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#53a051",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            }
+        },
+        "viz_kpi_signins_fail": {
+            "type": "splunk.singlevalue",
+            "title": "Sign-in failures",
+            "dataSources": {
+                "primary": "ds_kpi_signins_fail"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#f8be34",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            }
+        },
+        "viz_kpi_gate": {
+            "type": "splunk.singlevalue",
+            "title": "Identity Risk Gate blocks",
+            "dataSources": {
+                "primary": "ds_kpi_gate"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#f1813f",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            }
+        },
+        "viz_kpi_cii": {
+            "type": "splunk.singlevalue",
+            "title": "CII failed checks",
+            "dataSources": {
+                "primary": "ds_kpi_cii"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#f1813f",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            }
+        },
+        "viz_kpi_aid": {
+            "type": "splunk.singlevalue",
+            "title": "AI Defense blocks",
+            "dataSources": {
+                "primary": "ds_kpi_aid"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#dc4e41",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            }
+        },
+        "viz_kpi_joined": {
+            "type": "splunk.singlevalue",
+            "title": "Compromised identities",
+            "dataSources": {
+                "primary": "ds_kpi_joined"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "majorColor": "#dc4e41",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off"
+            }
+        },
+        "viz_join": {
+            "type": "splunk.table",
+            "title": "Compromised identities: CII failed checks and AI Defense blocks",
+            "dataSources": {
+                "primary": "ds_join"
+            },
+            "options": {
+                "count": 10
+            },
+            "description": "cii_provenance: CII webhook, backfill (lab5-setup) or synthetic test event"
+        },
+        "viz_signins": {
+            "type": "splunk.line",
+            "title": "Duo sign-ins to PseudoCo Assistant",
+            "dataSources": {
+                "primary": "ds_signins"
+            },
+            "options": {
+                "legendDisplay": "bottom",
+                "seriesColorsByField": {
+                    "success": "#53a051",
+                    "failure": "#dc4e41"
+                }
+            }
+        },
+        "viz_aid": {
+            "type": "splunk.bar",
+            "title": "Cisco AI Defense blocks by user",
+            "dataSources": {
+                "primary": "ds_aid"
+            },
+            "options": {
+                "legendDisplay": "off",
+                "seriesColors": [
+                    "#dc4e41",
+                    "#f8be34"
+                ]
+            }
+        },
+        "viz_gate": {
+            "type": "splunk.table",
+            "title": "Identity Risk Gate verdicts (blocks, Unblock me overrides, fail-open checks)",
+            "dataSources": {
+                "primary": "ds_gate"
+            },
+            "options": {
+                "count": 10
+            }
+        },
+        "viz_cii": {
+            "type": "splunk.table",
+            "title": "Cisco Identity Intelligence failed checks",
+            "description": "Takeover checks only (genai_cii_takeover_checks): MFA Flood, Impossible Travel, Duo Sign In Threat Detected",
+            "dataSources": {
+                "primary": "ds_cii"
+            },
+            "options": {
+                "count": 10
+            }
+        },
+        "viz_sessions": {
+            "type": "splunk.table",
+            "title": "Identity sessions revoked, unblocked and reblocked",
+            "dataSources": {
+                "primary": "ds_sessions"
+            },
+            "options": {
+                "count": 10
+            }
+        }
+    },
+    "defaults": {
+        "dataSources": {
+            "ds.search": {
+                "options": {
+                    "queryParameters": {
+                        "earliest": "$time.earliest$",
+                        "latest": "$time.latest$"
+                    }
+                }
+            }
+        }
+    },
+    "layout": {
+        "type": "grid",
+        "options": {
+            "width": 1440,
+            "height": 1730,
+            "showTitleAndDescription": true
+        },
+        "globalInputs": [
+            "input_time",
+            "input_user",
+            "input_instance"
+        ],
+        "structure": [
+            {
+                "item": "viz_header",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 0,
+                    "w": 1440,
+                    "h": 90
+                }
+            },
+            {
+                "item": "viz_kpi_signins_ok",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 90,
+                    "w": 240,
+                    "h": 120
+                }
+            },
+            {
+                "item": "viz_kpi_signins_fail",
+                "type": "block",
+                "position": {
+                    "x": 240,
+                    "y": 90,
+                    "w": 240,
+                    "h": 120
+                }
+            },
+            {
+                "item": "viz_kpi_gate",
+                "type": "block",
+                "position": {
+                    "x": 480,
+                    "y": 90,
+                    "w": 240,
+                    "h": 120
+                }
+            },
+            {
+                "item": "viz_kpi_cii",
+                "type": "block",
+                "position": {
+                    "x": 720,
+                    "y": 90,
+                    "w": 240,
+                    "h": 120
+                }
+            },
+            {
+                "item": "viz_kpi_aid",
+                "type": "block",
+                "position": {
+                    "x": 960,
+                    "y": 90,
+                    "w": 240,
+                    "h": 120
+                }
+            },
+            {
+                "item": "viz_kpi_joined",
+                "type": "block",
+                "position": {
+                    "x": 1200,
+                    "y": 90,
+                    "w": 240,
+                    "h": 120
+                }
+            },
+            {
+                "item": "viz_join",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 210,
+                    "w": 1440,
+                    "h": 300
+                }
+            },
+            {
+                "item": "viz_signins",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 510,
+                    "w": 720,
+                    "h": 300
+                }
+            },
+            {
+                "item": "viz_aid",
+                "type": "block",
+                "position": {
+                    "x": 720,
+                    "y": 510,
+                    "w": 720,
+                    "h": 300
+                }
+            },
+            {
+                "item": "viz_gate",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 810,
+                    "w": 1440,
+                    "h": 320
+                }
+            },
+            {
+                "item": "viz_cii",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 1130,
+                    "w": 1440,
+                    "h": 320
+                }
+            },
+            {
+                "item": "viz_sessions",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 1450,
+                    "w": 1440,
+                    "h": 280
+                }
+            }
+        ]
+    }
+}
+]]></definition>
+</dashboard>

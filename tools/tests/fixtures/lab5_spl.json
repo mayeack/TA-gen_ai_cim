@@ -1,0 +1,204 @@
+[
+  {
+    "name": "cii webhook FAILED_CHECK is projected and keyed on the local part",
+    "spl": "| makeresults | eval _raw=\"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"account\\\":\\\"227542035969\\\",\\\"time\\\":\\\"2026-11-05T18:00:00Z\\\",\\\"region\\\":\\\"us-east-2\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"mfa-flood\\\",\\\"title\\\":\\\"MFA Flood\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"Avery.Kim@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"untrusted\\\",\\\"published\\\":\\\"2026-11-05T18:00:00.577Z\\\"}}\" | `genai_cii_extract` | `genai_cii_failed_check_rows` | table identity_user, cii_check, cii_trust_level, cii_provenance",
+    "expect": [
+      {
+        "identity_user": "avery.kim",
+        "cii_check": "MFA Flood",
+        "cii_trust_level": "UNTRUSTED",
+        "cii_provenance": "CII webhook"
+      }
+    ]
+  },
+  {
+    "name": "backfill flag and lab5-setup source mark the provenance",
+    "spl": "| makeresults | eval _raw=\"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"lab5-setup\\\",\\\"account\\\":\\\"227542035969\\\",\\\"time\\\":\\\"2026-11-05T18:00:00Z\\\",\\\"region\\\":\\\"us-east-2\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"mfa-flood\\\",\\\"title\\\":\\\"MFA Flood\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"avery.kim@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"untrusted\\\",\\\"published\\\":\\\"2026-11-05T18:00:00.577Z\\\"},\\\"backfill\\\":true}\" | `genai_cii_extract` | `genai_cii_failed_check_rows` | table identity_user, cii_check, cii_trust_level, cii_provenance",
+    "expect": [
+      {
+        "identity_user": "avery.kim",
+        "cii_provenance": "backfill (lab5-setup)"
+      }
+    ]
+  },
+  {
+    "name": "a source of lab5-setup alone is a backfill",
+    "spl": "| makeresults | eval _raw=\"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"lab5-setup\\\",\\\"account\\\":\\\"227542035969\\\",\\\"time\\\":\\\"2026-11-05T18:00:00Z\\\",\\\"region\\\":\\\"us-east-2\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"mfa-flood\\\",\\\"title\\\":\\\"MFA Flood\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"avery.kim@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"untrusted\\\",\\\"published\\\":\\\"2026-11-05T18:00:00.577Z\\\"}}\" | `genai_cii_extract` | `genai_cii_failed_check_rows` | table identity_user, cii_check, cii_trust_level, cii_provenance",
+    "expect": [
+      {
+        "cii_provenance": "backfill (lab5-setup)"
+      }
+    ]
+  },
+  {
+    "name": "synthetic test events are labelled",
+    "spl": "| makeresults | eval _raw=\"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"account\\\":\\\"227542035969\\\",\\\"time\\\":\\\"2026-11-05T18:00:00Z\\\",\\\"region\\\":\\\"us-east-2\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"mfa-flood\\\",\\\"title\\\":\\\"MFA Flood\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"avery.kim@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"untrusted\\\",\\\"published\\\":\\\"2026-11-05T18:00:00.577Z\\\"},\\\"synthetic\\\":true}\" | `genai_cii_extract` | `genai_cii_failed_check_rows` | table identity_user, cii_check, cii_trust_level, cii_provenance",
+    "expect": [
+      {
+        "cii_provenance": "synthetic test event"
+      }
+    ]
+  },
+  {
+    "name": "WebhookTest connectivity probes are dropped",
+    "spl": "| makeresults | eval _raw=\"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"WebhookTest\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"account\\\":\\\"227542035969\\\",\\\"time\\\":\\\"2026-11-05T18:00:00Z\\\",\\\"region\\\":\\\"us-east-2\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"mfa-flood\\\",\\\"title\\\":\\\"MFA Flood\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"user1@example.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"untrusted\\\",\\\"published\\\":\\\"2026-11-05T18:00:00.577Z\\\"}}\" | `genai_cii_extract` | `genai_cii_failed_check_rows` | table identity_user, cii_check, cii_trust_level, cii_provenance",
+    "expect": []
+  },
+  {
+    "name": "join key lowercases and strips the domain",
+    "spl": "| makeresults | eval x=\"Avery.Kim@PseudoCoAssistant.com\", k=`genai_identity_join_key(x)` | table k",
+    "expect": [
+      {
+        "k": "avery.kim"
+      }
+    ]
+  },
+  {
+    "name": "join keeps an identity with both signals and drops participants",
+    "spl": "| makeresults count=6 | streamstats count as n | eval identity_user=case(n<=3, \"avery.kim\", n<=5, \"l5-ws1-03\", 1=1, \"marcus.bell\"), signal=case(n==1 OR n==4 OR n==6, \"ai_defense_block\", n==2 OR n==5, \"cii_failed_check\", 1=1, \"identity_gate\"), gate_blocked=if(n==3, 1, 0), gate_override=0, ai_src=\"203.0.113.10\", ai_session=\"s\".n, ai_category=\"Prompt Injection\", ai_app=\"pseudoco-assistant\", cii_check=\"MFA Flood\", cii_trust_level=\"UNTRUSTED\", cii_provenance=\"CII webhook\" | `genai_identity_ai_attack_join` | table identity_user, ai_defense_blocks, cii_failed_checks, identity_gate_blocks, cii_checks, cii_provenance",
+    "expect": [
+      {
+        "identity_user": "avery.kim",
+        "ai_defense_blocks": "1",
+        "cii_failed_checks": "1",
+        "identity_gate_blocks": "1",
+        "cii_checks": "MFA Flood",
+        "cii_provenance": "CII webhook"
+      }
+    ]
+  },
+  {
+    "name": "identity: real 4.23.0 fail-open turn (l5-dev, 2026-11-06 18:35 PST) populates gen_ai.identity.*",
+    "spl": "| makeresults | eval _raw=\"{\\\"enduser_id\\\":\\\"nina.osei\\\",\\\"user\\\":\\\"nina.osei\\\",\\\"guardrail_ids\\\":[\\\"cisco_ai_defense\\\"],\\\"policy_blocked\\\":true,\\\"identity_verified\\\":true,\\\"identity_source\\\":\\\"duo\\\",\\\"identity_risk\\\":\\\"allow\\\",\\\"identity_check\\\":\\\"unavailable\\\",\\\"identity_duo_status\\\":\\\"active\\\",\\\"identity_override\\\":true}\" | spath | eval verdict=<<props:EVAL-gen_ai.identity.risk.verdict>>, duo_status=<<props:EVAL-gen_ai.identity.risk.duo_status>>, trust_level=<<props:EVAL-gen_ai.identity.risk.trust_level>>, reasons=mvjoin(<<props:EVAL-gen_ai.identity.risk.reasons>>, \",\"), failing_checks=mvjoin(<<props:EVAL-gen_ai.identity.risk.failing_checks>>, \",\"), verified=<<props:EVAL-gen_ai.identity.verified>>, override=<<props:EVAL-gen_ai.identity.override>> | table verdict, duo_status, trust_level, reasons, failing_checks, verified, override",
+    "expect": [
+      {
+        "verdict": "allow",
+        "duo_status": "active",
+        "trust_level": null,
+        "reasons": null,
+        "failing_checks": null,
+        "verified": "true",
+        "override": "true"
+      }
+    ]
+  },
+  {
+    "name": "identity: a 4.23.0 gate block (flat, backend/agents/state.py identity_risk_fields)",
+    "spl": "| makeresults | eval _raw=\"{\\\"enduser_id\\\":\\\"avery.kim\\\",\\\"guardrail_ids\\\":[\\\"cisco_identity_intelligence\\\"],\\\"policy_blocked\\\":true,\\\"identity_verified\\\":true,\\\"identity_source\\\":\\\"duo\\\",\\\"identity_risk\\\":\\\"block\\\",\\\"identity_check\\\":\\\"ok\\\",\\\"identity_risk_reasons\\\":[\\\"trust_untrusted\\\",\\\"mfa_flood\\\"],\\\"identity_duo_status\\\":\\\"active\\\",\\\"identity_trust_level\\\":\\\"UNTRUSTED\\\",\\\"identity_failing_checks\\\":[\\\"mfa-flood\\\",\\\"impossible-travel\\\"]}\" | spath | eval verdict=<<props:EVAL-gen_ai.identity.risk.verdict>>, duo_status=<<props:EVAL-gen_ai.identity.risk.duo_status>>, trust_level=<<props:EVAL-gen_ai.identity.risk.trust_level>>, reasons=mvjoin(<<props:EVAL-gen_ai.identity.risk.reasons>>, \",\"), failing_checks=mvjoin(<<props:EVAL-gen_ai.identity.risk.failing_checks>>, \",\"), verified=<<props:EVAL-gen_ai.identity.verified>>, override=<<props:EVAL-gen_ai.identity.override>> | table verdict, duo_status, trust_level, reasons, failing_checks, verified, override",
+    "expect": [
+      {
+        "verdict": "block",
+        "duo_status": "active",
+        "trust_level": "UNTRUSTED",
+        "reasons": "trust_untrusted,mfa_flood",
+        "failing_checks": "mfa-flood,impossible-travel",
+        "verified": "true",
+        "override": null
+      }
+    ]
+  },
+  {
+    "name": "identity: flat scalars from a non-array emitter still read",
+    "spl": "| makeresults | eval _raw=\"{\\\"identity_verified\\\":true,\\\"identity_risk\\\":\\\"Block\\\",\\\"identity_risk_reasons\\\":\\\"duo_disabled\\\",\\\"identity_duo_status\\\":\\\"Disabled\\\",\\\"identity_trust_level\\\":\\\"questionable\\\",\\\"identity_failing_checks\\\":\\\"mfa-flood\\\"}\" | spath | eval verdict=<<props:EVAL-gen_ai.identity.risk.verdict>>, duo_status=<<props:EVAL-gen_ai.identity.risk.duo_status>>, trust_level=<<props:EVAL-gen_ai.identity.risk.trust_level>>, reasons=mvjoin(<<props:EVAL-gen_ai.identity.risk.reasons>>, \",\"), failing_checks=mvjoin(<<props:EVAL-gen_ai.identity.risk.failing_checks>>, \",\"), verified=<<props:EVAL-gen_ai.identity.verified>>, override=<<props:EVAL-gen_ai.identity.override>> | table verdict, duo_status, trust_level, reasons, failing_checks, verified, override",
+    "expect": [
+      {
+        "verdict": "block",
+        "duo_status": "disabled",
+        "trust_level": "QUESTIONABLE",
+        "reasons": "duo_disabled",
+        "failing_checks": "mfa-flood",
+        "verified": "true"
+      }
+    ]
+  },
+  {
+    "name": "identity: the nested identity_risk object (pre-release draft) is read as a fallback",
+    "spl": "| makeresults | eval _raw=\"{\\\"identity_verified\\\":true,\\\"identity_risk\\\":{\\\"verdict\\\":\\\"Block\\\",\\\"reasons\\\":[\\\"trust_untrusted\\\"],\\\"duo_status\\\":\\\"Active\\\",\\\"trust_level\\\":\\\"untrusted\\\",\\\"failing_checks\\\":[\\\"mfa-flood\\\"]}}\" | spath | eval verdict=<<props:EVAL-gen_ai.identity.risk.verdict>>, duo_status=<<props:EVAL-gen_ai.identity.risk.duo_status>>, trust_level=<<props:EVAL-gen_ai.identity.risk.trust_level>>, reasons=mvjoin(<<props:EVAL-gen_ai.identity.risk.reasons>>, \",\"), failing_checks=mvjoin(<<props:EVAL-gen_ai.identity.risk.failing_checks>>, \",\"), verified=<<props:EVAL-gen_ai.identity.verified>>, override=<<props:EVAL-gen_ai.identity.override>> | table verdict, duo_status, trust_level, reasons, failing_checks, verified, override",
+    "expect": [
+      {
+        "verdict": "block",
+        "duo_status": "active",
+        "trust_level": "UNTRUSTED",
+        "reasons": "trust_untrusted",
+        "failing_checks": "mfa-flood",
+        "verified": "true"
+      }
+    ]
+  },
+  {
+    "name": "identity: flat names win over the nested fallback",
+    "spl": "| makeresults | eval _raw=\"{\\\"identity_verified\\\":true,\\\"identity_risk_reasons\\\":[\\\"duo_disabled\\\"],\\\"identity_duo_status\\\":\\\"disabled\\\",\\\"identity_trust_level\\\":\\\"UNTRUSTED\\\",\\\"identity_failing_checks\\\":[\\\"impossible-travel\\\"],\\\"identity_risk\\\":{\\\"verdict\\\":\\\"block\\\",\\\"reasons\\\":[\\\"stale\\\"],\\\"duo_status\\\":\\\"active\\\",\\\"trust_level\\\":\\\"neutral\\\",\\\"failing_checks\\\":[\\\"stale-check\\\"]}}\" | spath | eval verdict=<<props:EVAL-gen_ai.identity.risk.verdict>>, duo_status=<<props:EVAL-gen_ai.identity.risk.duo_status>>, trust_level=<<props:EVAL-gen_ai.identity.risk.trust_level>>, reasons=mvjoin(<<props:EVAL-gen_ai.identity.risk.reasons>>, \",\"), failing_checks=mvjoin(<<props:EVAL-gen_ai.identity.risk.failing_checks>>, \",\"), verified=<<props:EVAL-gen_ai.identity.verified>>, override=<<props:EVAL-gen_ai.identity.override>> | table verdict, duo_status, trust_level, reasons, failing_checks, verified, override",
+    "expect": [
+      {
+        "verdict": "block",
+        "duo_status": "disabled",
+        "trust_level": "UNTRUSTED",
+        "reasons": "duo_disabled",
+        "failing_checks": "impossible-travel"
+      }
+    ]
+  },
+  {
+    "name": "revocation (real shape, demobot:audit): keeps its action, dest is the instance, user the persona",
+    "spl": "| makeresults | eval _raw=\"{\\\"audit_id\\\":\\\"5d0c9f2e-8f6b-4c1e-9a77-0b6f1f3c2a10\\\",\\\"session_id\\\":\\\"identity-0000scratch\\\",\\\"action\\\":\\\"identity_session_revoked\\\",\\\"actor\\\":\\\"duo\\\",\\\"details\\\":{\\\"reason\\\":\\\"duo_disabled\\\"},\\\"ip_address\\\":\\\"198.51.100.7\\\",\\\"enduser_id\\\":\\\"nina.osei\\\",\\\"user\\\":\\\"nina.osei\\\",\\\"src\\\":\\\"198.51.100.7\\\"}\" | spath | eval host=\"l5-dev\", gen_ai.audit.action=action | eval user_out=<<props:demobot:audit|EVAL-user>>, dest_out=<<props:demobot:audit|EVAL-dest>>, action_out=<<props:demobot:audit|EVAL-action>>, auth_service=<<props:demobot:audit|EVAL-authentication_service>>, src_out=<<props:demobot:audit|EVAL-src>>, reason='details.reason' | table user_out, dest_out, action_out, auth_service, src_out, reason",
+    "expect": [
+      {
+        "user_out": "nina.osei",
+        "dest_out": "l5-dev",
+        "action_out": "identity_session_revoked",
+        "auth_service": null,
+        "src_out": "198.51.100.7",
+        "reason": "duo_disabled"
+      }
+    ]
+  },
+  {
+    "name": "revocation (real shape, gen_ai:json): the audit gate on audit_id maps it the same way",
+    "spl": "| makeresults | eval _raw=\"{\\\"audit_id\\\":\\\"5d0c9f2e-8f6b-4c1e-9a77-0b6f1f3c2a10\\\",\\\"session_id\\\":\\\"identity-0000scratch\\\",\\\"action\\\":\\\"identity_session_revoked\\\",\\\"actor\\\":\\\"duo\\\",\\\"details\\\":{\\\"reason\\\":\\\"duo_disabled\\\"},\\\"ip_address\\\":\\\"198.51.100.7\\\",\\\"enduser_id\\\":\\\"nina.osei\\\",\\\"user\\\":\\\"nina.osei\\\",\\\"src\\\":\\\"198.51.100.7\\\"}\" | spath | eval host=\"l5-dev\", gen_ai.audit.action_raw=action | eval audit_action=<<props:EVAL-gen_ai.audit.action>>, dest_out=<<props:EVAL-dest>>, action_out=<<props:EVAL-action>>, auth_service=<<props:EVAL-authentication_service>> | table audit_action, dest_out, action_out, auth_service",
+    "expect": [
+      {
+        "audit_action": "identity_session_revoked",
+        "dest_out": "l5-dev",
+        "action_out": "identity_session_revoked",
+        "auth_service": null
+      }
+    ]
+  },
+  {
+    "name": "only takeover checks survive: CII's catalogue (listCheckMetadata 2026-11-06) through the rows macro",
+    "spl": "| makeresults count=6 | streamstats count as n | eval _raw=case(n==1, \"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"time\\\":\\\"2026-11-06T18:00:00Z\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"mfa-flood\\\",\\\"title\\\":\\\"MFA Flood\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"marcus.bell@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"NEUTRAL\\\"}}\", n==2, \"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"time\\\":\\\"2026-11-06T18:00:00Z\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"impossible-travel\\\",\\\"title\\\":\\\"Impossible Travel\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"marcus.bell@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"NEUTRAL\\\"}}\", n==3, \"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"time\\\":\\\"2026-11-06T18:00:00Z\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"duo-sign-in-threat-detected\\\",\\\"title\\\":\\\"Duo Sign In Threat Detected\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"marcus.bell@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"NEUTRAL\\\"}}\", n==4, \"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"time\\\":\\\"2026-11-06T18:00:00Z\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"is-bypass-code-used\\\",\\\"title\\\":\\\"A Bypass Code Was Used To Successfully Sign In\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"marcus.bell@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"NEUTRAL\\\"}}\", n==5, \"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"time\\\":\\\"2026-11-06T18:00:00Z\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"is-weak-mfa-used\\\",\\\"title\\\":\\\"Weak MFA Was Used To Successfully Sign In\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"marcus.bell@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"NEUTRAL\\\"}}\", 1=1, \"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"time\\\":\\\"2026-11-06T18:00:00Z\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"user-account-locked-out\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"marcus.bell@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"NEUTRAL\\\"}}\") | `genai_cii_extract` | `genai_cii_failed_check_rows` | table n, identity_user, cii_check_id, cii_check",
+    "expect": [
+      {
+        "n": "1",
+        "identity_user": "marcus.bell",
+        "cii_check_id": "mfa-flood",
+        "cii_check": "MFA Flood"
+      },
+      {
+        "n": "2",
+        "cii_check_id": "impossible-travel"
+      },
+      {
+        "n": "3",
+        "cii_check_id": "duo-sign-in-threat-detected"
+      }
+    ]
+  },
+  {
+    "name": "a trusted persona with an AI Defense block and only a bypass-code failure raises nothing (H4)",
+    "spl": "| makeresults | eval _raw=\"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"lab5-setup\\\",\\\"time\\\":\\\"2026-11-06T18:00:00Z\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"is-bypass-code-used\\\",\\\"title\\\":\\\"A Bypass Code Was Used To Successfully Sign In\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"marcus.bell@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"NEUTRAL\\\"},\\\"backfill\\\":true}\" | `genai_cii_extract` | `genai_cii_failed_check_rows` | eval signal=\"cii_failed_check\" | append [| makeresults | eval identity_user=\"marcus.bell\", signal=\"ai_defense_block\", ai_src=\"203.0.113.10\", ai_session=\"s1\", ai_category=\"Prompt Injection\", ai_app=\"pseudoco-assistant\"] | `genai_identity_ai_attack_join` | table identity_user, ai_defense_blocks, cii_failed_checks, cii_checks",
+    "expect": []
+  },
+  {
+    "name": "the same persona with an MFA Flood failure joins (control for the H4 fixture)",
+    "spl": "| makeresults | eval _raw=\"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"time\\\":\\\"2026-11-06T18:00:00Z\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"mfa-flood\\\",\\\"title\\\":\\\"MFA Flood\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"marcus.bell@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"UNTRUSTED\\\"}}\" | `genai_cii_extract` | `genai_cii_failed_check_rows` | eval signal=\"cii_failed_check\" | append [| makeresults | eval identity_user=\"marcus.bell\", signal=\"ai_defense_block\", ai_src=\"203.0.113.10\", ai_session=\"s1\", ai_category=\"Prompt Injection\", ai_app=\"pseudoco-assistant\"] | `genai_identity_ai_attack_join` | table identity_user, ai_defense_blocks, cii_failed_checks, cii_checks",
+    "expect": [
+      {
+        "identity_user": "marcus.bell",
+        "ai_defense_blocks": "1",
+        "cii_failed_checks": "1",
+        "cii_checks": "MFA Flood"
+      }
+    ]
+  }
+]

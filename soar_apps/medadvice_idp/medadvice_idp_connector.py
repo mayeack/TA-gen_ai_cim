@@ -22,6 +22,12 @@ Design notes:
     Mission Control stores plan strings URL-encoded) is an unresolved ES token
     such as $user$; the action fails with an explicit message instead of
     "disabling" a token.
+  - AI Trust Lab 5 identities are REAL Duo accounts, not workshop fixtures: the
+    persona cast (username or email form), anything in their domain, and the
+    l5-* participant accounts. Every action refuses them with an app error
+    naming PseudoCo Identity (1.1.0), so a Guided Response agent that picks this
+    simulator for a Lab 5 finding fails loudly instead of reporting a
+    containment that never touched Duo.
   - Standard library only; Python 3.9 and 3.13.
 
 Copyright 2026 Splunk Inc.
@@ -39,8 +45,9 @@ from phantom.base_connector import BaseConnector
 from medadvice_idp_consts import (
     CLIENT_ADDRESSES, DEPARTMENTS, DIRECTORY_DEFAULT, EMAIL_INDEX, MODE_DEFAULT,
     MSG_DISABLED, MSG_ENABLED, MSG_GET_USER, MSG_LIST_SESSIONS,
-    MSG_MODE_UNSUPPORTED, MSG_SESSIONS_CLEARED, MSG_TEST_OK,
-    MSG_TOKEN_UNRESOLVED, MSG_USERNAME_MISSING, PERSONAS, SESSION_APP,
+    MSG_MANAGED_ELSEWHERE, MSG_MODE_UNSUPPORTED, MSG_SESSIONS_CLEARED, MSG_TEST_OK,
+    MSG_TOKEN_UNRESOLVED, MSG_USERNAME_MISSING, PERSONAS, REFUSED_DOMAINS,
+    REFUSED_PREFIXES, REFUSED_USERNAMES, SESSION_APP,
 )
 
 
@@ -54,6 +61,14 @@ def _iso(dt):
 
 def _digest(*parts):
     return hashlib.sha1(':'.join(parts).encode('utf-8')).hexdigest()
+
+
+def _managed_elsewhere(value):
+    """True for an AI Trust Lab 5 identity: a real Duo account this simulator
+    must never pretend to act on. value is already lowercased."""
+    local, _, domain = value.partition('@')
+    return (local in REFUSED_USERNAMES or domain in REFUSED_DOMAINS
+            or local.startswith(REFUSED_PREFIXES))
 
 
 class MedadviceIdpConnector(BaseConnector):
@@ -112,6 +127,10 @@ class MedadviceIdpConnector(BaseConnector):
                                      MSG_TOKEN_UNRESOLVED.format(value=raw))
             return None
         value = raw.lower()
+        if _managed_elsewhere(value):
+            action_result.set_status(phantom.APP_ERROR,
+                                     MSG_MANAGED_ELSEWHERE.format(value=raw))
+            return None
         if '@' in value:
             value = EMAIL_INDEX.get(value, value.split('@', 1)[0])
         return value

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ES runbook — the Guided Response agent inactivates `t.nguyen` (per-tenant prerequisites)</title>
+<title>ES runbook — the Guided Response agent inactivates t.nguyen (per-tenant prerequisites)</title>
 <style>
 :root {
   --bg: #ffffff; --fg: #1c1e21; --muted: #5c6370; --border: #d7dae0;
@@ -198,6 +198,24 @@ approvals are off.</p>
 <li>Repeat step 3 as a second user: identical result, no reset needed.</li>
 <li>Negative checks: Model choice → SecA1 → agent unavailable (switch back);
    deselect the MedAdvice connector → agent cannot run it (re-select).</li>
+</ol>
+<h2 id="e7-ai-trust-lab-5-stacks-ta-180">E7. AI Trust Lab 5 stacks (TA 1.8.0+)</h2>
+<p>Lab 5 adds a second, <strong>real</strong> containment app beside the simulator: the
+<strong>PseudoCo Identity</strong> SOAR connector disables the room's victim persona in Duo.
+<code>tools/show_postdeploy.py --lab5</code> installs it, creates its <code>pseudoco_identity</code>
+asset and binds the Compromised Identity Response Plan to it
+(<code>tools/lab5-identity-runbook.md</code>).</p>
+<ol>
+<li>In the Guided Response connector list keep <strong>both</strong> TA apps selected:
+   MedAdvice Identity Provider for the Lab 4 prompt-injection findings and
+   PseudoCo Identity for the Lab 5 <em>GenAI Compromised Identity</em> finding. They
+   do not compete: since 1.1.0 the simulator refuses every Lab 5 identity with
+   "managed by PseudoCo Identity", and PseudoCo Identity acts only on its
+   asset's configured victim.</li>
+<li>The Lab 5 prompt names the connector: <em>"Using PseudoCo Identity, disable
+   user <victim>. Reason: <investigation id> compromised identity"</em>.</li>
+<li>PseudoCo Identity has no undo and results carry <code>"simulated": false</code>. The
+   lab's persona tooling re-enables the victim after the debrief.</li>
 </ol>
 <h2 id="rollback">Rollback</h2>
 <ul>

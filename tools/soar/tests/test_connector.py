@@ -165,5 +165,42 @@ class ActionTests(unittest.TestCase):
         self.assertEqual(status, phantom.APP_ERROR)
 
 
+class Lab5RefusalTests(unittest.TestCase):
+    """1.1.0: AI Trust Lab 5 identities are real Duo accounts. A Guided Response
+    agent that picks this simulator for a Lab 5 finding must fail loudly - never
+    report a containment that did not touch Duo."""
+
+    LAB5 = ('avery.kim', 'AVERY.KIM', 'avery.kim@pseudocoassistant.com', 'marcus.bell',
+            'nina.osei', 'someone.new@pseudocoassistant.com', 'l5-ws1-03',
+            'l5-ws1-03@pseudocoassistant.com')
+
+    def test_every_action_refuses_lab5_identities(self):
+        for action in ('disable_user', 'enable_user', 'get_user', 'list_user_sessions',
+                       'clear_user_sessions'):
+            for name in self.LAB5:
+                status, result, _ = run(action, {'username': name})
+                self.assertEqual(status, phantom.APP_ERROR, (action, name))
+                self.assertIn('managed by PseudoCo Identity', result.get_message())
+                self.assertEqual(result.get_data(), [], (action, name))
+
+    def test_medadvice_personas_still_work(self):
+        status, result, _ = run('disable_user', {'username': 'x.collins@medadvice.example.com'})
+        self.assertEqual(status, phantom.APP_SUCCESS)
+        self.assertTrue(result.get_data()[0]['simulated'])
+
+    def test_refusal_list_is_generated_from_the_persona_lookup(self):
+        import csv
+        from medadvice_idp_consts import REFUSED_DOMAINS, REFUSED_PREFIXES, REFUSED_USERNAMES
+        with open(os.path.join(REPO, 'lookups', 'pseudoco_identity_personas.csv')) as handle:
+            users = set(row['identity'].split('|')[0] for row in csv.DictReader(handle))
+        self.assertEqual(set(REFUSED_USERNAMES), users)
+        self.assertIn('pseudocoassistant.com', REFUSED_DOMAINS)
+        self.assertEqual(REFUSED_PREFIXES, ('l5-',))
+
+    def test_app_version_is_1_1_0(self):
+        with open(os.path.join(APP_DIR, 'medadvice_idp.json')) as handle:
+            self.assertEqual(json.load(handle)['app_version'], '1.1.0')
+
+
 if __name__ == '__main__':
     unittest.main()

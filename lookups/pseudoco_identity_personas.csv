@@ -1,0 +1,8 @@
+identity,first,last,nick,email,bunit,category,watchlist,priority
+elena.sousa|elena.sousa@pseudocoassistant.com,Elena,Sousa,elena.sousa,elena.sousa@pseudocoassistant.com,pseudoco,lab5_trusted,false,medium
+grace.lin|grace.lin@pseudocoassistant.com,Grace,Lin,grace.lin,grace.lin@pseudocoassistant.com,pseudoco,lab5_trusted,false,medium
+marcus.bell|marcus.bell@pseudocoassistant.com,Marcus,Bell,marcus.bell,marcus.bell@pseudocoassistant.com,pseudoco,lab5_trusted,false,medium
+avery.kim|avery.kim@pseudocoassistant.com,Avery,Kim,avery.kim,avery.kim@pseudocoassistant.com,pseudoco,lab5_victim,true,high
+casey.wong|casey.wong@pseudocoassistant.com,Casey,Wong,casey.wong,casey.wong@pseudocoassistant.com,pseudoco,lab5_victim,true,high
+jordan.reyes|jordan.reyes@pseudocoassistant.com,Jordan,Reyes,jordan.reyes,jordan.reyes@pseudocoassistant.com,pseudoco,lab5_victim,true,high
+nina.osei|nina.osei@pseudocoassistant.com,Nina,Osei,nina.osei,nina.osei@pseudocoassistant.com,pseudoco,lab5_victim,true,high

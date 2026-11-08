@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 5 runbook — Cisco Identity Intelligence on a room stack (TA-gen_ai_cim 1.8.0)</title>
+<style>
+:root {
+  --bg: #ffffff; --fg: #1c1e21; --muted: #5c6370; --border: #d7dae0;
+  --code-bg: #f5f6f8; --accent: #0b5fff; --thead: #f0f2f5;
+  --quote-bg: #fff8e6; --quote-br: #e0a800;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a; --fg: #e4e6eb; --muted: #9aa0a6; --border: #333740;
+    --code-bg: #1c1f24; --accent: #5b9bff; --thead: #1f232a;
+    --quote-bg: #2a2415; --quote-br: #c99a00;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14161a; --fg: #e4e6eb; --muted: #9aa0a6; --border: #333740;
+  --code-bg: #1c1f24; --accent: #5b9bff; --thead: #1f232a;
+  --quote-bg: #2a2415; --quote-br: #c99a00;
+}
+:root[data-theme="light"] {
+  --bg: #ffffff; --fg: #1c1e21; --muted: #5c6370; --border: #d7dae0;
+  --code-bg: #f5f6f8; --accent: #0b5fff; --thead: #f0f2f5;
+  --quote-bg: #fff8e6; --quote-br: #e0a800;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); margin: 0;
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+  padding: 2.5rem 1.25rem 5rem;
+}
+main { max-width: 62rem; margin: 0 auto; }
+h1, h2, h3, h4 { line-height: 1.25; margin: 2.2rem 0 .85rem; font-weight: 650; }
+h1 { font-size: 2rem; margin-top: 0; letter-spacing: -.02em; }
+h2 { font-size: 1.45rem; padding-bottom: .35rem; border-bottom: 1px solid var(--border); }
+h3 { font-size: 1.15rem; }
+h4 { font-size: 1rem; color: var(--muted); }
+p, ul, ol { margin: 0 0 1rem; }
+li { margin: .3rem 0; }
+a { color: var(--accent); }
+hr { border: 0; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+code {
+  background: var(--code-bg); padding: .15em .4em; border-radius: 4px;
+  font: .875em/1.5 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: .9rem 1rem; overflow-x: auto; margin: 0 0 1.2rem;
+}
+pre code { background: none; padding: 0; font-size: .85em; }
+.table-wrap { overflow-x: auto; margin: 0 0 1.3rem; }
+table { border-collapse: collapse; width: 100%; font-size: .93em; }
+th, td { border: 1px solid var(--border); padding: .5rem .7rem; text-align: left; vertical-align: top; }
+th { background: var(--thead); font-weight: 620; }
+blockquote {
+  margin: 0 0 1.2rem; padding: .75rem 1rem; background: var(--quote-bg);
+  border-left: 4px solid var(--quote-br); border-radius: 0 6px 6px 0;
+}
+blockquote p:last-child { margin-bottom: 0; }
+img { max-width: 100%; }
+input[type=checkbox] { margin-right: .5rem; }
+</style>
+</head>
+<body>
+<main>
+<h1 id="lab-5-runbook-cisco-identity-intelligence-on-a-room-stack-ta-gen_ai_cim-180">Lab 5 runbook — Cisco Identity Intelligence on a room stack (TA-gen_ai_cim 1.8.0)</h1>
+<p>AI Trust Lab 5 ("Verify: Cisco Identity Intelligence") on one Splunk Show room
+stack: Cisco Identity Intelligence (CII) reports the room's victim persona as
+taken over, PseudoCo Assistant 4.23.0+ refuses the victim's signed-in turns,
+Splunk ES joins the CII failed checks with Cisco AI Defense blocks, and SOAR
+disables the victim in Duo. Everything Lab 5 adds to the TA ships <strong>off</strong>; this
+runbook turns it on for one stack and off again.</p>
+<p>Run it from a checkout of the TA (<code>tools/</code> is not in the package). One run per
+room stack. Never on a customer stack.</p>
+<h2 id="before-the-takeover-t-4-at-the-latest">Before the takeover (T-4 at the latest)</h2>
+<ol>
+<li><strong>Cisco Security Cloud app</strong> 3.7.3+ (3.x) or 4.1.3+ (4.x) on the stack.</li>
+<li><strong>CII input</strong> in that app: <em>Cisco Identity Intelligence → Configure
+   Application</em>, connection method <strong>Webhook</strong>, index
+   <code>cisco_identity_intelligence</code> (step L1 below creates it; run <code>--lab5</code> first
+   if it does not exist yet). In Identity Intelligence, assign the webhook to
+   <strong>MFA Flood</strong>, <strong>Impossible Travel</strong> and <strong>Duo Sign In Threat Detected</strong>,
+   and run its connectivity test: a <code>WebhookTest</code> event must arrive (the TA
+   drops it from the detection on purpose). Those three are the only checks
+   the TA counts (<code>genai_cii_takeover_checks</code>, by check ID: <code>mfa-flood</code>,
+   <code>impossible-travel</code>, <code>duo-sign-in-threat-detected</code>). A bypass-code or
+   weak-MFA failure, which every persona gets after a handout code, never
+   raises the finding.</li>
+<li>This must exist <strong>before the T-2 takeover</strong>: CII webhooks announce only
+   newly failing users.</li>
+</ol>
+<h2 id="-lab5-per-room-stack"><code>--lab5</code> (per room stack)</h2>
+<pre><code class="language-bash">export SPLUNK_ADMIN_PASSWORD='...' SPLUNK_ACS_TOKEN='...' SOAR_PASSWORD='...'
+export DUO_IDENTITY_OPS_API_HOST='api-XXXXXXXX.duosecurity.com'
+export DUO_IDENTITY_OPS_IKEY='...' DUO_IDENTITY_OPS_SKEY='...'
+python3 tools/show_postdeploy.py --stack https://&lt;stack&gt;.splunkcloud.com \
+    --soar-url https://&lt;tenant&gt;.soar.splunkcloud.com \
+    --lab5 --lab5-victim &lt;victim persona&gt; --lab5-room &lt;workshop&gt;-&lt;room&gt; \
+    --out &lt;room&gt;-stack.json --dry-run
+</code></pre>
+<p>Drop <code>--dry-run</code> once the report reads right. The Duo keys are the <strong>PseudoCo
+Identity Ops</strong> Admin API application (<em>Grant resource</em> read + write). They are
+read from the environment only, never from argv, and only their last four
+characters are printed.</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>L1</td>
+<td>index <code>cisco_identity_intelligence</code> (ACS)</td>
+</tr>
+<tr>
+<td>L2</td>
+<td>HEC token <code>cisco-identity-intelligence</code> for a labelled backfill (planned, see T-1); written to <code>--out</code>, never printed</td>
+</tr>
+<tr>
+<td>L3</td>
+<td>Cisco Security Cloud app version floor</td>
+</tr>
+<tr>
+<td>L4</td>
+<td>enables the Lab 5 rule, the persona identity input and <code>seed_identity_response_plan</code> in the TA's <code>local/</code> on the stack</td>
+</tr>
+<tr>
+<td>L5</td>
+<td>the CII index in <code>admin</code>/<code>ess_admin</code>/<code>ess_analyst</code> default indexes and searchable by <code>splunker</code></td>
+</tr>
+<tr>
+<td>L6</td>
+<td>installs/upgrades both SOAR apps: MedAdvice Identity Provider 1.1.0 (refuses Lab 5 identities) and PseudoCo Identity</td>
+</tr>
+<tr>
+<td>L7</td>
+<td>creates or re-saves the <code>pseudoco_identity</code> asset: Duo host and keys, <code>victim_username</code>, room</td>
+</tr>
+<tr>
+<td>L8</td>
+<td>smoke test: <code>get user &lt;victim&gt;</code> on a scratch container (read-only; never disables)</td>
+</tr>
+<tr>
+<td>L9</td>
+<td>seeds the Compromised Identity Response Plan, binds its containment task to PseudoCo Identity, verifies</td>
+</tr>
+</tbody>
+</table>
+<p><code>--out</code> writes a 0600 JSON file with the stack's HEC URL and tokens for the
+PseudoCo Assistant Lab 5 setup tool.</p>
+<h2 id="t-1-is-the-victims-evidence-in-the-stack">T-1: is the victim's evidence in the stack?</h2>
+<pre><code class="language-spl">`genai_cii_failed_checks` | search identity_user=&quot;&lt;victim&gt;&quot;
+| table _time, cii_check, cii_trust_level, cii_provenance
+</code></pre>
+<p>At least one row for MFA Flood, Impossible Travel or Duo Sign In Threat
+Detected; the query shows takeover checks only, like the rule. If CII never
+sent it:</p>
+<ol>
+<li>In CII <em>Check Results</em>, use the victim's <strong>Send notification</strong> for each
+   failing check (CII re-sends the real event).</li>
+<li>A <strong>labelled backfill</strong> from the CII API is planned, not built:
+   <code>lab5-setup</code> has no command for it yet (it is spike S1's last option).
+   Until it exists, a room whose webhook never arrived and whose
+   <em>Send notification</em> does not help has no Lab 5 finding. When it lands, it
+   writes into the same index, with <code>source=lab5-setup</code> and
+   <code>"backfill": true</code> in the event body. The CII API gives no failure time,
+   so each event carries the time it was written. The rule already accepts
+   that shape, and the finding says <code>cii_provenance = backfill (lab5-setup)</code>.</li>
+<li>Never synthetic events in a room stack. <code>"synthetic": true</code> is for test
+   stacks only, and the finding labels it <code>synthetic test event</code>.</li>
+</ol>
+<h2 id="lab-day">Lab day</h2>
+<ul>
+<li>The spray aimed at the victim raises <strong>two findings</strong>: the Lab 4
+  prompt-injection correlation and the Lab 5 rule
+  <em>GenAI Compromised Identity: <code>&lt;victim&gt;</code></em>. Work the Lab 5 one. ES's 24-hour
+  risk threshold (<em>Risk - 24 Hour Risk Threshold Exceeded - Rule</em>) may add a
+  third, depending on the stack's RBA rule and the Risk data model's lag. On
+  the ES 8.5.1 dry run (2026-11-06) it raised nothing, although the victim
+  had 180 risk in 24 hours, so do not promise it.</li>
+<li>Containment prompt for the ES agent (Guided Response 8.6, AI SOC analyst 8.7,
+  Triage and Response 8.8): <em>"Using PseudoCo Identity, disable user <code>&lt;victim&gt;</code>.
+  Reason: <code>&lt;investigation id&gt;</code> compromised identity"</em>. If it picks the MedAdvice
+  simulator, that app now fails with "managed by PseudoCo Identity".</li>
+<li>Verify: <em>PseudoCo Identity → get user</em> reads <code>disabled</code>, and the victim's
+  PseudoCo Assistant sessions show the revocation banner
+  (<code>identity_session_revoked</code>). <em>Unblock me</em> restores an attendee's app session
+  but leaves Duo disabled; the finding's evidence is unchanged.</li>
+<li>Dashboard: <em>AI Governance → Dashboards → Compromised Identity</em>.</li>
+</ul>
+<h2 id="teardown">Teardown</h2>
+<pre><code class="language-bash">python3 tools/show_postdeploy.py --stack https://&lt;stack&gt;.splunkcloud.com \
+    --soar-url https://&lt;tenant&gt;.soar.splunkcloud.com --lab5-teardown
+</code></pre>
+<p>It disables the rule, the persona input and the seed switch, and deletes the
+<code>pseudoco_identity</code> asset with its Duo secret. Then, by hand: delete the
+Security Cloud CII input (that unregisters the webhook) and confirm the target
+is gone in Identity Intelligence <strong>before</strong> the stack is destroyed; revoke the
+stack's CII API client; rotate the Identity Ops keys after the workshop.</p>
+<h2 id="what-the-ta-reads-from-pseudoco-assistant-4230">What the TA reads from PseudoCo Assistant 4.23.0</h2>
+<p>The identity fields are flat top-level keys. A nested <code>identity_risk</code> object
+(the pre-release draft shape) is still read, as a fallback only.</p>
+<table>
+<thead>
+<tr>
+<th>Event field</th>
+<th>TA field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>guardrail_ids=["cisco_identity_intelligence"]</code>, <code>policy_blocked</code></td>
+<td><code>gen_ai.guardrail.ids</code>, eventtype <code>gen_ai_identity_block</code></td>
+<td>excluded from the Lab 4 correlation</td>
+</tr>
+<tr>
+<td><code>identity_verified</code>, <code>identity_source</code></td>
+<td><code>gen_ai.identity.verified</code>, <code>.source</code></td>
+<td>signed-in turns only</td>
+</tr>
+<tr>
+<td><code>identity_check</code> (<code>ok</code> / <code>unavailable</code>)</td>
+<td><code>gen_ai.identity.check</code></td>
+<td><code>unavailable</code>: Duo or CII could not be asked, and the gate failed open</td>
+</tr>
+<tr>
+<td><code>identity_override=true</code></td>
+<td><code>gen_ai.identity.override</code></td>
+<td>the attendee pressed <em>Unblock me</em></td>
+</tr>
+<tr>
+<td><code>identity_risk</code> (<code>allow</code> / <code>block</code>)</td>
+<td><code>gen_ai.identity.risk.verdict</code></td>
+<td>the real verdict, also under an override</td>
+</tr>
+<tr>
+<td><code>identity_risk_reasons[]</code></td>
+<td><code>gen_ai.identity.risk.reasons</code></td>
+<td>the gate's reason codes (<code>trust_untrusted</code>, <code>mfa_flood</code>, ...)</td>
+</tr>
+<tr>
+<td><code>identity_duo_status</code>, <code>identity_trust_level</code></td>
+<td><code>gen_ai.identity.risk.duo_status</code>, <code>.trust_level</code></td>
+<td>present when the gate learned them</td>
+</tr>
+<tr>
+<td><code>identity_failing_checks[]</code></td>
+<td><code>gen_ai.identity.risk.failing_checks</code></td>
+<td>the CII checks the user is failing</td>
+</tr>
+<tr>
+<td>audit <code>identity_signin_success</code> / <code>_failure</code></td>
+<td>CIM Authentication: <code>action</code>, <code>user</code>, <code>src</code>, <code>dest</code> (HEC host), <code>authentication_service=duo</code></td>
+<td>eventtype <code>gen_ai_identity_authentication</code>, tag <code>authentication</code></td>
+</tr>
+<tr>
+<td>audit <code>identity_session_revoked</code>, <code>identity_unblocked</code>, <code>identity_reblocked</code></td>
+<td><code>gen_ai.audit.action</code></td>
+<td>eventtype <code>gen_ai_identity_session</code></td>
+</tr>
+</tbody>
+</table>
+</main>
+</body>
+</html>
