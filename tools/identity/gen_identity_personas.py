@@ -18,14 +18,19 @@ Row form: identity=<user>|<user>@<domain>, bunit=pseudoco, category
 lab5_trusted or lab5_victim. Participant accounts (l5-<workshop>-<nn>) are real
 attendee logins, never personas: they are rejected here.
 
-personas.yaml shape (only these keys are read):
+personas.yaml shape (only these keys are read; the file's other keys, such as
+baseline, hotp, takeover, name and home, belong to the app and are ignored):
 
-    domain: pseudocoassistant.com      # optional
+    email_domain: pseudocoassistant.com   # optional; `domain` is read as a fallback
     personas:
       - username: marcus.bell
-        role: trusted                  # trusted | victim | dry_run
-        first: Marcus                  # optional; derived from the username
-        last: Bell                     # optional
+        role: trusted                     # trusted | victim | spike
+        first: Marcus                     # optional; derived from the username
+        last: Bell                        # optional
+
+The roles are the app's own (deploy/lab5/lab5_personas.py ROLES). spike is the
+dry-run victim, used on a test stack only, so it is a lab5_victim row like a
+room victim.
 
 Usage:
     python3 tools/identity/gen_identity_personas.py --personas <personas.yaml>
@@ -49,7 +54,8 @@ APP_ROOT = os.path.dirname(os.path.dirname(HERE))
 CSV_PATH = os.path.join(APP_ROOT, 'lookups', 'pseudoco_identity_personas.csv')
 DEFAULT_DOMAIN = 'pseudocoassistant.com'
 FIELDS = ['identity', 'first', 'last', 'nick', 'email', 'bunit', 'category', 'watchlist', 'priority']
-CATEGORIES = {'trusted': 'lab5_trusted', 'victim': 'lab5_victim', 'dry_run': 'lab5_victim'}
+# Keyed on PseudoCo Assistant's persona roles (deploy/lab5/lab5_personas.py ROLES).
+CATEGORIES = {'trusted': 'lab5_trusted', 'victim': 'lab5_victim', 'spike': 'lab5_victim'}
 USERNAME_RE = re.compile(r'^[a-z][a-z0-9]*(\.[a-z0-9]+)+$')
 PARTICIPANT_RE = re.compile(r'^l5-', re.I)
 
@@ -58,7 +64,7 @@ def load_personas(path):
     import yaml  # PyYAML; dev-only tool, run on the Mac
     with io.open(path, encoding='utf-8') as handle:
         doc = yaml.safe_load(handle) or {}
-    domain = str(doc.get('domain') or DEFAULT_DOMAIN).strip().lower()
+    domain = str(doc.get('email_domain') or doc.get('domain') or DEFAULT_DOMAIN).strip().lower()
     rows = []
     for item in doc.get('personas') or []:
         username = str(item.get('username') or '').strip().lower()

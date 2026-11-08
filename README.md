@@ -1635,6 +1635,15 @@ the stack's RBA rule and the Risk data model's lag. On the ES 8.5.1 dry run of
   planned as spike S1's last option) or three findings on lab day: the ES
   24-hour risk-threshold finding depends on the stack's RBA rule and lag, and
   it did not fire on the ES 8.5.1 dry run.
+- FIXED: `tools/identity/gen_identity_personas.py` could not read the real
+  persona file. PseudoCo Assistant's `scripts/identity/personas.yaml` gives the
+  dry-run victim `role: spike` (the app's roles are `trusted`, `victim` and
+  `spike`) and names the domain `email_domain`. The generator accepted only
+  `dry_run` for that role and read `domain`. It now uses the app's roles
+  (`spike` -> `lab5_victim`, like a room victim) and reads `email_domain`, with
+  `domain` as a fallback. The committed CSV is unchanged and now matches the
+  real file (`--check`, 2026-11-07), not only the TA's fixture. To repeat
+  that check in `tools/identity/tests`, set `PSEUDOCO_PERSONAS` to the file.
 - ADDED: *Compromised Identity* dashboard (Dashboard Studio, dark) and a home
   dashboard (`TA-gen_ai_cim_home`, now the app's default view) with one card
   and a live count per dashboard in the menu and a five-number scoreboard.

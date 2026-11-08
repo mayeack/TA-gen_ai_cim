@@ -5,6 +5,10 @@ lookups/pseudoco_identity_personas.csv, its generator, and the input that
 registers it with ES Asset & Identity.
 
     python3 -m unittest discover -s tools/identity/tests -v
+
+Set PSEUDOCO_PERSONAS to the PseudoCo Assistant repo's
+scripts/identity/personas.yaml to also check the committed CSV against the real
+persona file (skipped otherwise; the TA repo does not carry that file).
 """
 
 import configparser
@@ -22,6 +26,10 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 CSV_PATH = os.path.join(REPO, 'lookups', 'pseudoco_identity_personas.csv')
 GEN = os.path.join(REPO, 'tools', 'identity', 'gen_identity_personas.py')
 FIXTURE = os.path.join(HERE, 'personas_fixture.yaml')
+REAL_PERSONAS = os.environ.get('PSEUDOCO_PERSONAS')
+
+sys.path.insert(0, os.path.dirname(GEN))
+import gen_identity_personas  # noqa: E402
 
 
 def rows():
@@ -63,9 +71,34 @@ class GeneratorTests(unittest.TestCase):
     def run_gen(self, *args):
         return subprocess.run([sys.executable, GEN] + list(args), capture_output=True, text=True)
 
+    def load(self, text):
+        with tempfile.NamedTemporaryFile('w', suffix='.yaml', delete=False) as handle:
+            handle.write(text)
+        self.addCleanup(os.unlink, handle.name)
+        return gen_identity_personas.load_personas(handle.name)
+
     def test_committed_csv_matches_the_fixture(self):
         out = self.run_gen('--personas', FIXTURE, '--check')
         self.assertEqual(out.returncode, 0, out.stderr)
+
+    @unittest.skipUnless(REAL_PERSONAS, 'set PSEUDOCO_PERSONAS to scripts/identity/personas.yaml')
+    def test_committed_csv_matches_the_real_persona_file(self):
+        out = self.run_gen('--personas', REAL_PERSONAS, '--check')
+        self.assertEqual(out.returncode, 0, out.stderr)
+
+    def test_roles_are_the_apps(self):
+        """The app's persona roles (deploy/lab5/lab5_personas.py ROLES); spike is the
+        dry-run victim, so it is a lab5_victim row. Any other role fails loudly."""
+        self.assertEqual(gen_identity_personas.CATEGORIES,
+                         {'trusted': 'lab5_trusted', 'victim': 'lab5_victim', 'spike': 'lab5_victim'})
+        with self.assertRaisesRegex(ValueError, r"nina\.osei: role must be one of \['spike', 'trusted', 'victim'\]"):
+            self.load('personas:\n  - {username: nina.osei, role: dry_run}\n')
+
+    def test_email_domain_is_read_and_domain_is_a_fallback(self):
+        personas = 'personas:\n  - {username: avery.kim, role: victim}\n'
+        self.assertEqual(self.load('email_domain: Example.TEST\n' + personas)[0]['domain'], 'example.test')
+        self.assertEqual(self.load('domain: legacy.test\n' + personas)[0]['domain'], 'legacy.test')
+        self.assertEqual(self.load(personas)[0]['domain'], 'pseudocoassistant.com')
 
     def test_participant_accounts_are_rejected(self):
         with tempfile.NamedTemporaryFile('w', suffix='.yaml', delete=False) as handle:
