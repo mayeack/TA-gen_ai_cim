@@ -2,8 +2,10 @@
 """
 Offline checks for the AI Trust Lab 5 configuration in TA-gen_ai_cim 1.8.0:
 the compromised-identity rule (TA-1), the prompt-injection correlation's
-identity-gate exclusion (TA-2), the normalization (TA-7), the plan (TA-3) and
-the navigation (TA-8). Live behaviour is covered by test_lab5_spl.py.
+identity-gate exclusion (TA-2), the normalization (TA-7), the plan (TA-3),
+the navigation (TA-8) and the gaps the Lab 5 dry run of 2026-11-06 found
+(H1 flat identity fields, H2 version floor, H4 takeover checks, M1 check IDs).
+Live behaviour is covered by test_lab5_spl.py.
 
     python3 -m unittest discover -s tools/tests -v
 """
@@ -12,12 +14,30 @@ import io
 import json
 import os
 import re
+import sys
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 LAB5_RULE = 'AI Governance - Compromised Identity AI Attack Correlation - Rule'
 LAB4_RULE = 'AI Governance - Prompt Injection Attack Correlation - Rule'
+# CII's check IDs (listCheckMetadata, 2026-11-06), and the three the Lab 5
+# webhook is assigned to: the only ones that count as takeover evidence.
+CII_CHECK_CATALOGUE = ('mfa-flood', 'impossible-travel', 'duo-sign-in-threat-detected', 'is-bypass-code-used',
+                       'is-weak-mfa-used', 'user-account-locked-out')
+TAKEOVER_CHECKS = ('mfa-flood', 'impossible-travel', 'duo-sign-in-threat-detected')
+# Per gen_ai.identity.risk.* EVAL, the names it must read in this order: the
+# flat fields PseudoCo Assistant 4.23.0 writes, then the nested pre-release
+# draft names as a fallback.
+IDENTITY_FLAT_FIRST = {
+    'EVAL-gen_ai.identity.risk.verdict': ('coalesce(identity_risk,', "'identity_risk.verdict'"),
+    'EVAL-gen_ai.identity.risk.reasons': ("'identity_risk_reasons{}'", 'isnotnull(identity_risk_reasons)',
+                                          "'identity_risk.reasons{}'"),
+    'EVAL-gen_ai.identity.risk.failing_checks': ("'identity_failing_checks{}'", 'isnotnull(identity_failing_checks)',
+                                                 "'identity_risk.failing_checks{}'"),
+    'EVAL-gen_ai.identity.risk.trust_level': ('coalesce(identity_trust_level,', "'identity_risk.trust_level'"),
+    'EVAL-gen_ai.identity.risk.duo_status': ('coalesce(identity_duo_status,', "'identity_risk.duo_status'"),
+}
 
 
 def read_conf(name):
@@ -100,11 +120,35 @@ class MacroTests(unittest.TestCase):
 
     def test_lab5_macros_exist_and_declare_iseval(self):
         for name in ('genai_cii_index', 'genai_cii_events', 'genai_cii_extract', 'genai_cii_failed_checks',
-                     'genai_cii_failed_check_rows', 'genai_identity_join_key(1)', 'genai_identity_ai_events',
-                     'genai_identity_participant_filter', 'genai_identity_ai_attack_join',
-                     'genai_identity_ai_attack_filter'):
+                     'genai_cii_failed_check_rows', 'genai_cii_takeover_checks', 'genai_identity_join_key(1)',
+                     'genai_identity_ai_events', 'genai_identity_participant_filter',
+                     'genai_identity_ai_attack_join', 'genai_identity_ai_attack_filter'):
             self.assertIn(name, self.macros)
             self.assertEqual(self.macros[name]['iseval'], '0', name)
+
+    def test_only_takeover_checks_count(self):
+        """H4: a bypass-code or weak-MFA failure, which every persona gets after a
+        handout code, never reaches the join; only the three takeover checks do."""
+        allow = self.macros['genai_cii_takeover_checks']['definition']
+        m = re.match(r'^search cii_check_id IN \((.*)\)$', allow)
+        self.assertIsNotNone(m, allow)
+        self.assertEqual(sorted(re.findall(r'"([^"]+)"', m.group(1))), sorted(TAKEOVER_CHECKS))
+        rows = [line.strip() for line in self.macros['genai_cii_failed_check_rows']['definition'].split('\n')]
+        self.assertEqual(rows[1:], ['| `genai_cii_takeover_checks`',
+                                    '| eval identity_user=`genai_identity_join_key(cii_login)`'])
+
+    def test_rule_and_dashboard_read_cii_through_the_filter(self):
+        """The rule and the dashboard reach CII only through genai_cii_failed_checks
+        (which applies genai_cii_takeover_checks), never the raw index or events."""
+        self.assertIn('`genai_cii_failed_check_rows`', self.macros['genai_cii_failed_checks']['definition'])
+        rule = read_conf('savedsearches.conf')[LAB5_RULE]['search']
+        with io.open(os.path.join(REPO, 'default', 'data', 'ui', 'views', 'compromised_identity.xml'),
+                     encoding='utf-8') as handle:
+            dashboard = handle.read()
+        for name, text in (('rule', rule), ('dashboard', dashboard)):
+            self.assertIn('`genai_cii_failed_checks`', text, name)
+            self.assertNotIn('genai_cii_events', text, name)
+            self.assertNotIn('genai_cii_index', text, name)
 
     def test_participants_never_join(self):
         self.assertEqual(self.macros['genai_identity_participant_filter']['definition'],
@@ -146,7 +190,15 @@ class NormalizationTests(unittest.TestCase):
         for key in ('EVAL-gen_ai.identity.verified', 'EVAL-gen_ai.identity.override',
                     'FIELDALIAS-genai_identity_check', 'EVAL-gen_ai.identity.risk.failing_checks'):
             self.assertIn(key, props)
-        self.assertIn("'identity_risk.failing_checks{}'", props['EVAL-gen_ai.identity.risk.failing_checks'])
+
+    def test_identity_risk_reads_the_flat_fields_first(self):
+        """H1: 4.23.0 writes identity_duo_status, identity_failing_checks, ... as flat
+        fields; the nested identity_risk.* names are read only after them."""
+        props = read_conf('props.conf')['gen_ai:json']
+        for key, names in IDENTITY_FLAT_FIRST.items():
+            positions = [props[key].find(name) for name in names]
+            self.assertNotIn(-1, positions, (key, names))
+            self.assertEqual(positions, sorted(positions), key)
 
     def test_eventtypes_and_tags(self):
         et = read_conf('eventtypes.conf')
@@ -154,6 +206,39 @@ class NormalizationTests(unittest.TestCase):
         self.assertIn('identity_signin_success', et['gen_ai_identity_authentication']['search'])
         self.assertEqual(tags['eventtype=gen_ai_identity_authentication']['authentication'], 'enabled')
         self.assertIn('cisco_identity_intelligence', et['gen_ai_identity_block']['search'])
+
+
+class DryRunRegressionTests(unittest.TestCase):
+    """Gaps the Lab 5 dry run of 2026-11-06 found in the docs and samples."""
+
+    def test_version_floor_is_4_23(self):
+        """H2: the Identity Risk Gate ships in PseudoCo Assistant 4.23.0; 4.22.0 has none.
+        The README's version history may still say 4.22.0, so only its Lab 5 section is read."""
+        texts = {}
+        for path in ('tools/lab5-identity-runbook.md', 'tools/lab5-identity-runbook.html', 'README.md',
+                     'default/props.conf', 'default/eventtypes.conf', 'default/savedsearches.conf'):
+            with io.open(os.path.join(REPO, *path.split('/')), encoding='utf-8') as handle:
+                texts[path] = handle.read()
+        readme = texts['README.md']
+        texts['README.md'] = readme[readme.index('## AI Trust Lab 5'):readme.index('## Version History')]
+        for path, text in texts.items():
+            self.assertNotRegex(text, r'Assistant(?:\s|#)+4\.22', path)
+
+    def test_scratch_samples_use_the_app_shape_and_real_check_ids(self):
+        """H1, M1: the scratch end-to-end samples carry the identity fields the way
+        4.23.0 writes them (flat, never an identity_risk object) and only CII's
+        real check IDs, including is-bypass-code-used on a trusted persona."""
+        sys.path.insert(0, HERE)
+        import lab5_scratch_e2e
+        checks, flat = {}, 0
+        for _sourcetype, _offset, ev in lab5_scratch_e2e.events():
+            self.assertNotIsInstance(ev.get('identity_risk'), dict, ev)
+            flat += 'identity_duo_status' in ev
+            if 'detail' in ev:
+                checks.setdefault(ev['detail']['checkId'], set()).add(ev['detail']['login'].split('@')[0])
+        self.assertGreater(flat, 0)
+        self.assertLessEqual(set(checks), set(CII_CHECK_CATALOGUE))
+        self.assertIn('marcus.bell', checks['is-bypass-code-used'])
 
 
 class PlanAndNavTests(unittest.TestCase):

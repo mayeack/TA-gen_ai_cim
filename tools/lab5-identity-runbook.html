@@ -71,7 +71,7 @@ input[type=checkbox] { margin-right: .5rem; }
 <h1 id="lab-5-runbook-cisco-identity-intelligence-on-a-room-stack-ta-gen_ai_cim-180">Lab 5 runbook — Cisco Identity Intelligence on a room stack (TA-gen_ai_cim 1.8.0)</h1>
 <p>AI Trust Lab 5 ("Verify: Cisco Identity Intelligence") on one Splunk Show room
 stack: Cisco Identity Intelligence (CII) reports the room's victim persona as
-taken over, PseudoCo Assistant 4.22.0+ refuses the victim's signed-in turns,
+taken over, PseudoCo Assistant 4.23.0+ refuses the victim's signed-in turns,
 Splunk ES joins the CII failed checks with Cisco AI Defense blocks, and SOAR
 disables the victim in Duo. Everything Lab 5 adds to the TA ships <strong>off</strong>; this
 runbook turns it on for one stack and off again.</p>
@@ -86,7 +86,11 @@ room stack. Never on a customer stack.</p>
    if it does not exist yet). In Identity Intelligence, assign the webhook to
    <strong>MFA Flood</strong>, <strong>Impossible Travel</strong> and <strong>Duo Sign In Threat Detected</strong>,
    and run its connectivity test: a <code>WebhookTest</code> event must arrive (the TA
-   drops it from the detection on purpose).</li>
+   drops it from the detection on purpose). Those three are the only checks
+   the TA counts (<code>genai_cii_takeover_checks</code>, by check ID: <code>mfa-flood</code>,
+   <code>impossible-travel</code>, <code>duo-sign-in-threat-detected</code>). A bypass-code or
+   weak-MFA failure, which every persona gets after a handout code, never
+   raises the finding.</li>
 <li>This must exist <strong>before the T-2 takeover</strong>: CII webhooks announce only
    newly failing users.</li>
 </ol>
@@ -117,7 +121,7 @@ characters are printed.</p>
 </tr>
 <tr>
 <td>L2</td>
-<td>HEC token <code>cisco-identity-intelligence</code> for the setup tool's labelled backfill; written to <code>--out</code>, never printed</td>
+<td>HEC token <code>cisco-identity-intelligence</code> for a labelled backfill (planned, see T-1); written to <code>--out</code>, never printed</td>
 </tr>
 <tr>
 <td>L3</td>
@@ -155,25 +159,35 @@ PseudoCo Assistant Lab 5 setup tool.</p>
 <pre><code class="language-spl">`genai_cii_failed_checks` | search identity_user=&quot;&lt;victim&gt;&quot;
 | table _time, cii_check, cii_trust_level, cii_provenance
 </code></pre>
-<p>At least one row for MFA Flood or Impossible Travel. If CII never sent it:</p>
+<p>At least one row for MFA Flood, Impossible Travel or Duo Sign In Threat
+Detected; the query shows takeover checks only, like the rule. If CII never
+sent it:</p>
 <ol>
 <li>In CII <em>Check Results</em>, use the victim's <strong>Send notification</strong> for each
    failing check (CII re-sends the real event).</li>
-<li>Otherwise the Lab 5 setup tool writes a <strong>labelled backfill</strong> from the CII
-   API into the same index, with <code>source=lab5-setup</code> and <code>"backfill": true</code> in
-   the event body. The rule accepts it and the finding says
-   <code>cii_provenance = backfill (lab5-setup)</code>.</li>
+<li>A <strong>labelled backfill</strong> from the CII API is planned, not built:
+   <code>lab5-setup</code> has no command for it yet (it is spike S1's last option).
+   Until it exists, a room whose webhook never arrived and whose
+   <em>Send notification</em> does not help has no Lab 5 finding. When it lands, it
+   writes into the same index, with <code>source=lab5-setup</code> and
+   <code>"backfill": true</code> in the event body. The CII API gives no failure time,
+   so each event carries the time it was written. The rule already accepts
+   that shape, and the finding says <code>cii_provenance = backfill (lab5-setup)</code>.</li>
 <li>Never synthetic events in a room stack. <code>"synthetic": true</code> is for test
    stacks only, and the finding labels it <code>synthetic test event</code>.</li>
 </ol>
 <h2 id="lab-day">Lab day</h2>
 <ul>
-<li>The spray aimed at the victim raises <strong>three findings</strong>: the Lab 4
-  prompt-injection correlation, the ES 24-hour risk threshold and the Lab 5
-  rule <em>GenAI Compromised Identity: <victim></em>. Work the Lab 5 one.</li>
+<li>The spray aimed at the victim raises <strong>two findings</strong>: the Lab 4
+  prompt-injection correlation and the Lab 5 rule
+  <em>GenAI Compromised Identity: <code>&lt;victim&gt;</code></em>. Work the Lab 5 one. ES's 24-hour
+  risk threshold (<em>Risk - 24 Hour Risk Threshold Exceeded - Rule</em>) may add a
+  third, depending on the stack's RBA rule and the Risk data model's lag. On
+  the ES 8.5.1 dry run (2026-11-06) it raised nothing, although the victim
+  had 180 risk in 24 hours, so do not promise it.</li>
 <li>Containment prompt for the ES agent (Guided Response 8.6, AI SOC analyst 8.7,
-  Triage and Response 8.8): <em>"Using PseudoCo Identity, disable user <victim>.
-  Reason: <investigation id> compromised identity"</em>. If it picks the MedAdvice
+  Triage and Response 8.8): <em>"Using PseudoCo Identity, disable user <code>&lt;victim&gt;</code>.
+  Reason: <code>&lt;investigation id&gt;</code> compromised identity"</em>. If it picks the MedAdvice
   simulator, that app now fails with "managed by PseudoCo Identity".</li>
 <li>Verify: <em>PseudoCo Identity → get user</em> reads <code>disabled</code>, and the victim's
   PseudoCo Assistant sessions show the revocation banner
@@ -190,7 +204,9 @@ PseudoCo Assistant Lab 5 setup tool.</p>
 Security Cloud CII input (that unregisters the webhook) and confirm the target
 is gone in Identity Intelligence <strong>before</strong> the stack is destroyed; revoke the
 stack's CII API client; rotate the Identity Ops keys after the workshop.</p>
-<h2 id="what-the-ta-reads-from-pseudoco-assistant-4220">What the TA reads from PseudoCo Assistant 4.22.0</h2>
+<h2 id="what-the-ta-reads-from-pseudoco-assistant-4230">What the TA reads from PseudoCo Assistant 4.23.0</h2>
+<p>The identity fields are flat top-level keys. A nested <code>identity_risk</code> object
+(the pre-release draft shape) is still read, as a fallback only.</p>
 <table>
 <thead>
 <tr>
@@ -211,9 +227,9 @@ stack's CII API client; rotate the Identity Ops keys after the workshop.</p>
 <td>signed-in turns only</td>
 </tr>
 <tr>
-<td><code>identity_check="unavailable"</code></td>
+<td><code>identity_check</code> (<code>ok</code> / <code>unavailable</code>)</td>
 <td><code>gen_ai.identity.check</code></td>
-<td>the gate failed open</td>
+<td><code>unavailable</code>: Duo or CII could not be asked, and the gate failed open</td>
 </tr>
 <tr>
 <td><code>identity_override=true</code></td>
@@ -221,9 +237,24 @@ stack's CII API client; rotate the Identity Ops keys after the workshop.</p>
 <td>the attendee pressed <em>Unblock me</em></td>
 </tr>
 <tr>
-<td><code>identity_risk</code> <code>{verdict, reasons[], duo_status, trust_level, failing_checks[]}</code></td>
-<td><code>gen_ai.identity.risk.*</code></td>
-<td>a scalar is read as the verdict, a bare array as the reasons</td>
+<td><code>identity_risk</code> (<code>allow</code> / <code>block</code>)</td>
+<td><code>gen_ai.identity.risk.verdict</code></td>
+<td>the real verdict, also under an override</td>
+</tr>
+<tr>
+<td><code>identity_risk_reasons[]</code></td>
+<td><code>gen_ai.identity.risk.reasons</code></td>
+<td>the gate's reason codes (<code>trust_untrusted</code>, <code>mfa_flood</code>, ...)</td>
+</tr>
+<tr>
+<td><code>identity_duo_status</code>, <code>identity_trust_level</code></td>
+<td><code>gen_ai.identity.risk.duo_status</code>, <code>.trust_level</code></td>
+<td>present when the gate learned them</td>
+</tr>
+<tr>
+<td><code>identity_failing_checks[]</code></td>
+<td><code>gen_ai.identity.risk.failing_checks</code></td>
+<td>the CII checks the user is failing</td>
 </tr>
 <tr>
 <td>audit <code>identity_signin_success</code> / <code>_failure</code></td>

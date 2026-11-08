@@ -1477,7 +1477,7 @@ findings and the risk scoring — works on ES 8.x without the agent.
 ## AI Trust Lab 5: compromised identity (v1.8.0)
 
 Lab 5 ("Verify: Cisco Identity Intelligence") shows Cisco Identity
-Intelligence (CII) catching a Duo account takeover, PseudoCo Assistant 4.22.0+
+Intelligence (CII) catching a Duo account takeover, PseudoCo Assistant 4.23.0+
 refusing the compromised identity before the model runs (the Identity Risk
 Gate), Splunk joining CII failed checks with Cisco AI Defense blocks for the
 same user, and SOAR disabling the account in Duo. Everything here is **off on a
@@ -1489,8 +1489,9 @@ for one room stack and `--lab5-teardown` turns it off again
 
 | Piece | What it is |
 |---|---|
-| *AI Governance - Compromised Identity AI Attack Correlation - Rule* | CII failed checks (7 d) joined with AI Defense blocks (24 h) per identity; finding "GenAI Compromised Identity: $user$" |
+| *AI Governance - Compromised Identity AI Attack Correlation - Rule* | CII takeover-check failures (7 d) joined with AI Defense blocks (24 h) per identity; finding "GenAI Compromised Identity: $user$" |
 | `genai_cii_*` macros | read the CII webhook events (index `cisco_identity_intelligence`) with `spath`; field paths provisional until the S6 capture |
+| `genai_cii_takeover_checks` | the only checks that count: `mfa-flood`, `impossible-travel`, `duo-sign-in-threat-detected` (CII check IDs); overridable in `local/` |
 | `cii_provenance` | `CII webhook`, `backfill (lab5-setup)` or `synthetic test event` - a room stack never holds synthetic events |
 | Compromised Identity Response Plan | seeded when `seed_identity_response_plan = true`; containment = PseudoCo Identity -> disable user |
 | PseudoCo Identity (SOAR) | real Duo Admin API containment of the room's configured victim only; `simulated: false`; no undo |
@@ -1498,21 +1499,24 @@ for one room stack and `--lab5-teardown` turns it off again
 | `pseudoco_identity_personas` | ES identity rows for the persona cast; input ships disabled |
 | Compromised Identity dashboard | sign-ins, gate verdicts, CII failed checks, AI Defense blocks, the join, session revocations |
 
-Three findings per victim are expected: the spray at the victim also raises the
-prompt-injection correlation, and the ES 24-hour risk threshold adds a third.
-Work the Lab 5 one.
+Two findings per victim are expected: the spray at the victim also raises the
+prompt-injection correlation. Work the Lab 5 one. ES's 24-hour risk threshold
+(*Risk - 24 Hour Risk Threshold Exceeded - Rule*) may add a third, depending on
+the stack's RBA rule and the Risk data model's lag. On the ES 8.5.1 dry run of
+2026-11-06 it raised nothing, although the victim had 180 risk in 24 hours.
 
 ---
 
 ## Version History
 
-### v1.8.0 (unreleased - tag after real PseudoCo Assistant 4.22.0 events fill the identity fields)
+### v1.8.0 (unreleased - tag after real PseudoCo Assistant 4.23.0 events fill the identity fields)
 
 **AI Trust Lab 5: "Verify: Cisco Identity Intelligence"**
 
 - ADDED: *AI Governance - Compromised Identity AI Attack Correlation - Rule*
   (ships **disabled**). Joins Cisco Identity Intelligence (CII) `FAILED_CHECK`
-  events (last 7 days) with Cisco AI Defense blocks (last 24 hours) for the same
+  events for a takeover check (MFA Flood, Impossible Travel, Duo Sign In Threat
+  Detected; last 7 days) with Cisco AI Defense blocks (last 24 hours) for the same
   identity, keyed on the lowercased local part of the login (CII reports the
   Duo email, PseudoCo Assistant the short username). Fires while the newest AI
   Defense block is under 5 minutes old and throttles each user for 600 s - the
@@ -1521,12 +1525,13 @@ Work the Lab 5 one.
   annotations ATT&CK T1078/T1621 and ATLAS AML.T0012/AML.T0051, next steps that
   name the PseudoCo Identity connector. Identity Risk Gate blocks and "Unblock
   me" overrides are reported as context. CII evidence may be the webhook or a
-  labelled backfill from the Lab 5 setup tool (`backfill=true`,
-  `source=lab5-setup`); the finding names it in `cii_provenance`. Lab 5
+  labelled backfill re-created from the CII API (`backfill=true`,
+  `source=lab5-setup`; the Lab 5 setup tool command that writes it is planned,
+  not built); the finding names it in `cii_provenance`. Lab 5
   participant accounts (`l5-*`) never raise it.
 - ADDED: macros `genai_cii_index`, `genai_cii_events`, `genai_cii_extract`,
   `genai_cii_failed_checks`, `genai_cii_failed_check_rows`,
-  `genai_identity_join_key(1)`, `genai_identity_ai_events`,
+  `genai_cii_takeover_checks`, `genai_identity_join_key(1)`, `genai_identity_ai_events`,
   `genai_identity_participant_filter`, `genai_identity_ai_attack_join` and the
   tuning hook `genai_identity_ai_attack_filter`. The CII field paths follow
   CII's published webhook payload and are **provisional** until the Lab 5 spike
@@ -1575,7 +1580,7 @@ Work the Lab 5 one.
   PseudoCo Assistant persona file by `tools/identity/gen_identity_personas.py`.
   The `[identity_manager://pseudoco_identity_personas]` input ships
   **disabled**; `show_postdeploy.py --lab5` enables it per room stack.
-- ADDED: normalization for PseudoCo Assistant 4.22.0 identity events on
+- ADDED: normalization for PseudoCo Assistant 4.23.0 identity events on
   `gen_ai:json`: `gen_ai.audit.action` / `gen_ai.audit.actor` for audit records
   that arrive on the canonical sourcetype (gated on `audit_id`; until now only
   `demobot:audit` had them, so `gen_ai_session_audit` missed every Show box);
@@ -1583,10 +1588,53 @@ Work the Lab 5 one.
   success/failure, `authentication_service=duo`, `dest` = the instance's HEC
   host) through the new eventtype `gen_ai_identity_authentication`, tagged
   `authentication`; `gen_ai.identity.verified`, `.source`, `.check`
-  (`unavailable` when the gate fails open), `.override` (the attendee pressed
-  "Unblock me") and `gen_ai.identity.risk.*` (verdict, reasons,
-  failing_checks, trust_level, duo_status; braced arrays); eventtypes
+  (`unavailable` when Duo or CII could not be asked and the gate failed open),
+  `.override` (the attendee pressed "Unblock me") and `gen_ai.identity.risk.*`
+  from the app's flat fields: `.verdict` from `identity_risk`, `.reasons` from
+  `identity_risk_reasons`, `.duo_status` from `identity_duo_status`,
+  `.trust_level` from `identity_trust_level` and `.failing_checks` from
+  `identity_failing_checks` (braced arrays); eventtypes
   `gen_ai_identity_session` and `gen_ai_identity_block`.
+- FIXED (Lab 5 dry run, 2026-11-06): `gen_ai.identity.risk.duo_status`,
+  `.trust_level`, `.reasons` and `.failing_checks` were empty on every real
+  event, and so were the Compromised Identity dashboard's gate-verdict columns.
+  The TA read them from a nested `identity_risk` object
+  (`identity_risk.duo_status`, `identity_risk.failing_checks{}`, ...), but
+  PseudoCo Assistant 4.23.0 writes flat fields (`identity_risk` is the verdict
+  string). The scratch-index test passed only because its samples used the
+  nested shape. The flat names are now read first and the nested object only
+  as a fallback; the scratch samples and the SPL fixtures
+  (`tools/tests/fixtures/lab5_spl.json`) use the shape the app writes,
+  including the identity fields of a real fail-open turn and the shape of a
+  real revocation record from the dev copy. `test_lab5_spl.py` now runs the
+  TA's own props.conf EVAL text on those rows (`<<props:KEY>>` tokens).
+  Verified on the Mac's Splunk 10.4.3 after a props reload: both identity
+  turns the dev copy sent (`host=l5-dev`) read
+  `gen_ai.identity.risk.duo_status=active`, `.verdict`, `.check` and
+  `.override` (2 of 2 each), and the `identity_session_revoked`
+  record maps to `gen_ai_identity_session` with `dest=l5-dev`. `.trust_level`,
+  `.reasons` and `.failing_checks` had no source values on those turns (CII
+  could not be asked), so they still wait on a CII-answered turn (R-CONF-003).
+- FIXED: the Lab 5 rule counted every CII `FAILED_CHECK`. A backfill or a
+  *Send notification* re-send can carry *A Bypass Code Was Used To Successfully
+  Sign In* (`is-bypass-code-used`) or *Weak MFA Was Used To Successfully Sign
+  In* (`is-weak-mfa-used`), which every persona fails after signing in with a
+  handout bypass code, so a trusted persona that tripped AI Defense would have
+  raised "GenAI Compromised Identity". The new macro
+  `genai_cii_takeover_checks` keeps only `mfa-flood`, `impossible-travel` and
+  `duo-sign-in-threat-detected` (CII check IDs, case-insensitive; override it
+  in `local/`). `genai_cii_failed_check_rows` applies it, so the rule, the
+  dashboard and the runbook's T-1 query all see takeover checks only.
+- FIXED: the scratch samples used the check ID `bypass-code-used`. CII's ID is
+  `is-bypass-code-used` (CII `listCheckMetadata`, 2026-11-06, which also
+  confirms `mfa-flood`, `impossible-travel` and `duo-sign-in-threat-detected`).
+- CHANGED: the docs and conf comments said PseudoCo Assistant 4.22.0+. The
+  Identity Risk Gate ships in 4.23.0; 4.22.0 has no gate.
+- CHANGED: `tools/lab5-identity-runbook.md` no longer promises a labelled
+  backfill from the Lab 5 setup tool (`lab5-setup` has no such command; it is
+  planned as spike S1's last option) or three findings on lab day: the ES
+  24-hour risk-threshold finding depends on the stack's RBA rule and lag, and
+  it did not fire on the ES 8.5.1 dry run.
 - ADDED: *Compromised Identity* dashboard (Dashboard Studio, dark) and a home
   dashboard (`TA-gen_ai_cim_home`, now the app's default view) with one card
   and a live count per dashboard in the menu and a five-number scoreboard.

@@ -271,6 +271,7 @@
         "viz_cii": {
             "type": "splunk.table",
             "title": "Cisco Identity Intelligence failed checks",
+            "description": "Takeover checks only (genai_cii_takeover_checks): MFA Flood, Impossible Travel, Duo Sign In Threat Detected",
             "dataSources": {
                 "primary": "ds_cii"
             },
