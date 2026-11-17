@@ -17,13 +17,15 @@ room stack. Never on a customer stack.
    Application*, connection method **Webhook**, index
    `cisco_identity_intelligence` (step L1 below creates it; run `--lab5` first
    if it does not exist yet). In Identity Intelligence, assign the webhook to
-   **MFA Flood**, **Impossible Travel** and **Duo Sign In Threat Detected**,
+   **MFA Flood** and **Impossible Travel**,
    and run its connectivity test: a `WebhookTest` event must arrive (the TA
-   drops it from the detection on purpose). Those three are the only checks
-   the TA counts (`genai_cii_takeover_checks`, by check ID: `mfa-flood`,
-   `impossible-travel`, `duo-sign-in-threat-detected`). A bypass-code or
-   weak-MFA failure, which every persona gets after a handout code, never
-   raises the finding.
+   drops it from the detection on purpose). Those two are the only checks
+   the TA counts (`genai_cii_takeover_check_ids`, by check ID: `mfa-flood`,
+   `impossible-travel`), the same two PseudoCo Assistant's Identity Risk Gate
+   refuses. A bypass-code or weak-MFA failure, which every persona gets after
+   a handout code, never raises the finding. The webhook is optional since
+   2026-11-16: the rule also reads the failing checks PseudoCo Assistant
+   records on every signed-in turn (`genai_cii_gate_failed_check_rows`).
 3. This must exist **before the T-2 takeover**: CII webhooks announce only
    newly failing users.
 
