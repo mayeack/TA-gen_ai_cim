@@ -1,6 +1,6 @@
 <dashboard isVisible="false" version="1.1" theme="light" script="config_config.js" stylesheet="config_config.css">
   <label>Configuration</label>
-  <description>Configure your ServiceNow credentials, GenAI summary, and detection settings</description>
+  <description>Configure your ServiceNow and Cisco Duo credentials, GenAI summary, and detection settings</description>
 
   <row>
     <panel>
@@ -9,6 +9,7 @@
           <!-- Tab Navigation -->
           <div class="config-tabs">
             <button class="config-tab active" data-tab="accounts">ServiceNow Settings</button>
+            <button class="config-tab" data-tab="duo">Cisco Duo (Admin API)</button>
             <button class="config-tab" data-tab="genai">GenAI Summary</button>
             <button class="config-tab" data-tab="detection">ML Detection Settings</button>
           </div>
@@ -37,6 +38,8 @@
                 </tr>
               </tbody>
             </table>
+            <div class="help-text" id="snow-selection-note">The ServiceNow alert actions and | aicase use the account marked "in use": the first by name whose URL is a *.service-now.com or *.servicenow.com host.</div>
+            <div class="help-text" id="other-accounts-note" style="display:none;"></div>
 
             <!-- AI Asset Discovery Settings (standalone section) -->
             <div class="asset-discovery-settings">
@@ -102,6 +105,38 @@
                 <span class="save-status" id="asset-discovery-save-status"></span>
               </div>
             </div>
+          </div>
+
+          <!-- Cisco Duo (Admin API) Tab Content -->
+          <div class="config-tab-content" id="tab-duo">
+            <div class="settings-section">
+              <h3>Cisco Duo Admin API accounts</h3>
+              <p class="section-description">An account here is what a Duo data input (ta_gen_ai_cim_duo, setting account = the account name) signs its Admin API requests with. Create a dedicated Admin API application in the Duo Admin Panel with only "Grant read log" and "Grant resource - Read", and copy its API hostname, integration key and secret key. The secret key is stored in Splunk's credential store (storage/passwords) and is never shown again. This form saves through the add-on's account REST handler.</p>
+            </div>
+            <div class="config-header">
+              <div class="item-count"><span id="duo-account-count">0</span> Item</div>
+              <div class="config-actions">
+                <input type="text" class="search-input" id="duo-account-search" placeholder="Search..." />
+                <button class="btn btn-primary" id="btn-add-duo-account">Add</button>
+              </div>
+            </div>
+
+            <table class="config-table" id="duo-accounts-table">
+              <thead>
+                <tr>
+                  <th>Account Name</th>
+                  <th>API Hostname</th>
+                  <th>Integration Key</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="duo-accounts-tbody">
+                <tr class="no-records">
+                  <td colspan="4">No records found</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="form-error" id="duo-page-error"></div>
           </div>
 
           <!-- GenAI Summary Tab Content -->
@@ -281,6 +316,50 @@
             <div class="modal-footer">
               <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
               <button class="btn btn-primary" id="btn-save">Add</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Add/Edit Cisco Duo Account Modal -->
+        <div class="modal-overlay" id="duo-account-modal">
+          <div class="modal-dialog">
+            <div class="modal-header">
+              <h3 id="duo-modal-title">Add Cisco Duo Account</h3>
+              <button class="modal-close" id="duo-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+              <form id="duo-account-form" autocomplete="off">
+                <input type="hidden" id="duo-edit-account-name" />
+
+                <div class="form-group">
+                  <label><span class="required">*</span>Account Name</label>
+                  <input type="text" id="duo-account-name" placeholder="duo" autocomplete="off" />
+                  <div class="help-text">Letters, digits, "_" and "-". A Duo input names this account in its account setting.</div>
+                </div>
+
+                <div class="form-group">
+                  <label><span class="required">*</span>API Hostname</label>
+                  <input type="text" id="duo-api-hostname" placeholder="api-XXXXXXXX.duosecurity.com" autocomplete="off" />
+                  <div class="help-text">From the Admin API application in the Duo Admin Panel, for example api-XXXXXXXX.duosecurity.com or api-XXXXXXXX.duofederal.com. https only.</div>
+                </div>
+
+                <div class="form-group">
+                  <label><span class="required">*</span>Integration Key</label>
+                  <input type="text" id="duo-integration-key" placeholder="DIXXXXXXXXXXXXXXXXXX" autocomplete="off" />
+                </div>
+
+                <div class="form-group">
+                  <label><span class="required" id="duo-secret-required">*</span>Secret Key</label>
+                  <input type="password" id="duo-secret-key" placeholder="Enter the secret key" autocomplete="new-password" />
+                  <div class="help-text" id="duo-secret-help">Stored in Splunk's credential store; it is never displayed again.</div>
+                </div>
+
+                <div class="form-error" id="duo-form-error"></div>
+              </form>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" id="btn-duo-cancel">Cancel</button>
+              <button class="btn btn-primary" id="btn-duo-save">Add</button>
             </div>
           </div>
         </div>

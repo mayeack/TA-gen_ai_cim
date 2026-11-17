@@ -32,7 +32,7 @@ import pseudoco_identity_connector as conn  # noqa: E402
 import pseudoco_identity_duo as duo  # noqa: E402
 import genai_es_seed as seed  # noqa: E402
 
-HOST = 'api-9ddddfdb.duosecurity.com'
+HOST = 'api-00000000.duosecurity.com'
 IKEY = 'DIXXXXXXXXXXXXXXXXXX'
 SKEY = 'test-secret-key-0123456789abcdefghijklmnopq'
 DATE = 'Thu, 05 Nov 2026 18:00:00 -0000'

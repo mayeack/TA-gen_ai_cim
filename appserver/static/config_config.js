@@ -1,6 +1,17 @@
 /**
- * ServiceNow Configuration Page JavaScript
- * Handles account management using Splunk's built-in conf REST API
+ * Configuration Page JavaScript
+ *
+ * Accounts live in ta_gen_ai_cim_account.conf, one stanza each. The page loads
+ * every stanza once and sorts them by kind with the "account-rules" block below
+ * (the same rules bin/sync_snow_asset.py uses to pick the ServiceNow account):
+ *   - ServiceNow accounts: the ServiceNow Settings tab, saved through the conf
+ *     and storage/passwords REST endpoints as before;
+ *   - Cisco Duo Admin API accounts (auth_type duo_hmac): the Cisco Duo tab,
+ *     saved ONLY through the account REST handler
+ *     (/servicesNS/nobody/TA-gen_ai_cim/ta_gen_ai_cim_account/ta_gen_ai_cim_account),
+ *     which validates the API hostname and keeps the secret key in
+ *     storage/passwords; the page never reads a secret back;
+ *   - anything else (the soar account): not managed here.
  */
 
 require([
@@ -25,66 +36,219 @@ require([
     var GENAI_CONF_ENDPOINT = localePrefix + '/splunkd/__raw/servicesNS/nobody/' + APP_NAME + '/configs/conf-' + GENAI_CONF_NAME;
     var DETECTION_CONF_ENDPOINT = localePrefix + '/splunkd/__raw/servicesNS/nobody/' + APP_NAME + '/configs/conf-' + DETECTION_CONF_NAME;
     var PASSWORDS_ENDPOINT = localePrefix + '/splunkd/__raw/servicesNS/nobody/' + APP_NAME + '/storage/passwords';
-    var accounts = [];
+    // Account REST handler (restmap.conf [admin:ta_gen_ai_cim_account]); Splunk Web
+    // proxies it only while web.conf exposes ta_gen_ai_cim_account/ta_gen_ai_cim_account[/*].
+    var HANDLER_ENDPOINT = localePrefix + '/splunkd/__raw/servicesNS/nobody/' + APP_NAME + '/ta_gen_ai_cim_account/ta_gen_ai_cim_account';
+    var accounts = [];          // ServiceNow accounts (ServiceNow Settings tab)
+    var allAccounts = [];       // every account stanza, any kind (name collision checks)
+    var duoAccounts = [];       // Cisco Duo accounts (Cisco Duo tab)
+    var otherAccounts = [];     // neither (for example the soar account)
+    var snowInUse = null;       // the ServiceNow account the alert actions use
     var editMode = false;
+    var duoEditMode = false;
     var genaiSettings = {};
     var detectionSettings = {};
 
-    // Get CSRF token
+    // Get CSRF token: THIS Splunk Web's own cookie (splunkweb_csrf_token_<port>).
+    // Cookies are scoped by host, not port, so a browser that has used two
+    // Splunk instances on one host holds a token for each. Up to v1.8.0 this
+    // took the first one, and a write then failed CSRF validation (401), on
+    // which Splunk Web silently reloads the page. pickCsrfToken (below) holds
+    // the rule; the stale-prone hidden input is only the last resort.
     function getCSRFToken() {
-        var token = $('input[name="splunk_form_key"]').val();
-        if (!token) {
-            var cookies = document.cookie.split(';');
-            for (var i = 0; i < cookies.length; i++) {
-                var cookie = cookies[i].trim();
-                if (cookie.indexOf('splunkweb_csrf_token_') === 0) {
-                    token = cookie.split('=')[1];
-                    break;
-                }
-            }
-        }
-        return token;
+        var ports = [window.$C && window.$C.MRSPARKLE_PORT_NUMBER, window.location.port];
+        return pickCsrfToken(document.cookie, ports) || $('input[name="splunk_form_key"]').val();
     }
+
+    // BEGIN account-rules
+    // Pure functions, no jQuery. They mirror bin/sync_snow_asset.py
+    // (is_servicenow_account, select_snow_account) and
+    // bin/ta_gen_ai_cim_account_handler.py (normalize_duo_api_url,
+    // validate_duo_ikey, validate_duo_skey); tools/tests/test_duo_account.py
+    // runs this block under node against the Python over the same vectors.
+    // The handler stays the authority: these checks only save a round trip.
+    var NON_ACCOUNT_STANZAS = ['default', 'asset_discovery'];
+    var SNOW_AUTH_TYPES = ['basic', 'oauth_auth_code', 'oauth_client_creds'];
+    var NON_SNOW_ACCOUNT_NAMES = ['soar', 'duo'];
+    var URL_HOST_RE = /^[A-Za-z][A-Za-z0-9+.\-]*:\/\/(?:[^@\/?#]*@)?([^:\/?#]*)/;
+    var SNOW_HOST_RE = /(^|\.)(service-now|servicenow)\.com$/;
+    var DUO_API_HOST_RE = /^api-[a-z0-9]+\.(duosecurity|duofederal)\.com$/;
+    var ACCOUNT_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_\-]{0,63}$/;
+    var DUO_IKEY_RE = /^[A-Za-z0-9]{16,64}$/;
+    var DUO_SKEY_RE = /^[\x21-\x7e]{20,128}$/;
+    var SECRET_MASK = '********';
+    var DUO_URL_HELP = 'The API hostname must be the Duo Admin API hostname, for example ' +
+        'api-XXXXXXXX.duosecurity.com or https://api-XXXXXXXX.duofederal.com ' +
+        '(https only, no path, port or credentials).';
+
+    function accountHost(url) {
+        var value = String(url == null ? '' : url).trim();
+        if (!value) { return ''; }
+        if (value.indexOf('://') === -1) { value = 'https://' + value; }
+        var match = URL_HOST_RE.exec(value);
+        return match ? match[1].toLowerCase() : '';
+    }
+
+    function isNonAccountStanza(name) {
+        name = String(name == null ? '' : name);
+        return !name || NON_ACCOUNT_STANZAS.indexOf(name) !== -1 || name.charAt(0) === '_';
+    }
+
+    function isServiceNowAccount(name, content) {
+        name = String(name == null ? '' : name);
+        if (isNonAccountStanza(name)) { return false; }
+        content = content || {};
+        var authType = String(content.auth_type || 'basic').trim().toLowerCase();
+        if (authType === 'duo_hmac') { return false; }
+        var host = accountHost(content.url);
+        if (SNOW_HOST_RE.test(host)) { return true; }
+        if (DUO_API_HOST_RE.test(host)) { return false; }
+        return SNOW_AUTH_TYPES.indexOf(authType) !== -1 &&
+            NON_SNOW_ACCOUNT_NAMES.indexOf(name.toLowerCase()) === -1;
+    }
+
+    // 'none' (not an account), 'duo', 'servicenow' or 'other'
+    function accountKind(name, content) {
+        if (isNonAccountStanza(name)) { return 'none'; }
+        if (String((content || {}).auth_type || '').trim().toLowerCase() === 'duo_hmac') { return 'duo'; }
+        return isServiceNowAccount(name, content) ? 'servicenow' : 'other';
+    }
+
+    // The name get_snow_config picks from [{name, url, auth_type}], or null.
+    function selectServiceNowAccount(list) {
+        var candidates = (list || []).filter(function(a) {
+            return isServiceNowAccount(a.name, a);
+        }).sort(function(a, b) {
+            return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0);
+        });
+        for (var i = 0; i < candidates.length; i++) {
+            if (SNOW_HOST_RE.test(accountHost(candidates[i].url))) { return candidates[i].name; }
+        }
+        return candidates.length ? candidates[0].name : null;
+    }
+
+    // {url: 'https://<host>'} or {error}; never echoes the input.
+    function normalizeDuoApiUrl(value) {
+        var text = String(value == null ? '' : value).trim();
+        if (!text) { return { error: 'The API hostname is required.' }; }
+        var host;
+        var sep = text.indexOf('://');
+        if (sep !== -1) {
+            if (text.slice(0, sep).toLowerCase() !== 'https') {
+                return { error: 'The Duo API hostname must use https.' };
+            }
+            var rest = text.slice(sep + 3);
+            var slash = rest.indexOf('/');
+            var authority = slash === -1 ? rest : rest.slice(0, slash);
+            var path = slash === -1 ? '' : rest.slice(slash);
+            if (/[?#@]/.test(rest) || authority.indexOf(':') !== -1 || (path !== '' && path !== '/')) {
+                return { error: DUO_URL_HELP };
+            }
+            host = authority.toLowerCase();
+        } else {
+            host = text.toLowerCase();
+            if (host.charAt(host.length - 1) === '/') { host = host.slice(0, -1); }
+        }
+        if (!DUO_API_HOST_RE.test(host)) { return { error: DUO_URL_HELP }; }
+        return { url: 'https://' + host };
+    }
+
+    function validateDuoIkey(value) {
+        var ikey = String(value == null ? '' : value).trim();
+        if (!DUO_IKEY_RE.test(ikey)) {
+            return { error: 'The integration key must be 16-64 letters and digits ' +
+                '(Duo shows it as DIXXXXXXXXXXXXXXXXXX).' };
+        }
+        return { value: ikey };
+    }
+
+    function validateDuoSkey(value) {
+        var skey = String(value == null ? '' : value).trim();
+        if (skey === SECRET_MASK || !DUO_SKEY_RE.test(skey)) {
+            return { error: 'The secret key must be 20-128 characters with no spaces.' };
+        }
+        return { value: skey };
+    }
+
+    // The CSRF token for this Splunk Web out of a document.cookie string:
+    // the splunkweb_csrf_token_<port> cookie of the first port in `ports` that
+    // has one, else the first splunkweb_csrf_token_* cookie, else ''.
+    function pickCsrfToken(cookieString, ports) {
+        var prefix = 'splunkweb_csrf_token_';
+        var byPort = {};
+        var first = '';
+        String(cookieString || '').split(';').forEach(function(part) {
+            var cookie = part.trim();
+            var eq = cookie.indexOf('=');
+            if (cookie.indexOf(prefix) !== 0 || eq < 0) { return; }
+            var value = cookie.substring(eq + 1);
+            try { value = decodeURIComponent(value); } catch (e) { /* keep the raw value */ }
+            byPort[cookie.substring(prefix.length, eq)] = value;
+            if (!first) { first = value; }
+        });
+        for (var i = 0; i < (ports || []).length; i++) {
+            var port = String(ports[i] == null ? '' : ports[i]).trim();
+            if (port && byPort[port]) { return byPort[port]; }
+        }
+        return first;
+    }
+    // END account-rules
 
     // Format auth type for display
     function formatAuthType(authType) {
         var types = {
             'basic': 'Basic Authentication',
+            'oauth_auth_code': 'OAuth 2.0 (Authorization Code)',
             'oauth_client_creds': 'OAuth 2.0 (Client Credentials)'
         };
         return types[authType] || authType || 'Basic Authentication';
     }
 
+    // One account record from a stanza's settings (never a secret: the conf holds none)
+    function accountRecord(name, content) {
+        content = content || {};
+        return {
+            name: name,
+            url: content.url || '',
+            auth_type: content.auth_type || 'basic',
+            username: content.username || '',
+            client_id: content.client_id || ''
+        };
+    }
+
+    // Sort the loaded stanzas into the ServiceNow, Cisco Duo and other lists, then render
+    function classifyAndRender(records) {
+        allAccounts = [];
+        accounts = [];
+        duoAccounts = [];
+        otherAccounts = [];
+        records.forEach(function(account) {
+            var kind = accountKind(account.name, account);
+            if (kind === 'none') { return; }
+            allAccounts.push(account);
+            if (kind === 'servicenow') { accounts.push(account); }
+            else if (kind === 'duo') { duoAccounts.push(account); }
+            else { otherAccounts.push(account); }
+        });
+        snowInUse = selectServiceNowAccount(accounts);
+        renderAccountsTable();
+        renderDuoAccountsTable();
+    }
+
     // Load accounts from conf file using configs endpoint
     function loadAccounts() {
         console.log('Loading accounts from:', CONF_ENDPOINT);
-        accounts = [];
-        
+
         $.ajax({
             url: CONF_ENDPOINT,
             type: 'GET',
-            data: { output_mode: 'json' },
+            data: { output_mode: 'json', count: 0 },
             success: function(response) {
-                console.log('Accounts response:', response);
-                
-                if (response.entry) {
-                    response.entry.forEach(function(entry) {
-                        // Skip default stanza
-                        if (entry.name !== 'default' && entry.name !== 'asset_discovery' && !entry.name.startsWith('_')) {
-                            var content = entry.content || {};
-                            accounts.push({
-                                name: entry.name,
-                                url: content.url || '',
-                                auth_type: content.auth_type || 'basic',
-                                username: content.username || '',
-                                client_id: content.client_id || ''
-                            });
-                        }
-                    });
-                }
-                
-                console.log('Found accounts:', accounts);
-                renderAccountsTable();
+                var records = [];
+                (response.entry || []).forEach(function(entry) {
+                    records.push(accountRecord(entry.name, entry.content));
+                });
+                classifyAndRender(records);
             },
             error: function(xhr) {
                 console.log('Load error:', xhr.status, xhr.statusText);
@@ -105,64 +269,50 @@ require([
             success: function(response) {
                 console.log('Properties response:', response);
                 var stanzaNames = [];
-                
-                if (response.entry) {
-                    response.entry.forEach(function(entry) {
-                        if (entry.name !== 'default' && entry.name !== 'asset_discovery' && !entry.name.startsWith('_')) {
-                            stanzaNames.push(entry.name);
-                        }
-                    });
-                }
-                
+                var records = [];
+
+                (response.entry || []).forEach(function(entry) {
+                    if (!isNonAccountStanza(entry.name)) {
+                        stanzaNames.push(entry.name);
+                    }
+                });
+
                 if (stanzaNames.length === 0) {
-                    renderAccountsTable();
+                    classifyAndRender(records);
                     return;
                 }
-                
+
                 var loaded = 0;
                 stanzaNames.forEach(function(name) {
-                    loadStanzaDetails(name, function() {
+                    loadStanzaDetails(name, records, function() {
                         loaded++;
                         if (loaded === stanzaNames.length) {
-                            renderAccountsTable();
+                            classifyAndRender(records);
                         }
                     });
                 });
             },
             error: function(xhr) {
                 console.log('Properties load error:', xhr.status, xhr.statusText);
-                renderAccountsTable();
+                classifyAndRender([]);
             }
         });
     }
-    
+
     // Load details for a specific stanza
-    function loadStanzaDetails(stanzaName, callback) {
+    function loadStanzaDetails(stanzaName, records, callback) {
         $.ajax({
             url: PROPS_ENDPOINT + '/' + encodeURIComponent(stanzaName),
             type: 'GET',
             data: { output_mode: 'json' },
             success: function(response) {
-                console.log('Stanza details for', stanzaName, ':', response);
-                var account = {
-                    name: stanzaName,
-                    url: '',
-                    auth_type: 'basic',
-                    username: '',
-                    client_id: ''
-                };
-                
-                if (response.entry) {
-                    response.entry.forEach(function(prop) {
-                        var value = prop.content ? prop.content['$text'] : '';
-                        if (prop.name === 'url') account.url = value || '';
-                        else if (prop.name === 'auth_type') account.auth_type = value || 'basic';
-                        else if (prop.name === 'username') account.username = value || '';
-                        else if (prop.name === 'client_id') account.client_id = value || '';
-                    });
-                }
-                
-                accounts.push(account);
+                var content = {};
+                (response.entry || []).forEach(function(prop) {
+                    if (['url', 'auth_type', 'username', 'client_id'].indexOf(prop.name) !== -1) {
+                        content[prop.name] = prop.content ? prop.content['$text'] : '';
+                    }
+                });
+                records.push(accountRecord(stanzaName, content));
                 if (callback) callback();
             },
             error: function(xhr) {
@@ -179,15 +329,26 @@ require([
 
         $('#account-count').text(accounts.length);
 
+        var $other = $('#other-accounts-note');
+        if (otherAccounts.length) {
+            $other.text('Not shown: ' + otherAccounts.map(function(a) { return a.name; }).join(', ') +
+                ' (not a ServiceNow or Cisco Duo account, for example the soar account | genaiseedes reads; ' +
+                'manage it in ta_gen_ai_cim_account.conf).').show();
+        } else {
+            $other.text('').hide();
+        }
+
         if (accounts.length === 0) {
             $tbody.html('<tr class="no-records"><td colspan="3">No records found</td></tr>');
             return;
         }
 
         accounts.forEach(function(account) {
+            var badge = account.name === snowInUse
+                ? ' <span class="help-text" style="display:inline;">(in use)</span>' : '';
             var row = '<tr data-name="' + escapeHtml(account.name) + '">' +
-                '<td>' + escapeHtml(account.name) + '</td>' +
-                '<td>' + formatAuthType(account.auth_type) + '</td>' +
+                '<td>' + escapeHtml(account.name) + badge + '</td>' +
+                '<td>' + escapeHtml(formatAuthType(account.auth_type)) + '</td>' +
                 '<td class="actions-cell">' +
                     '<a class="action-link edit-account" href="#">Edit</a>' +
                     '<a class="action-link delete delete-account" href="#">Delete</a>' +
@@ -197,10 +358,41 @@ require([
         });
     }
 
+    // Only the last four characters of an integration key are shown in the table
+    function maskIkey(ikey) {
+        ikey = String(ikey || '');
+        return ikey.length > 4 ? '••••' + ikey.slice(-4) : (ikey ? '••••' : '');
+    }
+
+    // Render the Cisco Duo accounts table
+    function renderDuoAccountsTable() {
+        var $tbody = $('#duo-accounts-tbody');
+        $tbody.empty();
+        $('#duo-account-count').text(duoAccounts.length);
+
+        if (duoAccounts.length === 0) {
+            $tbody.html('<tr class="no-records"><td colspan="4">No records found</td></tr>');
+            return;
+        }
+
+        duoAccounts.forEach(function(account) {
+            var row = '<tr data-name="' + escapeHtml(account.name) + '">' +
+                '<td>' + escapeHtml(account.name) + '</td>' +
+                '<td>' + escapeHtml(accountHost(account.url)) + '</td>' +
+                '<td>' + escapeHtml(maskIkey(account.client_id)) + '</td>' +
+                '<td class="actions-cell">' +
+                    '<a class="action-link edit-duo-account" href="#">Edit</a>' +
+                    '<a class="action-link delete delete-duo-account" href="#">Delete</a>' +
+                '</td>' +
+            '</tr>';
+            $tbody.append(row);
+        });
+    }
+
     // Escape HTML
     function escapeHtml(str) {
         if (!str) return '';
-        return str.replace(/&/g, '&amp;')
+        return String(str).replace(/&/g, '&amp;')
                   .replace(/</g, '&lt;')
                   .replace(/>/g, '&gt;')
                   .replace(/"/g, '&quot;');
@@ -317,8 +509,22 @@ require([
             showError('Account Name can only contain letters, numbers, underscores, and hyphens');
             return;
         }
+        if (!editMode) {
+            if (isNonAccountStanza(name) || NON_SNOW_ACCOUNT_NAMES.indexOf(name.toLowerCase()) !== -1) {
+                showError('"' + name + '" is reserved; choose another Account Name');
+                return;
+            }
+            if (allAccounts.some(function(a) { return a.name === name; })) {
+                showError('An account named "' + name + '" already exists; choose another name');
+                return;
+            }
+        }
         if (!url) {
             showError('URL is required');
+            return;
+        }
+        if (authType !== 'duo_hmac' && DUO_API_HOST_RE.test(accountHost(url))) {
+            showError('That is a Cisco Duo API hostname; add it on the Cisco Duo (Admin API) tab');
             return;
         }
 
@@ -370,7 +576,6 @@ require([
         var stanzaUrl = CONF_ENDPOINT + '/' + encodeURIComponent(name);
 
         console.log('Saving account to:', stanzaUrl);
-        console.log('Data:', confData);
         
         // First create or update the stanza
         if (!editMode) {
@@ -386,10 +591,11 @@ require([
                     finishSave(null);
                 },
                 error: function(xhr) {
-                    console.log('Create error:', xhr.status, xhr.responseText);
+                    console.log('Create error:', xhr.status);
                     if (xhr.status === 409) {
-                        // Already exists, try update
-                        updateAccount();
+                        // Never fall back to an update: the stanza may be another
+                        // kind of account (a Cisco Duo or soar account).
+                        finishSave('an account named "' + name + '" already exists');
                     } else {
                         finishSave('Failed to create account: ' + xhr.status);
                     }
@@ -459,6 +665,130 @@ require([
                 console.error('Failed to delete account:', xhr.responseText);
                 hideModal('delete-modal');
                 alert('Failed to delete account: ' + xhr.status);
+            }
+        });
+    }
+
+    // ==================== Cisco Duo Account Functions ====================
+    // Every write goes through HANDLER_ENDPOINT; nothing here calls CONF_ENDPOINT
+    // or PASSWORDS_ENDPOINT, and no secret is ever read back.
+
+    // A readable message from a failed handler call
+    function handlerErrorMessage(xhr) {
+        var body = xhr && xhr.responseJSON;
+        if (!body && xhr && xhr.responseText) {
+            try { body = JSON.parse(xhr.responseText); } catch (e) { body = null; }
+        }
+        var messages = (body && body.messages) || [];
+        if (messages.length && messages[0].text) {
+            return String(messages[0].text).replace(/^\s*In handler '[^']*':\s*/, '');
+        }
+        if (xhr && xhr.status === 404) {
+            return 'The account REST endpoint is not reachable from Splunk Web. web.conf must expose ' +
+                'ta_gen_ai_cim_account/ta_gen_ai_cim_account (and /*), and Splunk Web must be restarted after it changes.';
+        }
+        return 'HTTP ' + (xhr ? xhr.status : 'error');
+    }
+
+    function showDuoError(message) {
+        $('#duo-form-error').addClass('show').text(message);
+    }
+
+    function clearDuoForm() {
+        $('#duo-account-name').val('').prop('disabled', false);
+        $('#duo-api-hostname').val('');
+        $('#duo-integration-key').val('');
+        $('#duo-secret-key').val('').attr('placeholder', 'Enter the secret key');
+        $('#duo-secret-required').show();
+        $('#duo-secret-help').text("Stored in Splunk's credential store; it is never displayed again.");
+        $('#duo-edit-account-name').val('');
+        $('#duo-form-error').removeClass('show').text('');
+    }
+
+    function openDuoModal(account) {
+        clearDuoForm();
+        duoEditMode = !!account;
+        if (account) {
+            $('#duo-modal-title').text('Edit Cisco Duo Account');
+            $('#btn-duo-save').text('Save');
+            $('#duo-account-name').val(account.name).prop('disabled', true);
+            $('#duo-edit-account-name').val(account.name);
+            $('#duo-api-hostname').val(accountHost(account.url));
+            $('#duo-integration-key').val(account.client_id);
+            $('#duo-secret-key').attr('placeholder', 'Leave blank to keep the stored secret key');
+            $('#duo-secret-required').hide();
+            $('#duo-secret-help').text('Leave blank to keep the stored secret key; a new value replaces it.');
+        } else {
+            $('#duo-modal-title').text('Add Cisco Duo Account');
+            $('#btn-duo-save').text('Add');
+        }
+        showModal('duo-account-modal');
+    }
+
+    function saveDuoAccount() {
+        var name = duoEditMode ? $('#duo-edit-account-name').val() : $('#duo-account-name').val().trim();
+        var secret = $('#duo-secret-key').val();
+
+        if (!duoEditMode) {
+            if (!name) { showDuoError('Account Name is required'); return; }
+            if (!ACCOUNT_NAME_RE.test(name) || isNonAccountStanza(name)) {
+                showDuoError('Account Name is 1-64 letters, digits, "_" or "-", starting with a letter or digit');
+                return;
+            }
+            if (allAccounts.some(function(a) { return a.name === name; })) {
+                showDuoError('An account named "' + name + '" already exists; choose another name');
+                return;
+            }
+        }
+        var url = normalizeDuoApiUrl($('#duo-api-hostname').val());
+        if (url.error) { showDuoError(url.error); return; }
+        var ikey = validateDuoIkey($('#duo-integration-key').val());
+        if (ikey.error) { showDuoError(ikey.error); return; }
+
+        var data = { url: url.url, auth_type: 'duo_hmac', client_id: ikey.value };
+        if (!duoEditMode || String(secret || '').trim()) {
+            var skey = validateDuoSkey(secret);
+            if (skey.error) { showDuoError(skey.error); return; }
+            data.client_secret = skey.value;
+        }
+        if (!duoEditMode) { data.name = name; }
+
+        var target = duoEditMode ? HANDLER_ENDPOINT + '/' + encodeURIComponent(name) : HANDLER_ENDPOINT;
+        var $btn = $('#btn-duo-save');
+        $btn.prop('disabled', true).text('Saving...');
+        $.ajax({
+            url: target + '?output_mode=json',
+            type: 'POST',
+            data: data,
+            headers: { 'X-Splunk-Form-Key': getCSRFToken() },
+            success: function() {
+                $('#duo-secret-key').val('');
+                hideModal('duo-account-modal');
+                $btn.prop('disabled', false).text(duoEditMode ? 'Save' : 'Add');
+                loadAccounts();
+            },
+            error: function(xhr) {
+                console.log('Cisco Duo account save failed: HTTP', xhr.status);
+                showDuoError('Failed to save: ' + handlerErrorMessage(xhr));
+                $btn.prop('disabled', false).text(duoEditMode ? 'Save' : 'Add');
+            }
+        });
+    }
+
+    function deleteDuoAccount(name) {
+        $('#duo-page-error').removeClass('show').text('');
+        $.ajax({
+            url: HANDLER_ENDPOINT + '/' + encodeURIComponent(name) + '?output_mode=json',
+            type: 'DELETE',
+            headers: { 'X-Splunk-Form-Key': getCSRFToken() },
+            success: function() {
+                hideModal('delete-modal');
+                loadAccounts();
+            },
+            error: function(xhr) {
+                console.log('Cisco Duo account delete failed: HTTP', xhr.status);
+                hideModal('delete-modal');
+                $('#duo-page-error').addClass('show').text('Failed to delete account: ' + handlerErrorMessage(xhr));
             }
         });
     }
@@ -926,8 +1256,55 @@ require([
             e.preventDefault();
             var name = $(this).closest('tr').data('name');
             $('#delete-account-name').text(name);
-            $('#btn-delete-confirm').data('name', name);
+            $('#btn-delete-confirm').data('name', name).data('kind', 'servicenow');
             showModal('delete-modal');
+        });
+
+        // ==================== Cisco Duo Tab Event Handlers ====================
+
+        $('#btn-add-duo-account').on('click', function() {
+            openDuoModal(null);
+        });
+
+        $(document).on('click', '.edit-duo-account', function(e) {
+            e.preventDefault();
+            var name = String($(this).closest('tr').data('name'));
+            var account = duoAccounts.find(function(a) { return a.name === name; });
+            if (account) {
+                openDuoModal(account);
+            }
+        });
+
+        $(document).on('click', '.delete-duo-account', function(e) {
+            e.preventDefault();
+            var name = String($(this).closest('tr').data('name'));
+            $('#delete-account-name').text(name);
+            $('#btn-delete-confirm').data('name', name).data('kind', 'duo');
+            showModal('delete-modal');
+        });
+
+        $('#duo-modal-close, #btn-duo-cancel').on('click', function() {
+            $('#duo-secret-key').val('');
+            hideModal('duo-account-modal');
+        });
+
+        $('#btn-duo-save').on('click', saveDuoAccount);
+
+        $('#duo-account-form input').on('keypress', function(e) {
+            if (e.which === 13) {
+                e.preventDefault();
+                saveDuoAccount();
+            }
+        });
+
+        $('#duo-account-search').on('input', function() {
+            var searchTerm = $(this).val().toLowerCase();
+            $('#duo-accounts-tbody tr').each(function() {
+                var name = $(this).data('name');
+                if (name) {
+                    $(this).toggle(String(name).toLowerCase().indexOf(searchTerm) !== -1);
+                }
+            });
         });
 
         // Modal close buttons
@@ -942,15 +1319,20 @@ require([
         // Save button
         $('#btn-save').on('click', saveAccount);
 
-        // Delete confirm
+        // Delete confirm: a Cisco Duo account is removed through the handler
         $('#btn-delete-confirm').on('click', function() {
             var name = $(this).data('name');
-            deleteAccount(name);
+            if ($(this).data('kind') === 'duo') {
+                deleteDuoAccount(String(name));
+            } else {
+                deleteAccount(name);
+            }
         });
 
         // Close modals on overlay click
         $('.modal-overlay').on('click', function(e) {
             if (e.target === this) {
+                $(this).find('input[type="password"]').val('');
                 $(this).removeClass('show');
             }
         });

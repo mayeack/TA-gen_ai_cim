@@ -29,6 +29,12 @@ ML detections, and a ServiceNow AI Case Management integration.
   AI Defense response logic (payload parsing, field resolution, audit
   emission) lives in `ai_defense_response.py`; the three `ai_defense_*`
   actions are thin wrappers that call `run_action`.
+  The Cisco Duo modular input (v1.9.0): `ta_gen_ai_cim_duo.py` (the scheme
+  entry point Splunk runs, a shim) -> `ta_gen_ai_cim_duo_input.py`
+  (window, checkpoint, users snapshot, SHC guard) over
+  `ta_gen_ai_cim_duo_api.py`, the TA's canonical read-only Duo Admin API
+  client (v5 signer identical to `soar_apps/pseudoco_identity/pseudoco_identity_duo.py`,
+  proven by `tools/duo/tests/test_duo_api.py`; it never imports `soar_apps/`).
 - `lib/splunklib/` — vendored Splunk SDK (keep ≥ 2.1.1: older versions'
   `six` shim breaks under Python 3.13, which `python.required = 3.13`
   selects on Splunk 9.4+).
@@ -40,7 +46,12 @@ ML detections, and a ServiceNow AI Case Management integration.
   `splunk-show-template-integration.md` and
   `es-guided-response-runbook.md`, each with a parallel self-contained
   `.html`. `tools/soar/` holds the build script, persona generator and offline
-  tests for the SOAR app in `soar_apps/` (see below).
+  tests for the SOAR app in `soar_apps/` (see below). `tools/duo/` holds
+  `fake_duo.py` (in-memory and loopback-HTTP fake Duo Admin API, which returns
+  logs DESCENDING by default so a missing `sort=ts:asc` fails a test, and, like
+  Duo, a `next_offset` on the last page that has records; `echo_offset=True`
+  models a Duo that echoes the `next_offset` it was sent) and the Duo input and
+  client tests.
 - `soar_apps/` — **SOAR** apps, not Splunk apps. Top level and outside
   `default/` on purpose: SOAR is a separate product, so the folder (or the
   committed `medadvice_idp.tgz` beside it) is lifted out and uploaded to the
@@ -66,10 +77,19 @@ ML detections, and a ServiceNow AI Case Management integration.
   `lookups/pseudoco_identity_personas.csv` from the PseudoCo Assistant persona
   file (`scripts/identity/personas.yaml` in that repo). `tools/lab5_steps.py`
   holds the `show_postdeploy.py --lab5` steps; `tools/tests/` the Lab 5 conf
-  tests, live SPL fixtures and the scratch-index end-to-end script.
-- `elements/`, `README/` — internal docs, excluded from the package.
+  tests (also the menu, the home cards and the Duo Identity Feed view), live
+  SPL fixtures and the scratch-index end-to-end script, and (v1.9.0) the Duo
+  conf, SPL and account tests, the packaging tests and the Identity Activity
+  view's tests (`test_identity_activity.py`).
+- `elements/`, `README/` — internal docs, excluded from the package, except
+  `README/*.conf.spec` (top level only), which Splunk reads from there and which
+  therefore ship: `README/inputs.conf.spec` (the `ta_gen_ai_cim_duo` scheme)
+  and `README/alert_actions.conf.spec` (R-PKG-003 amendment of 2026-11-16).
+  `bin/README` ships too.
 - `package.sh` — builds the shippable tarball; keep its exclude list in
-  sync when adding assistant/dev files.
+  sync when adding assistant/dev files. It excludes every top-level `README/`
+  member that is not a `*.conf.spec` by exact path, and the site-generated
+  `lookups/ta_gen_ai_cim_duo_identities.csv`.
 
 ## Conf conventions
 
@@ -193,12 +213,110 @@ ML detections, and a ServiceNow AI Case Management integration.
   fixtures (`tools/tests/fixtures/lab5_spl.json`) and the dashboard together.
   The rule accepts labelled backfill (`backfill=true`, `source=lab5-setup`) and
   names every finding's evidence provenance (`cii_provenance`).
+- **Modular inputs ship off** (R-INP-001, v1.9.0): `default/inputs.conf` holds
+  only the scheme's default stanza (never a `[<scheme>://` instance, enabled or
+  not); `README/inputs.conf.spec` and the entry point `bin/<scheme>.py` ship;
+  `validate_input` enforces the 120 s interval floor and the script holds it at
+  runtime too (an interval set in `local/` skips validation); secrets come only
+  from `storage/passwords` with the input's own session key and are never
+  logged; the index is instance-set and never `gen_ai_log`. The input sets
+  `_time` itself, so props stay search-time only. `app.manifest`
+  `targetWorkloads` lists `_forwarders` because the Duo input may run on a
+  heavy forwarder (which then needs the KV store for its checkpoint).
+- **Cisco Duo content ships off** (v1.9.0): no input instance, no identity
+  source stanza, the lookup gen and the Duo rule `disabled = 1`, and the
+  identity CSV never tracked or packaged.
+  `[identity_manager://ta_gen_ai_cim_duo_identities]` is only a commented
+  example in `default/inputs.conf` (kept identical to the README's stanza by
+  `tools/tests/test_duo_conf.py`); an owner adds it in `local/inputs.conf` or
+  in ES once the CSV has rows. Never ship it, not even disabled, and never
+  ship a header-only CSV for it: ES's identity manager (SA-IdentityManagement,
+  every 300 s) checks the lookup file of every `identity_manager` source,
+  disabled ones included, and logs `ERROR PersistentScript ... Lookup table
+  was not found` to `splunkd.log` every 5 minutes while the file is missing
+  (found live on 2026-11-16), and a bundled CSV would overwrite the generated
+  one on every upgrade. R-INP-002 makes it general: an identity or asset
+  source ships in `default/` only together with its lookup file.
+  Two deliberate deviations from the design, both pinned
+  in `tools/tests/test_duo_conf.py`: CIM 8.5.0's Authentication data model has
+  **no `vendor_product` field** (`Splunk_SA_CIM/default/data/models/Authentication.json`),
+  so the rule scopes `tstats` by the sourcetype through `genai_duo_auth_events`,
+  which must therefore stay index/sourcetype/source/host terms with no pipe;
+  and it never filters on `authentication_service=duo`, which PseudoCo
+  Assistant's own Duo sign-in records also carry. Its `tstats` BY list is
+  `_time, <fields> span=1s` (span last, as documented) and holds no field the
+  Duo feed can leave null (`tstats` drops such rows), so fraud is read from
+  `signature_id`, never `Authentication.result`. The rule's `user` is the
+  identity join key (the lowercased local part of the Duo username), while the
+  identity value is username|email|aliases, username first; ES keeps that pipe
+  order (SA-IdentityManagement rejoins identity before its `mvsort`, which
+  then sorts one value), so the canonical key is the Duo username. Where a
+  tenant's Duo usernames are emails, the risk object is not an identity key
+  unless the Duo identity source sets
+  `dynamic_identity_spec = {"email_short": true}` (a per-source setting).
+  Add that source only once its CSV has rows: ES's merge search fails for
+  every identity source while an enabled source's file is missing. The TA adds
+  no props for Cisco Security Cloud's `cisco:duo:*` sourcetypes.
 - Data models: `AI_Inference`, `AI_Safety`, `AI_Evaluation`
   (acceleration off by default).
 - Custom confs (`ta_gen_ai_cim_*`) need: reload triggers in
   `app.conf [triggers]`, `conf_replication_include` in
   `default/server.conf`, a `.spec` in `default/`, and `admin, sc_admin`
-  meta grants for their endpoints.
+  meta grants under the conf's own name, `[ta_gen_ai_cim_<x>]` (the object
+  splunkd writes as `[ta_gen_ai_cim_genai_scoring/pipeline_1]` in
+  `local.meta`). Never `[conf/...]` or `[configs/conf-...]`: Splunk applies
+  neither, and until v1.9.0 those names left every TA conf readable by all
+  (`[]`, read `*`, export system).
+- Dashboards are Dashboard Studio v2, dark. The home (`TA-gen_ai_cim_home`,
+  the default view: one numbered card and one live KPI per menu dashboard,
+  then the scoreboard), *Duo Identity Feed* (`ta_gen_ai_cim_duo_identity`) and
+  *Identity Activity* (`ta_gen_ai_cim_identity_activity`, v1.9.0: per
+  identity, Cisco Duo next to the AI application, keyed by
+  `genai_identity_join_key`) are absolute layout on canvas `#171D21` with
+  `#31373E` cards. The menu's Dashboards collection, the home cards and
+  `DASHBOARDS` in `tools/tests/test_lab5_conf.py` move together. Rules
+  `tools/tests/test_identity_activity.py` pins for Identity Activity, to
+  follow in any new panel: a search reads events only through the contract
+  macros (never a hard-coded index or sourcetype); a KPI's last `stats` is a
+  count or carries one beside its `sum()` (a bare `sum()` over no rows is null
+  and Studio draws `###`); a query holds no `$` that is not a token (Studio
+  pairs any two into a token, so no regex `$` anchor beside one); an input
+  token is compared only as a quoted field value
+  (`| search identity_key=$identity|s$`); no prompt or response text, email
+  address or phone number reaches a panel, so a user is shown as the identity
+  join key, never as the raw Duo username (an email address on some tenants).
+  A panel fed by Enterprise Security (`Risk.All_Risk`,
+  `identity_lookup_expanded`) says "Needs Enterprise Security", and that it
+  shows an error without it when the whole panel fails; those reads stay out
+  of the searches that must work without ES: a `tstats` on a missing data
+  model is fatal even inside `append`. Four more, each found on live data in
+  the 1.9.0 review:
+  - A **verified AI turn** is `genai_identity_verified_turn` (the turn's one
+    chat event: provider set, operation `chat`), never "verified and not an
+    audit record": PseudoCo Assistant stamps `identity_verified` on every
+    event of a signed-in turn (tool calls, decisions and, on a
+    single-sourcetype destination, the escalation record). The application's
+    identity events are read through `genai_identity_activity_events`, whose
+    raw term `identity_*` only narrows the scan; a Duo outcome is
+    `genai_identity_duo_class` everywhere.
+  - **ES 8's Risk data model reads the notable index too**
+    (`(index=risk OR index=notable)`), so a rule that writes a risk event and
+    raises a finding is two rows. Count them apart (`index` in the `tstats`
+    BY list, renamed before any comparison) and keep the score as the total,
+    which is ES's own entity risk. Never filter to the risk index: a detection
+    that only raises a finding would vanish.
+  - **An application sign-in pairs with Duo on the transaction id**: the
+    `identity_signin_success` record carries `details.duo_txid`, equal to the
+    Duo authentication's `txid`. Only a verified turn has no such key and is
+    matched on user and time (nearest earlier successful Duo authentication
+    within 10 minutes). Never write that the application does not log it.
+  - **`append` keeps the first 50,000 rows of its subsearch**, silently:
+    filter and aggregate inside the subsearch and sort so that a cap drops the
+    least useful rows.
+
+  In an absolute layout a card rectangle comes before the panel it frames in
+  `layout.structure` (later blocks are drawn on top and the rectangles are
+  opaque); `StudioLayoutMixin.assert_draw_order` pins it for all three views.
 - Never modify Splunk stock roles (e.g. `[role_admin]`) in `default/`.
 
 ## ServiceNow table mapping
@@ -211,8 +329,17 @@ ML detections, and a ServiceNow AI Case Management integration.
 
 Table names are configurable in `ta_gen_ai_cim_account.conf`
 (`asset_discovery` stanza). Credentials live in storage/passwords under
-realm `ta_gen_ai_cim_account__<account>` — written only by the
-`ta_gen_ai_cim_account` REST handler (UI and `snow_setup.py` both drive it).
+realm `ta_gen_ai_cim_account__<account>` — written by the
+`ta_gen_ai_cim_account` REST handler (the Configuration page's Cisco Duo tab
+and `snow_setup.py`) and, for ServiceNow accounts, by the Configuration page's
+ServiceNow tab through `configs/conf-ta_gen_ai_cim_account` +
+`storage/passwords`. The conf also holds the `soar` and Cisco Duo
+(`auth_type = duo_hmac`) accounts, so ServiceNow consumers pick theirs with
+`sync_snow_asset.select_snow_account`, never by stanza order. Since v1.9.0
+`metadata/default.meta [passwords]` limits every credential to `admin,
+sc_admin` with `export = none`: a reader must connect in this app's context as
+one of those roles, so a shipped search whose action reads a credential is
+`owner = admin` (the five ServiceNow sync/inventory searches, R-CONF-005).
 
 ## Privacy
 
@@ -236,8 +363,24 @@ after `package.sh` to enforce the mechanical rules. Offline tests:
 PYTHONPATH=tools/soar/tests/phantom_shim /opt/splunk104/bin/splunk cmd python3.13 \
     -m unittest discover -s tools/soar/tests            # seeder + both SOAR apps
 python3 -m unittest discover -s tools/identity/tests   # Lab 5 persona rows
-python3 -m unittest discover -s tools/tests             # Lab 5 conf (+ live SPL with SPLUNK_TEST_*)
+python3 -m unittest discover -s tools/tests             # Lab 5 + Duo conf, Duo account, packaging (+ live SPL with SPLUNK_TEST_*)
+python3 -m unittest discover -s tools/duo/tests          # Duo client + modular input vs fake Duo (also runs under splunk cmd python3.9 / python3.13)
+/opt/splunk104/bin/splunk cmd python3.13 -m unittest discover -s tools/tests -p 'test_duo_account.py'  # + the real splunk.admin round trip
+python3 tools/tests/fixtures/duo_spl_gen.py --check     # Duo SPL fixtures are current (like gen_personas.py --check)
 ```
+
+`tools/tests` holds `test_duo_conf.py` (offline) and `test_duo_spl.py` (live,
+with `SPLUNK_TEST_*`); the Duo SPL fixtures in `tools/tests/fixtures/duo_spl.json`
+are generated by `tools/tests/fixtures/duo_spl_gen.py`. `test_duo_package.py`
+builds the package from a scratch copy of the tree and runs `check_package.sh`
+on it and on deliberately broken tarballs. `test_identity_activity.py` pins the
+Identity Activity view offline and, with `SPLUNK_TEST_*`, dispatches every one
+of its searches over an empty window and over the default one. Its
+`SIMULATIONS` run makeresults rows through the view's own text (a branch's
+eval, a search's tail, the three `genai_identity_*` macros) and compare one
+answer each; `python3 tools/tests/test_identity_activity.py --simulations`
+prints them with the expected answer, to paste into a search bar or the
+read-only Splunk MCP (each fits its 5,000-character limit).
 
 ```bash
 /opt/splunk104/bin/splunk cmd python3.9 -m py_compile bin/*.py   # and python3.13
@@ -247,8 +390,8 @@ bash package.sh   # then:
 splunk-appinspect inspect TA-gen_ai_cim-<version>.tgz --included-tags cloud
 ```
 
-Expected AppInspect result (`--included-tags cloud`): 0 errors / 0
-failures / 0 future-failures, and only these 8 accepted warnings:
+Expected AppInspect result (`--included-tags cloud`, AppInspect 4.2.0): 0
+errors / 0 failures / 0 future-failures, and only these 9 accepted warnings:
 
 - `check_reload_trigger_for_meta` — custom-conf reload triggers, by design.
 - `check_for_gratuitous_cron_scheduling` — governance searches on fixed crons.
@@ -258,8 +401,11 @@ failures / 0 future-failures, and only these 8 accepted warnings:
 - `check_for_python_script_existence` — informational review of bin/ scripts.
 - `check_python_sdk_version` — manual review of the vendored splunklib.
 - `check_hostnames_and_ips` — public IPs in the `medadvice_*` demo lookups.
+- `check_for_modular_inputs` — informational since v1.9.0: "App contains
+  modular inputs in inputs.conf.spec. No action required." (the Duo input's
+  `README/inputs.conf.spec`).
 
-Any warning outside this list, or a count other than 8, is drift: fix the
+Any warning outside this list, or a count other than 9, is drift: fix the
 underlying item or update this list in the same change.
 
 Live checks on this box (Splunk MCP `splunk_run_query`; note `| rest` and

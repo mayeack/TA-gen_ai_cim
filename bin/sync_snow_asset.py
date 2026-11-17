@@ -24,6 +24,7 @@ Licensed under Apache License 2.0
 """
 
 import os
+import re
 import sys
 import json
 import time
@@ -67,6 +68,68 @@ def setup_logging(log_name='sync_snow_asset'):
 logger = setup_logging('sync_snow_asset')
 
 
+# ---------------------------------------------------------------------------
+# ServiceNow account selection
+#
+# ta_gen_ai_cim_account.conf also holds accounts that are not ServiceNow: the
+# `soar` account | genaiseedes reads and Cisco Duo Admin API accounts
+# (auth_type = duo_hmac) the Duo input reads. Both names sort ahead of most
+# ServiceNow stanza names, so the account is picked by kind, never by
+# position. appserver/static/config_config.js mirrors these rules (its
+# "account-rules" block) and tools/tests/test_duo_account.py runs both.
+# ---------------------------------------------------------------------------
+NON_ACCOUNT_STANZAS = ('default', 'asset_discovery')
+SNOW_AUTH_TYPES = ('basic', 'oauth_auth_code', 'oauth_client_creds')
+NON_SNOW_ACCOUNT_NAMES = ('soar', 'duo')
+_URL_HOST_RE = re.compile(r'^[A-Za-z][A-Za-z0-9+.-]*://(?:[^@/?#]*@)?([^:/?#]*)')
+_SNOW_HOST_RE = re.compile(r'(^|\.)(service-now|servicenow)\.com$')
+_DUO_API_HOST_RE = re.compile(r'^api-[a-z0-9]+\.(duosecurity|duofederal)\.com$')
+
+
+def _account_host(url):
+    """Lowercased host of an account url ('' when there is none); a bare
+    hostname counts as https://<hostname>."""
+    value = (url or '').strip()
+    if not value:
+        return ''
+    if '://' not in value:
+        value = 'https://' + value
+    match = _URL_HOST_RE.match(value)
+    return match.group(1).lower() if match else ''
+
+
+def is_servicenow_account(name, content):
+    """Whether stanza <name> of ta_gen_ai_cim_account.conf is a ServiceNow
+    account: its url is a *.service-now.com / *.servicenow.com host, or it has
+    a ServiceNow auth_type, is not named soar/duo and has no Duo API host.
+    A duo_hmac account never is."""
+    name = name or ''
+    if name in NON_ACCOUNT_STANZAS or name.startswith('_'):
+        return False
+    content = content or {}
+    auth_type = (content.get('auth_type') or 'basic').strip().lower()
+    if auth_type == 'duo_hmac':
+        return False
+    host = _account_host(content.get('url'))
+    if _SNOW_HOST_RE.search(host):
+        return True
+    if _DUO_API_HOST_RE.match(host):
+        return False
+    return auth_type in SNOW_AUTH_TYPES and name.lower() not in NON_SNOW_ACCOUNT_NAMES
+
+
+def select_snow_account(stanzas):
+    """The account get_snow_config uses, from objects with .name and .content
+    (splunklib conf stanzas): the first by name whose url is a ServiceNow host,
+    else the first by name that is_servicenow_account accepts, else None."""
+    candidates = sorted((s for s in stanzas if is_servicenow_account(s.name, s.content)),
+                        key=lambda s: s.name)
+    for stanza in candidates:
+        if _SNOW_HOST_RE.search(_account_host((stanza.content or {}).get('url'))):
+            return stanza
+    return candidates[0] if candidates else None
+
+
 def get_snow_config(session_key, service=None):
     """Retrieve ServiceNow configuration from account configuration.
 
@@ -87,20 +150,17 @@ def get_snow_config(session_key, service=None):
                 app='TA-gen_ai_cim'
             )
 
-        # Get account configuration from ta_gen_ai_cim_account.conf
+        # Get the ServiceNow account from ta_gen_ai_cim_account.conf. The conf
+        # also holds the soar and Cisco Duo accounts, so select by kind.
         account_conf = None
         account_name = None
-        
+
         try:
             accounts = service.confs['ta_gen_ai_cim_account']
-            for stanza in accounts:
-                # Skip default, asset_discovery config, and internal stanzas
-                if stanza.name in ('default', 'asset_discovery') or stanza.name.startswith('_'):
-                    continue
-                account_conf = stanza
-                account_name = stanza.name
+            account_conf = select_snow_account(accounts)
+            if account_conf is not None:
+                account_name = account_conf.name
                 logger.info("Found ServiceNow account: {}".format(account_name))
-                break
         except KeyError:
             logger.error("Config file ta_gen_ai_cim_account.conf not found")
         except Exception as e:

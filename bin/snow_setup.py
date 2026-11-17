@@ -41,7 +41,10 @@ if lib_path not in sys.path:
 import splunklib.binding as binding
 
 APP_NAME = 'TA-gen_ai_cim'
-ACCOUNT_ENDPOINT = '/servicesNS/nobody/{}/ta_gen_ai_cim_account'.format(APP_NAME)
+# restmap.conf [admin:ta_gen_ai_cim_account]: match = /ta_gen_ai_cim_account,
+# members = ta_gen_ai_cim_account. Up to v1.8.0 this omitted the members
+# segment, so every lookup 404'd and every create missed the handler.
+ACCOUNT_ENDPOINT = '/servicesNS/nobody/{}/ta_gen_ai_cim_account/ta_gen_ai_cim_account'.format(APP_NAME)
 
 
 def connect_splunk(host, port):

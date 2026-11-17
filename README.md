@@ -4,7 +4,7 @@
 
 **Splunk Technology Add-on for Generative AI Common Information Model**
 
-Version: 1.8.0  
+Version: 1.9.0  
 Author: Splunk AI Governance Team  
 License: Apache 2.0
 
@@ -166,6 +166,7 @@ The following Splunk AI Toolkit algorithms are used for ML-based detection featu
 |---------|---------|---------------|
 | **ServiceNow** | AI Case Management integration | Configure via Apps > AI Governance > Configuration |
 | **LLM Provider** | AI-powered case summaries | Configure via Splunk AI Toolkit Connection Management |
+| **Cisco Duo** (Admin API, read-only) | Duo authentication / activity logs and a users snapshot for CIM Authentication, ES identities and user risk (v1.9.0, off by default) | *Cisco Duo (Admin API)* tab of the Configuration page (`/app/TA-gen_ai_cim/configuration`, not in the menu), then an input instance in `local/` - see [Cisco Duo identity feed](#cisco-duo-identity-feed-v190) |
 
 ### Verify Dependencies
 
@@ -228,7 +229,7 @@ $SPLUNK_HOME/bin/splunk display app TA-gen_ai_cim
 Expected output:
 ```
 TA-gen_ai_cim
-  Version: 1.7.0
+  Version: 1.9.0
   Status: enabled
 ```
 
@@ -237,7 +238,9 @@ TA-gen_ai_cim
 This TA is **search-time only** and targets search heads. It deliberately ships
 no index-time parsing (`LINE_BREAKER`, `TIME_PREFIX`, `TIME_FORMAT`,
 `TRUNCATE`) — on Splunk Cloud that parsing happens on the indexer tier, which
-the TA does not reach.
+the TA does not reach. Its one data input, the optional Cisco Duo modular input
+(v1.9.0, no instance ships), sets each event's time itself and may also run on
+a heavy forwarder; see [Cisco Duo identity feed](#cisco-duo-identity-feed-v190).
 
 Send events to the **`/services/collector/event`** endpoint with an explicit
 `time` and the event object under `event`:
@@ -614,8 +617,8 @@ Enable only what your environment needs — never by editing `default/`:
 Before enabling, review each search's cadence and actions: the ML scoring
 searches run every minute, the ServiceNow sync searches make outbound API
 calls hourly, most alerts send email (configure `action.email.to` first),
-and the three `AI Governance - * - Rule` correlation searches require
-Splunk Enterprise Security for their notable/risk actions (see
+and the `AI Governance - * - Rule` correlation searches (five since v1.9.0)
+require Splunk Enterprise Security for their notable/risk actions (see
 [Enterprise Security integration](#enterprise-security-integration)).
 
 **Customize alerts:** override thresholds and actions in
@@ -635,6 +638,8 @@ Pre-built dashboards are **automatically installed** with the TA, providing comp
 | **PII Detection** | ML-powered PII detection and monitoring. Hidden since v1.8.0 (`/app/TA-gen_ai_cim/pii_detection`) | [Details](README/DASHBOARDS/PII_DETECTION.md) |
 | **Prompt Injection Detection** | Adversarial attack detection and analysis | [Details](README/DASHBOARDS/PROMPT_INJECTION_DETECTION.md) |
 | **Compromised Identity** | AI Trust Lab 5: CII failed checks joined with AI Defense blocks (v1.8.0) | [Lab 5 section](#ai-trust-lab-5-compromised-identity-v180) |
+| **Duo Identity Feed** | Cisco Duo authentications by action and denied/fraud by user (24 h), checkpoint lag per input from the indexed events, user snapshots, Duo identities merged into ES and users with Duo risk; reads zero until the Duo input and the identity source are added and the lookup gen and the rule enabled (v1.9.0) | [Cisco Duo section](#cisco-duo-identity-feed-v190) |
+| **Identity Activity** | Per identity, what Cisco Duo knows next to what the AI application saw: Duo status and sign-ins by outcome, application sign-ins, verified AI turns (one per chat request) and blocks, Identity Risk Gate verdicts, ES risk events, findings and risk score by detection, ES identity category, a Duo sign-in to AI activity chain (an application sign-in matched on Duo's transaction id, a verified turn on user and time), and the source addresses seen by Duo, by the application or by both. Time range and identity inputs; the ES tile, Identity overview, Activity timeline and Risk by detection need Enterprise Security and show an error without it (v1.9.0) | [Cisco Duo section](#cisco-duo-identity-feed-v190) |
 | **Review Queue** | Human review workflow and triage | [Details](README/DASHBOARDS/REVIEW_QUEUE.md) |
 
 **Access:** Navigate to **Apps → GenAI Governance** in Splunk Web after installation.
@@ -1075,17 +1080,23 @@ TA-gen_ai_cim/
 ├── app.manifest                   # Splunk Cloud ACS package manifest
 ├── package.sh                     # AppInspect-clean package builder (dev only)
 ├── bin/
+│   ├── README                     # What each script does and which session it runs as
 │   ├── ai_defense_response.py     # Shared logic for the AI Defense response actions
 │   ├── ai_defense_revoke_session.py    # Alert action: Revoke Session / API Key
 │   ├── ai_defense_suspend_user.py      # Alert action: Suspend User (AI Defense)
 │   ├── ai_defense_tighten_guardrail.py # Alert action: Tighten Guardrail Policy
 │   ├── aicase.py                  # ServiceNow AI Case custom command
 │   ├── create_snow_case.py        # ServiceNow case alert action
+│   ├── genai_es_seed.py           # ES / SOAR seeding logic behind | genaiseedes
 │   ├── genaiscore.py              # GenAI LLM scoring custom command
+│   ├── genaiseedes.py             # | genaiseedes custom command
 │   ├── pull_snow_inventory.py     # ServiceNow inventory pull alert action
 │   ├── snow_setup.py              # ServiceNow CLI setup utility
 │   ├── sync_snow_asset.py         # ServiceNow asset sync alert action + shared client
-│   └── ta_gen_ai_cim_account_handler.py  # REST handler for account management
+│   ├── ta_gen_ai_cim_account_handler.py  # REST handler for account management
+│   ├── ta_gen_ai_cim_duo.py       # Cisco Duo modular input entry point (v1.9.0)
+│   ├── ta_gen_ai_cim_duo_input.py # Duo input: log window, checkpoint, users snapshot
+│   └── ta_gen_ai_cim_duo_api.py   # Read-only Duo Admin API client (v5 signing)
 ├── appserver/
 │   └── static/                    # Icons, dashboard JS/CSS
 ├── lib/
@@ -1103,13 +1114,13 @@ TA-gen_ai_cim/
 │   ├── datamodels.conf            # AI_Inference / AI_Safety / AI_Evaluation
 │   ├── eventtypes.conf / tags.conf  # CIM-style eventtypes and tags
 │   ├── fields.conf                # Field definitions
-│   ├── inputs.conf                # ES Asset & Identity registrations
+│   ├── inputs.conf                # ES Asset & Identity registrations + the Duo
+│   │                              #   input's scheme defaults (no instance)
 │   ├── macros.conf                # Search macros
 │   ├── props.conf                 # Field normalization (search-time only)
 │   ├── restmap.conf               # REST endpoint mapping
 │   ├── savedsearches.conf         # Alerts/reports/rules (ship disabled;
-│   │                              #   prompt-injection correlation is the
-│   │                              #   one enabled-by-default exception)
+│   │                              #   three documented enabled exceptions)
 │   ├── server.conf                # SHC replication for custom confs
 │   ├── ta_gen_ai_cim_*.conf(.spec)  # Custom config files and specs
 │   ├── transforms.conf            # Extractions, CSV + KV store lookups
@@ -1117,16 +1128,19 @@ TA-gen_ai_cim/
 │   ├── workflow_actions.conf      # Event Context menu actions
 │   └── data/ui/
 │       ├── nav/default.xml        # Navigation menu
-│       └── views/                 # 20 dashboards (Studio + Simple XML)
+│       └── views/                 # 23 views (Studio + Simple XML)
 ├── metadata/
-│   └── default.meta               # Permissions (admin + sc_admin on config)
+│   └── default.meta               # Permissions (admin + sc_admin on config and credentials)
 ├── elements/                      # Per-dashboard design docs (dev only, not packaged)
 ├── tools/                         # Dev-only utilities (not packaged)
+│   ├── duo/                       # Fake Duo Admin API + Duo input/client tests
 │   ├── install-dev.sh             # Copy app into a dev instance
 │   ├── load_pii_model.sh          # MLTK model loader (dev only, writes to MLTK app)
 │   ├── load_prompt_injection_model.sh  # MLTK model loader (dev only)
 │   └── appinspect-cloud-*.{md,json}    # Last AppInspect results
-└── README/                        # Extended documentation (not packaged)
+└── README/                        # Extended documentation (not packaged), except:
+    ├── alert_actions.conf.spec    #   packaged: alert action parameters
+    ├── inputs.conf.spec           #   packaged: the ta_gen_ai_cim_duo input scheme
     ├── AI_CIM.md                  # AI CIM field reference
     ├── DASHBOARD_PANELS.md        # Dashboard panel definitions
     ├── DASHBOARDS/                # Per-dashboard guides
@@ -1153,9 +1167,16 @@ they are created on the search head at runtime:
 | `pii_model_metadata.csv` / `prompt_injection_model_metadata.csv` | model-promotion feedback-loop searches |
 | `tfidf_training_data_v3.csv` / `pii_training_examples.csv` | operator-curated per environment |
 | `llm_pii_mixed_responses_200k.csv` | dev-only 48 MB training dataset (never packaged) |
+| `ta_gen_ai_cim_duo_identities.csv` | "GenAI - Identity - Duo Identity Lookup Gen" (v1.9.0, ships disabled; gitignored and excluded by `package.sh`) |
 
 Do not ship placeholder CSVs for these — bundled lookup files overwrite the
-runtime-generated versions on every app upgrade.
+runtime-generated versions on every app upgrade. For the same reason
+`default/inputs.conf` registers none of them as an ES identity or asset source
+(`[identity_manager://...]`), enabled or disabled: ES checks every source's
+lookup file and logs an ERROR every 5 minutes while it is missing, so a source
+ships only together with its file (R-INP-002). The Duo identity source is
+therefore added by the owner
+([Cisco Duo identity feed](#cisco-duo-identity-feed-v190), step 6).
 
 ### Views not in the navigation menu
 
@@ -1308,7 +1329,7 @@ The TA supports compliance requirements for:
 
 ## Enterprise Security integration
 
-The three `AI Governance - * - Rule` correlation searches register themselves
+The `AI Governance - * - Rule` correlation searches register themselves
 with ES automatically — `action.correlationsearch.enabled = 1` plus
 `export = system` in `metadata/default.meta` is all ES needs to list them under
 **Configure → Content → Content Management**. No registration file is required.
@@ -1508,7 +1529,500 @@ the stack's RBA rule and the Risk data model's lag. On the ES 8.5.1 dry run of
 
 ---
 
+## Cisco Duo identity feed (v1.9.0)
+
+The TA can read Cisco Duo's own authentication and activity logs and its user
+list through the Duo Admin API (read-only), and turn them into CIM
+Authentication / Change events, ES identities and user risk. Everything ships
+**off**: no input instance and no identity source ship (an owner adds both),
+and the lookup gen and the rule are `disabled = 1`. Nothing calls Duo until an
+owner adds an input instance in `local/`.
+
+| Piece | What it is | Ships |
+|---|---|---|
+| `ta_gen_ai_cim_duo` modular input | `bin/ta_gen_ai_cim_duo.py` (entry point) over `ta_gen_ai_cim_duo_input.py` and the client `ta_gen_ai_cim_duo_api.py`; spec `README/inputs.conf.spec`. One Duo endpoint per instance: `authentication`, `activity` (Duo public preview; opt in) or `users` | scheme defaults only, no instance |
+| Cisco Duo account | `auth_type = duo_hmac` in `ta_gen_ai_cim_account.conf`: the API hostname and the integration key; the secret key only in `storage/passwords` (`[passwords]` is admin, sc_admin) | none |
+| `ta_gen_ai_cim:duo:authentication` / `:activity` / `:user` | search-time CIM mapping: Authentication for the authentication log and admin logins, Change for enrollments and other activity; no `cisco:duo:*` props | on (inert without data) |
+| `genai_duo_*` macros | `genai_duo_index` (`index=duo`), `genai_duo_auth_events`, `genai_duo_activity_events`, `genai_duo_user_events`, `genai_duo_identity_scope` | on |
+| *GenAI - Identity - Duo Identity Lookup Gen* | daily; writes `lookups/ta_gen_ai_cim_duo_identities.csv` (never shipped) from the newest complete users snapshot | disabled |
+| `[identity_manager://ta_gen_ai_cim_duo_identities]` | the ES identity source that merges that file into ES identities, category `Cisco Duo users` | **not shipped**: `default/inputs.conf` holds only a commented example; an owner adds it in `local/` or in ES once the file has rows (step 6) |
+| *AI Governance - Duo Authentication Fraud or Denial Burst - Rule* | user risk 80 when a user reports a push as fraud, 40 for 5 or more failed Duo authentications in 10 minutes; a finding on the user, throttled for 30 minutes | disabled |
+| *Duo Identity Feed* dashboard | authentications by action, denied/fraud by user, checkpoint lag per input (from the indexed events), user snapshots, merged identities, users with Duo risk | on (reads zero until enabled) |
+| *Identity Activity* dashboard | per identity: Duo status and sign-ins beside the AI application's sign-ins, verified turns and blocks, with ES risk events, findings, risk score and identity category; a time range and an identity input | on (the Duo columns read zero until the input runs; the ES tile, Identity overview, Activity timeline and Risk by detection need Enterprise Security and show an error without it) |
+| `genai_identity_activity_events`, `genai_identity_verified_turn`, `genai_identity_duo_class` | the three macros behind *Identity Activity* and home card 06: the AI application's identity events (the raw term `identity_*` narrows the scan, the field filter decides), the one chat event that stands for a verified AI turn, and the outcome of a Duo authentication (success, denied, fraud, other) | on |
+
+### Turning it on
+
+Run the input on **one** standalone search head or heavy forwarder. Its
+checkpoint is a KV store collection, so a heavy forwarder needs the KV store
+enabled.
+
+1. In Duo, create an Admin API application with only **Grant read log** and
+   **Grant resource - Read**.
+2. Open `/app/TA-gen_ai_cim/configuration` (not in the menu), tab
+   **Cisco Duo (Admin API)**, and add the account: a name, the API hostname
+   (`api-<id>.duosecurity.com` or `.duofederal.com`), the integration key and
+   the secret key. The tab saves through the account REST handler, which
+   `default/web.conf` exposes to Splunk Web; Splunk Web reads that at startup.
+3. Create the index (`duo` is what the macros assume; never `gen_ai_log`). If
+   ES's accelerated Authentication searches (`summariesonly=t`) find no Duo
+   events, add the index to `cim_Authentication_indexes`.
+4. Add one instance per endpoint in `local/inputs.conf`, then restart Splunk
+   once, which registers the new scheme and starts the instances:
+
+   ```ini
+   [ta_gen_ai_cim_duo://duo_authentication]
+   account = duo
+   endpoint = authentication
+   index = duo
+   interval = 300
+
+   [ta_gen_ai_cim_duo://duo_users]
+   account = duo
+   endpoint = users
+   index = duo
+   interval = 86400
+   ```
+
+   On Splunk Cloud, where `local/` cannot be edited, add each instance in
+   Splunk Web instead: **Settings > Data inputs > Cisco Duo (AI Governance) >
+   New**. The form asks for a name, Account, Endpoint, Lag and Initial
+   lookback; tick **More settings** for the interval and the index. Steps 5
+   and 7 are likewise done under **Settings > Searches, reports, and alerts**.
+
+5. Enable *GenAI - Identity - Duo Identity Lookup Gen* in `local/`, but do
+   **not yet add the identity source**. Wait until the users input has written
+   a complete snapshot (the *Duo Identity Feed* snapshot panel shows it), run
+   the lookup gen once by hand, and confirm that
+   `| inputlookup ta_gen_ai_cim_duo_identities | stats count` returns more
+   than 0.
+6. Only then add the identity source. The TA does not ship its stanza: ES's
+   identity manager checks the lookup file of every identity source every 5
+   minutes, a disabled source's included, and logs
+   `ERROR PersistentScript ... Lookup table was not found` to `splunkd.log`
+   each time while the file is missing, which would be forever on an install
+   that never turns Duo on. The order matters for a second reason: ES merges
+   every enabled identity source in one search with no check that a source's
+   file exists, so a missing CSV makes that search fail for every source, Duo
+   or not, and ES retries it on every pass until the file appears. Add the
+   source in one of two ways:
+
+   - In `local/inputs.conf`, then restart Splunk or reload the inputs:
+
+     ```ini
+     [identity_manager://ta_gen_ai_cim_duo_identities]
+     target = identity
+     url = lookup://ta_gen_ai_cim_duo_identities
+     category = Cisco Duo users
+     description = Cisco Duo users from the Duo Admin API users snapshot (ta_gen_ai_cim:duo:user)
+     disabled = false
+     ```
+
+   - In Enterprise Security (8.5): **Configure > All configurations**, in the
+     **Data** section **Assets and identities**, the **Identity lookups** tab,
+     then **New > New configuration**. In the *New identity manager* dialog
+     choose the lookup definition `ta_gen_ai_cim_duo_identities` as the
+     **Source**, give it the same **Name** (the *Duo Identity Feed* dashboard
+     finds the merged rows by that source name), the **Category**
+     `Cisco Duo users` and a **Description**, and save.
+
+   Do not add it on a stack where `genai_duo_identity_scope` leaves no rows,
+   for example a room stack that polls only the lab tenant.
+7. Enable the rule.
+
+### How the input reads Duo
+
+- Every log request sends `sort=ts:asc`; each run makes one Duo log call (up
+  to 1000 records), which is what Duo asks for ("no more than once per
+  minute"). At `interval = 300` that caps one log input at about 288,000
+  records a day: a tenant that writes more falls behind, and records that
+  reach Duo's 180-day retention before they are read are lost. The interval
+  floor is 120 s: the input rejects less, and a run that starts under 115 s
+  after the last checkpoint write is skipped, so an interval set lower
+  directly in `local/` cannot poll faster.
+- The checkpoint (KV `ta_gen_ai_cim_duo_checkpoint`, one row per instance:
+  `mintime_ms`, `maxtime_ms`, `next_offset`, `backoff_until`, `updated`) is
+  saved after each page. Duo returns a `next_offset` on the last page that has
+  records too, and only the call after it comes back without one, so a saved
+  `next_offset` is a cursor, not a sign of more records: the next run resumes
+  after it with `mintime` = the cursor's timestamp and `maxtime` = now minus
+  `lag_seconds` (default 180, at least 120: Duo delays its logs about two
+  minutes), as Duo's own duo_log_sync resumes. A page with no records, or with
+  no `next_offset`, completes the window, and the next window starts at that
+  call's `maxtime` + 1 ms; a `next_offset` equal to the one sent completes it
+  too (WARN). A run whose window would be empty is skipped.
+- A window is never abandoned while Duo still holds records it has not read.
+  When Duo's retention floor (180 days less an hour) passes the cursor, the
+  window resumes at the floor (WARN), so only records Duo no longer has are
+  missed; `initial_lookback_hours = 4320` backfills everything Duo still holds,
+  1000 records a run.
+- **Two known windows.** A run killed after writing a page but before saving
+  its checkpoint sends that page again, so deduplicate on `txid`. Events still
+  in splunkd's pipeline when splunkd crashes are not read again (at most once).
+- HTTP 429 / Duo code 42901 backs off for 120 s, doubling per consecutive 429
+  up to an hour.
+- A users snapshot reads every page in one run and writes an allowlist of
+  fields (no phones, tokens, WebAuthn or desktop-authenticator records, no
+  notes) plus `snapshot_id`, `snapshot_total` and `snapshot_seq`. A page that
+  answers 429 or fails transiently (Duo unreachable, HTTP 5xx) is retried in
+  the same run up to 6 times, waiting 1 s doubling to 32 s plus jitter and at
+  least `Retry-After`, with at most 120 s of waiting per snapshot, as
+  duo_client_python retries. Only a page still failing after that, or the page
+  cap, leaves the run without a snapshot, and then it writes nothing.
+- On a search head cluster only the captain polls. This guard is best effort
+  and has not been tested on a real cluster.
+
+### Identities and risk
+
+- identity is the user's lowercased, de-duplicated username|email|aliases,
+  username first, and ES keeps that order: SA-IdentityManagement rejoins
+  identity into one pipe-delimited value (`mvdedup`, then `mvjoin`) before the
+  merge's `mvsort`, which therefore sorts a single value, and the merge splits
+  it again in order. So the canonical key (the first `normalized_identity`
+  value, which UEBA reads) is the Duo username, whatever sorts first. The
+  lookup gen's fixture "the newest COMPLETE snapshot wins over a newer
+  incomplete one" (`tools/tests/fixtures/duo_spl.json`, run live by
+  `test_duo_spl.py`) pins that order; Splunk documents `mvdedup` only as
+  removing duplicates.
+- The rule's risk object is `genai_identity_join_key(user)`, the lowercased
+  local part of the Duo username, the same key the Lab 5 rule uses. Where a
+  tenant's Duo usernames are emails, that local part is not one of the
+  identity's keys, so ES matches the risk to the identity only when the Duo
+  identity source sets `dynamic_identity_spec = {"email_short": true}` (on the
+  `[identity_manager://ta_gen_ai_cim_duo_identities]` stanza you add in
+  `local/inputs.conf`, or the **Email Short** convention in the ES dialog;
+  ES then adds each email's local part as a key). That is a per-source
+  setting, not a global Assets & Identities one. Two users who share a local
+  part in different domains share one risk object.
+- `genai_duo_identity_scope` keeps Lab 5 participant accounts (`l5-*`) out,
+  and every Lab 5 persona (`pseudoco_identity_personas`): a user whose keys
+  include a persona email, or a persona's short name with no Duo email (a
+  persona whose Duo email is empty). A customer user who only shares a
+  persona's short name, with an email of their own, stays in.
+- On ES Essentials the risk feeds Entity Risk Scoring; the UEBA screens need
+  ES Premier.
+
+### Scope and coexistence
+
+- The rule reads the CIM Authentication data model scoped by
+  `genai_duo_auth_events` (index and sourcetype). It does not filter on
+  `authentication_service=duo`, because PseudoCo Assistant's own Duo sign-in
+  records carry that value too and would be counted twice, and not on
+  `vendor_product`, because CIM 8.5's Authentication data model has no such
+  field (the Duo sourcetypes still set `vendor_product = "Cisco Duo"` for raw
+  searches). Keep `genai_duo_auth_events` to index, sourcetype, source or host
+  terms with no pipe: the rule embeds it in a `tstats` WHERE clause.
+- The TA ships no props, eventtypes or tags for Cisco Security Cloud's
+  `cisco:duo:*` sourcetypes. Do not run both inputs against one tenant, or
+  every Duo event is indexed twice. The macros can point at Security Cloud
+  data, but the TA's CIM mapping and the lookup gen's snapshot fields do not
+  come with it, and the rule counts that data only if its own mapping sets the
+  same `action` and `signature_id` values.
+- No `user_agent` is synthesized: Duo sends a browser and a version, not a
+  user agent string.
+
+---
+
 ## Version History
+
+### v1.9.0 (unreleased - tag after the Duo feed is verified on a running splunkd)
+
+**Cisco Duo identity feed for ES and UEBA** (everything new ships off; see
+[Cisco Duo identity feed](#cisco-duo-identity-feed-v190))
+
+- ADDED: Cisco Duo modular input `ta_gen_ai_cim_duo` (entry point
+  `bin/ta_gen_ai_cim_duo.py` over `bin/ta_gen_ai_cim_duo_input.py`, spec
+  `README/inputs.conf.spec`), off by default with no instance shipped. One
+  endpoint per instance: `authentication`, `activity` (Duo public preview, opt
+  in) or `users`. Every log request sends `sort=ts:asc`; `mintime`, `maxtime`
+  and `next_offset` are checkpointed together after each page in the KV
+  collection `ta_gen_ai_cim_duo_checkpoint`. A saved `next_offset` is a cursor
+  the next run resumes after, with `maxtime` = now minus the lag (Duo returns a
+  `next_offset` on its last page with records too); a page with no records or
+  no `next_offset`, or a `next_offset` echoing the one sent, completes the
+  window, and the next one starts at `maxtime` + 1 ms; empty windows are
+  skipped; a window is never abandoned while Duo still holds unread records,
+  and resumes at the retention floor once the floor passes its cursor. One Duo
+  log call per run, up to 1000 records. HTTP 429 / code 42901 backs off
+  exponentially (120 s doubling to 1 h); the 120 s interval floor is validated
+  and also held at runtime. The users snapshot writes an allowlist of fields
+  with `snapshot_id` / `snapshot_total` / `snapshot_seq`, and retries a page
+  that answers 429 or a transient error up to 6 times in the run (1-32 s with
+  jitter, at least `Retry-After`, at most 120 s in all). Best-effort search
+  head cluster guard: only the captain polls (untested on a real cluster).
+  Known windows: one page may repeat after a run is killed (deduplicate on
+  `txid`), and events still in splunkd's pipeline when splunkd crashes are not
+  read again (at most once). As first built (review, 2026-11-16) the window
+  kept `maxtime` fixed until Duo returned no `next_offset`, which cost an empty
+  extra run per window against a real Duo, stalled for good on a Duo that
+  echoes the `next_offset` it was sent, and abandoned an unfinished window
+  once the retention floor passed its start (with `initial_lookback_hours =
+  4320`, all but the first 1000 records of the backfill); a 429 on any users
+  page discarded the snapshot.
+- ADDED: `bin/ta_gen_ai_cim_duo_api.py`, the canonical read-only Duo Admin API
+  client (v5 HMAC-SHA512, verified TLS, 20 s timeout, `next_offset` / offset
+  paging; HTTP 5xx and an unreachable Duo raise `DuoUnavailable`). Its v5
+  signer is proven identical to the Lab 5 SOAR connector's
+  (`tools/duo/tests/test_duo_api.py`); it never imports `soar_apps/`. A
+  rejected account `url` is never echoed in an error: the input logs that
+  error at ERROR, and a `url` written by hand skips the handler's validation,
+  so it may hold a pasted secret.
+- ADDED: Cisco Duo (Admin API) accounts: `auth_type = duo_hmac` in the account
+  REST handler, plus a *Cisco Duo (Admin API)* tab on the Configuration page
+  that saves only through the handler. The API hostname is validated and
+  normalized to `https://api-<id>.duosecurity.com` or `.duofederal.com`. The
+  integration key goes in the conf; the secret key goes only to
+  `storage/passwords` (realm `ta_gen_ai_cim_account__<name>`, `client_secret`)
+  and is never returned, logged or echoed.
+- ADDED: sourcetypes `ta_gen_ai_cim:duo:authentication`, `:activity` and
+  `:user` (search-time CIM Authentication and Change mapping), eventtypes
+  `ta_gen_ai_cim_duo_authentication`, `_enrollment`, `_admin_login` and
+  `_activity` with their tags, macros `genai_duo_index`,
+  `genai_duo_auth_events`, `genai_duo_activity_events`,
+  `genai_duo_user_events` and `genai_duo_identity_scope`, and the lookup
+  definition `ta_gen_ai_cim_duo_identities`. No props for any `cisco:duo:*`
+  sourcetype, so nothing clashes with Cisco Security Cloud.
+- ADDED: *GenAI - Identity - Duo Identity Lookup Gen* (ships **disabled**,
+  owner = admin): the newest complete users snapshot into
+  `lookups/ta_gen_ai_cim_duo_identities.csv` (gitignored, never packaged), the
+  file behind the ES identity source
+  `[identity_manager://ta_gen_ai_cim_duo_identities]` (category
+  `Cisco Duo users`). That source does **not** ship as a stanza:
+  `default/inputs.conf` holds it only as a commented example, and an owner
+  adds it in `local/inputs.conf` or in ES (the FIXED entry below says why).
+  identity is the lowercased username|email|aliases, username first (ES keeps
+  the order, so the Duo username is the canonical key); Lab 5 participants and
+  personas stay out by key. A persona's bare short name drops a user only when
+  that user has no Duo email, so a customer user who shares one (`grace.lin`
+  with an email of their own) is kept. Add the identity source only once the
+  lookup has rows: ES's merge search fails for every identity source while an
+  enabled source's file is missing.
+- FIXED (found live on ES 8.5.1, 2026-11-16): the Duo identity source first
+  shipped as a `default/inputs.conf` stanza with `disabled = true`. Its CSV is
+  generated at runtime and never ships, and ES's identity manager
+  (SA-IdentityManagement, every 300 s) checks the lookup file of **every**
+  `identity_manager` source, a disabled one included. `splunkd.log` therefore
+  got `ERROR PersistentScript ... Lookup table was not found: [HTTP 404]
+  .../data/lookup-table-files/ta_gen_ai_cim_duo_identities.csv` every 5
+  minutes for as long as the file did not exist, which is forever on an
+  install that never turns Duo on (the identity merge itself still ran). The
+  stanza no longer ships. A header-only CSV was not an option: a bundled
+  lookup file overwrites the generated one on every upgrade.
+- ADDED: *AI Governance - Duo Authentication Fraud or Denial Burst - Rule*
+  (ships **disabled**): user risk 80 for a push the user marked as fraud, 40
+  for 5 or more failed Duo authentications in 10 minutes, on the identity join
+  key, with `_entities` and no `risk_object` (R-CONF-006) and no raw content
+  (R-SEC-001). It is scoped by the sourcetype through `genai_duo_auth_events`,
+  not by `Authentication.vendor_product` as designed: CIM 8.5.0's
+  Authentication data model has no `vendor_product` field, so that filter
+  would match nothing. The scope also keeps PseudoCo Assistant's own Duo
+  sign-in records (`authentication_service=duo`) from being counted twice.
+  Its `tstats` groups `by _time, Authentication.user, Authentication.action,
+  Authentication.signature_id, Authentication.src, Authentication.app
+  span=1s` (span after the field list, as documented) and detects fraud on
+  `signature_id` (`user_marked_fraud`); `Authentication.result`, which exists
+  only as a CIM 8.5 calculated field, is no longer grouped on, because
+  `tstats` drops every row with a null group-by field.
+- ADDED: *Duo Identity Feed* dashboard (`ta_gen_ai_cim_duo_identity`,
+  Dashboard Studio, absolute layout, dark): Duo authentications by action and
+  denied/fraud by user (last 24 h; the user is the identity join key, never
+  the raw Duo username, which is an email address on some tenants);
+  checkpoint lag per input instance from the
+  indexed events (`tstats` on the `genai_duo_*` macros, never REST or the
+  checkpoint collection); Duo user snapshots judged like the lookup gen
+  (complete = event count equals `snapshot_total`, same -3d window); Duo
+  identities merged into `identity_lookup_expanded` (first key as the
+  identity join key, no email column); users with Duo risk from
+  `Risk.All_Risk`, risk events and findings counted apart (see the *Risk*
+  note under *Identity Activity* below). Home card 05 (KPI *Duo
+  authentications, last 24h*) and a Dashboards menu entry; the scoreboard
+  moves down one card, unchanged.
+- ADDED: *Identity Activity* dashboard (`ta_gen_ai_cim_identity_activity`,
+  Dashboard Studio, absolute layout, dark): per identity, what Cisco Duo knows
+  next to what the AI application saw. The identity is the lowercased local
+  part of the login (`genai_identity_join_key`), so a Duo username and the
+  user of a verified AI turn line up. A time range input (default last 14
+  days) and an identity dropdown fed by the identities of either feed apply to
+  every panel. Six KPI tiles (identities with Duo sign-ins, Duo sign-ins
+  succeeded, denied or marked fraud, identities with verified AI turns,
+  verified AI turns blocked, identities with ES user risk); an *Identity
+  overview* table (Duo status and enrolment from the newest complete users
+  snapshot in the range, Duo success / denied / fraud / other, last Duo
+  sign-in and factor, application sign-ins, verified AI turns and blocks,
+  Identity Risk Gate verdicts, ES risk events, findings and score, ES identity
+  category); an *Activity timeline*; *Duo sign-in to AI activity*; *Source
+  addresses by identity* (Duo only, application only, both); *Risk by
+  detection*. Events are read only through `genai_duo_auth_events`,
+  `genai_duo_user_events` and the new `genai_identity_activity_events` (over
+  `genai_identity_ai_events`; its raw term `identity_*` only narrows the scan,
+  the field filter decides). Four things the first build got wrong, found in
+  review on live data (2026-11-16) and corrected before release:
+  - *Sign-in chain.* The application's `identity_signin_success` record
+    carries Duo's transaction id (`details.duo_txid`, equal to the `txid` of
+    the Duo authentication), so an application sign-in is matched on that id,
+    whatever the two clocks say. Only a verified turn carries no such id: the
+    first verified turn after each application sign-in, and a sign-in whose id
+    is not in the range, are matched on user and time, not on a session key
+    (the nearest earlier *successful* Duo authentication of the identity
+    within 10 minutes, to any Duo-protected application). `matched_on` says
+    which, and `duo_denied_10m` counts the identity's denied or fraud Duo
+    authentications in the 10 minutes before. The first build stated that the
+    application does not log Duo's transaction id, matched everything on
+    time, and so could pair a sign-in with a denial from another address a
+    second earlier. A row under 15 minutes old with no match reads *Duo log
+    may not be in yet* (Duo's log lags by the input's lag plus its poll
+    interval) and the panel re-runs every 5 minutes.
+  - *A verified AI turn* is the turn's one chat event
+    (`genai_identity_verified_turn`: provider set, operation `chat`).
+    PseudoCo Assistant stamps `identity_verified` on every event of a
+    signed-in turn (tool calls, decisions and, on a single-sourcetype HEC
+    destination, the escalation record), so "verified and not an audit
+    record" counted a turn with a record lookup two or three times and a
+    blocked tool call as a blocked turn.
+  - *Duo outcomes* come from one macro (`genai_identity_duo_class`): success,
+    denied (Duo result denied or failure), fraud, and other (error or anything
+    else). The tiles, the overview and the timeline add up to the same total;
+    before, a result of failure or error counted in no tile and as a failure
+    in the timeline.
+  - *Risk.* ES 8's Risk data model reads the notable index as well as the
+    risk index, so one firing of a rule that writes a risk event and raises a
+    finding is two rows. The overview shows `risk_events` and `findings` apart
+    and the timeline draws them as two series; `risk_score` and *Risk by
+    detection* stay the total of both, which is ES's own entity risk. The risk
+    subsearches filter on the chosen identity and return the newest (or the
+    riskiest) rows first, because `append` keeps only 50,000; the timeline
+    reads risk in 5-minute buckets up to a 2-day range and hourly beyond.
+
+  The ES tile, *Identity overview*, *Activity timeline* and *Risk by
+  detection* read `Risk.All_Risk` (user risk) and `identity_lookup_expanded`
+  and need Enterprise Security: without it they show an error, the overview
+  and the timeline included, although their Duo and application content needs
+  none (a `tstats` on a missing data model is fatal even inside `append`). The
+  five Duo and application tiles, the sign-in chain and the address table do
+  not depend on it. No prompt or response text, email address or phone number
+  is shown. Home card 06 (KPI *identities active, last 24h*: distinct
+  identities with a Duo sign-in or a verified AI turn) and a Dashboards menu
+  entry after *Duo Identity Feed*; the scoreboard moves down one more card,
+  unchanged.
+- CHANGED: `metadata/default.meta` `[passwords]` limits every credential the
+  TA stores (ServiceNow, soar, Cisco Duo) to `admin, sc_admin`, `export = none`.
+  They used to inherit `[]` (read `*`, export system), so any role holding
+  `list_storage_passwords` could read them from any app. Every reader runs in
+  this app's context as a role that passes: the five ServiceNow sync and
+  inventory searches are now `owner = admin` (R-CONF-005), `| genaiseedes`
+  already was, `| aicase` runs as the invoking user (`power` may run it but
+  holds no `list_storage_passwords`, so it never could read them), and the Duo
+  input runs as splunk-system-user. The Duo checkpoint collection is
+  admin-only as well.
+- FIXED: the ACLs for `ta_gen_ai_cim_account.conf`, `ta_gen_ai_cim_es.conf`
+  and `ta_gen_ai_cim_genai_scoring.conf` were written under `[conf/<name>]`
+  and `[configs/conf-<name>]`, names Splunk never applies (a conf's metadata
+  object is `[<name>]`, the way splunkd writes
+  `[ta_gen_ai_cim_genai_scoring/pipeline_1]` into `local.meta`). All three
+  confs therefore inherited `[]`: any user could read every account's url,
+  username and client id, from 1.9.0 every Duo integration key and API
+  hostname too. They are now `[ta_gen_ai_cim_account]`, `[ta_gen_ai_cim_es]`
+  and `[ta_gen_ai_cim_genai_scoring]`, `admin, sc_admin`, `export = none`;
+  every reader already runs in this app's context as a role that passes (see
+  the `[passwords]` entry above).
+- FIXED: the account handler declared `redirect_url`, `access_token` and
+  `refresh_token` but never stored them, so a posted OAuth token was dropped
+  and then echoed unmasked in the reply splunkd receives
+  (`MConfigHandler.toXml` serializes every caller arg). They are no longer
+  declared, so splunkd rejects them, and the reply masks them anyway.
+- CHANGED (packaging, R-PKG-003 amendment): `README/*.conf.spec` now ship:
+  `README/inputs.conf.spec`, without which an installed package has no Duo
+  scheme, and `README/alert_actions.conf.spec`, which the old `README/` exclude
+  had been dropping from every package. Every other `README/` member is still
+  excluded, now by exact path. `bin/README` also ships: the old bare `README/`
+  pattern matched it too.
+- CHANGED: `app.manifest` `targetWorkloads` adds `_forwarders`, since the Duo
+  input may run on a heavy forwarder.
+- FIXED: `default/web.conf` exposed `TA-gen_ai_cim/*`, which matched no
+  endpoint the app serves, so Splunk Web's proxy refused the account handler.
+  It now exposes `ta_gen_ai_cim_account/ta_gen_ai_cim_account` and `/*`, which
+  the Cisco Duo tab saves through; Splunk Web picks this up at startup.
+- FIXED: `bin/snow_setup.py` called
+  `/servicesNS/nobody/TA-gen_ai_cim/ta_gen_ai_cim_account` without the
+  handler's `members` segment, so its lookups 404'd and its creates missed the
+  handler.
+- FIXED: `get_snow_config` and the Configuration page used the first account
+  stanza, so a `duo` or `soar` account (both sort ahead of most ServiceNow
+  names) would divert the ServiceNow syncs. Both now pick ServiceNow accounts
+  only, a `*.service-now.com` / `*.servicenow.com` host first
+  (`sync_snow_asset.select_snow_account`).
+- FIXED: the account handler's create silently updated an existing stanza
+  (`splunk.entity` `setEntity`'s update path); it now refuses an existing name.
+  The ServiceNow form no longer turns a 409 into an update of another account.
+  The handler also dropped the soar account's token on create
+  (`auth_type = token`).
+- CHANGED: the account handler persists through `configs/conf` +
+  `storage/passwords`, updates a secret in place (never delete-then-create),
+  rolls back a create whose secret write fails, refuses unknown auth types and
+  switches between `duo_hmac` and another type, and masks secrets in the reply
+  it sends back to splunkd.
+- FIXED (found live, 2026-11-16): the Configuration page read the first
+  `splunkweb_csrf_token_*` cookie it found. A browser that has used two Splunk
+  instances on one host (cookies are scoped by host, not port) then sent the
+  wrong token, the write failed CSRF validation with a 401, and Splunk Web
+  silently reloaded the page without saving. `getCSRFToken` now takes this
+  Splunk Web's own cookie (`splunkweb_csrf_token_<port>`, the port from
+  `$C.MRSPARKLE_PORT_NUMBER` or the page URL) through the pure function
+  `pickCsrfToken`, pinned by a node test in `tools/tests/test_duo_account.py`.
+- FIXED (found live, 2026-11-16): home card 02 (Tokenomics) showed `###`
+  instead of 0 whenever the last 24 hours held no inference event, because a
+  bare `stats sum()` returns no row on an empty window. Its search now carries a
+  count beside the sum and fills the null. The same fix went into the Duo
+  Identity Feed tiles before release, and `tools/tests/test_lab5_conf.py` now
+  requires every home tile's search to return a row on an empty window.
+- ADDED (VALIDATION_RULES.md): R-INP-001 (modular inputs ship off, with their
+  spec and `bin/<scheme>.py`; 120 s floor; secrets only in `storage/passwords`;
+  never `gen_ai_log`) and a dated R-PKG-003 amendment for `README/*.conf.spec`.
+  `check_package.sh` enforces both, plus the dev-only trees R-PKG-003 already
+  named (`tools/`, `elements/`, `planning/`, `package.sh`). Also R-INP-002,
+  from the Duo identity source fix above: an ES identity or asset source
+  (`[identity_manager://...]`) ships in `default/inputs.conf` only together
+  with its lookup file, enabled or not. `check_package.sh` checks it on the
+  built package and `tools/tests/test_duo_conf.py` on the tree.
+- Validation: AppInspect 4.2.0 `--included-tags cloud`: 0 errors, 0 failures,
+  0 future-failures, 9 warnings (the 8 accepted ones plus
+  `check_for_modular_inputs`, "App contains modular inputs in inputs.conf.spec.
+  No action required."). On 2026-11-16 the branch was loaded on a live Splunk
+  10.4.3 with Enterprise Security 8.5.1, and these were verified there against
+  a real Duo tenant:
+  - the modular input registered and pulled the tenant's authentication log
+    (57 events at the first check; it has kept polling since) and a complete
+    8-user snapshot;
+  - resuming from a saved `next_offset` with a later `maxtime` works;
+  - the identity lookup gen wrote 8 identities, and the ES identity manager
+    merged them (7 into existing identities, 1 new);
+  - the Authentication data model returns the Duo events;
+  - the risk rule, enabled in that instance's `local/`, ran on its 10-minute
+    schedule: one run over a 14-day window returned 4 users and wrote their
+    user risk and findings, and a later run over the default 30-minute window
+    raised user risk and a finding for a fresh denial burst, with the next run
+    throttled;
+  - the Cisco Duo tab created, listed and deleted a test account;
+  - ES Entity Risk Scoring scored that risk on its next 20-minute run, on one
+    user together with the Prompt Injection rule's;
+  - end to end with the application: a Duo sign-in to PseudoCo Assistant
+    matched the application's own sign-in record on the transaction id, 3
+    seconds apart; verified AI turns followed, one blocked by Cisco AI Defense;
+    and a failed sign-in burst sent before that sign-in showed on *Identity
+    Activity* as 6 denials in the 10 minutes before it. A repeat burst within
+    30 minutes of a finding is throttled, so its finding comes at the first
+    run after that;
+  - every search of *Identity Activity*, and home card 06, ran on that data
+    over an empty window and over its default one; the three *Duo Identity
+    Feed* searches changed in review (denied and fraud by user, merged
+    identities, users with Duo risk) ran over their own windows; and the
+    Identity Activity logic (one event per turn, Duo outcomes, the sign-in
+    chain, risk events against findings) also ran on synthetic rows through
+    the view's own text (`SIMULATIONS` in
+    `tools/tests/test_identity_activity.py`).
+
+  Not exercised: the UEBA pages (the instance runs ES Essentials) and a search
+  head cluster.
 
 ### v1.8.0 (unreleased - tag after real PseudoCo Assistant 4.23.0 events fill the identity fields)
 

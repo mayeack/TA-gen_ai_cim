@@ -20,6 +20,10 @@ lookups/*_training_data_engineered.csv
 lookups/tfidf_training_data_v3.csv
 lookups/*_model_metadata.csv
 lookups/pii_training_examples.csv
+# Duo identity source (v1.9.0): generated per site by "GenAI - Identity - Duo
+# Identity Lookup Gen" from the tenant's users (names, emails). Never tracked,
+# never shipped (package.sh excludes it too).
+lookups/ta_gen_ai_cim_duo_identities.csv
 
 # OS files
 .DS_Store

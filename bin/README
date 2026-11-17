@@ -1,75 +1,128 @@
 TA-gen_ai_cim - bin/ scripts
 =============================
 
-This directory contains the Python and shell helpers shipped with the add-on.
-All Python scripts target Python 3.7+ and use Splunk's bundled interpreter.
+The Python shipped with the add-on. Every script runs under Splunk's bundled
+interpreter (python.required = 3.13 on Splunk 9.4+, Python 3.9 on older
+releases), uses only the standard library plus the vendored lib/splunklib, and
+compiles on both. Loggers are module-level and write under
+$SPLUNK_HOME/var/log/splunk/. No script logs a credential or puts one in a URL.
 
-Custom search commands
-----------------------
+Custom search commands (default/commands.conf)
+----------------------------------------------
 
 aicase.py
-    Custom streaming search command (`| aicase`) that creates or looks up
-    ServiceNow AI Case records linked to GenAI events. Defined in
-    `default/commands.conf`. Uses `passauth = splunk-system-user` (see below).
+    `| aicase` - creates or looks up ServiceNow AI Case records linked to
+    GenAI events.
 
 genaiscore.py
-    Custom streaming search command (`| genaiscore pipeline=<name>`) that
-    enriches events with LLM-derived risk scores via Splunk AI Toolkit's
-    Connection Management. Defined in `default/commands.conf`. Uses
-    `passauth = splunk-system-user`.
+    `| genaiscore pipeline=<name>` - enriches events with LLM-derived risk
+    scores through Splunk AI Toolkit's Connection Management.
 
-Setup / data-load helpers
--------------------------
+genaiseedes.py (over genai_es_seed.py)
+    `| genaiseedes` - seeds the TA-owned Mission Control records (response
+    plans, the AI Findings queue) and binds plan tasks to the paired SOAR.
+    Run hourly and on startup by "GenAI - ES - Seed Response Plan and SOAR
+    Binding".
 
-create_snow_case.py
-    Internal helper used by `aicase.py` to create ServiceNow cases via the
-    ServiceNow REST API. Not invoked directly by users.
+Alert actions (default/alert_actions.conf)
+------------------------------------------
+
+create_snow_case.py      create_snow_aicase - opens a ServiceNow AI Case.
+sync_snow_asset.py       sync_snow_asset - reconciles AI systems and models
+                         with the ServiceNow inventory tables. It also holds
+                         the shared ServiceNow client (get_snow_config, OAuth,
+                         HTTP) every ServiceNow consumer imports.
+pull_snow_inventory.py   pull_snow_inventory - pulls the full ServiceNow AI
+                         inventory into KV store (an alert action, not an
+                         input).
+ai_defense_*.py          Simulated containment actions over
+                         ai_defense_response.py; every record they write
+                         carries "simulated": true.
+
+Modular input (README/inputs.conf.spec)
+---------------------------------------
+
+ta_gen_ai_cim_duo.py
+    The entry point Splunk runs for scheme ta_gen_ai_cim_duo (Splunk resolves
+    a scheme to bin/<scheme>.py). A shim that calls
+    ta_gen_ai_cim_duo_input.main(); it holds no logic.
+
+ta_gen_ai_cim_duo_input.py
+    Scheme ta_gen_ai_cim_duo. Each instance polls one Cisco Duo Admin API
+    endpoint (endpoint = authentication, activity or users) with the Duo
+    account named in account = <name>, and checkpoints to the
+    ta_gen_ai_cim_duo_checkpoint KV collection. Events are
+    ta_gen_ai_cim:duo:authentication, :activity and :user. Only the scheme's
+    default stanza ships; there is no instance until one is added in local/.
+    Reads the duo_hmac account's secret key from storage/passwords with the
+    input's own session key.
+
+ta_gen_ai_cim_duo_api.py
+    The read-only Duo Admin API client the input uses (v5 HMAC-SHA512
+    signing, TLS verified, 20 s timeout, next_offset / offset paging, HTTP
+    429 / code 42901 raised as DuoRateLimited, HTTP 5xx or an unreachable Duo
+    as DuoUnavailable). Standard library only; never logs a key, a signature,
+    an Authorization header or a rejected account url.
+
+REST handler (default/restmap.conf)
+-----------------------------------
 
 ta_gen_ai_cim_account_handler.py
-    Custom REST handler (`admin_external` in `restmap.conf`) for the
-    ServiceNow account configuration page. Manages credentials in
-    `passwords.conf` via Splunk's storage/passwords endpoint.
+    The admin_external handler for ta_gen_ai_cim_account.conf, at
+    /servicesNS/nobody/TA-gen_ai_cim/ta_gen_ai_cim_account/ta_gen_ai_cim_account.
+    auth_type basic / oauth_auth_code / oauth_client_creds (ServiceNow),
+    token (the soar account) and duo_hmac (Cisco Duo Admin API: url is the
+    validated https://api-<id>.duosecurity.com or .duofederal.com hostname,
+    client_id the integration key). Non-secret settings go to the conf;
+    passwords, client secrets, the SOAR token and the Duo secret key go only
+    to storage/passwords. List never returns a secret. Create refuses an
+    existing name, edit refuses a switch between duo_hmac and another auth
+    type, and an empty or masked secret on edit keeps the stored one. The
+    Configuration page's Cisco Duo tab saves through it; its ServiceNow tab
+    writes configs/conf-ta_gen_ai_cim_account and storage/passwords directly.
+
+Setup helper
+------------
 
 snow_setup.py
-    One-time bootstrap helper for ServiceNow integration setup
-    (creating tables, business rules, and import sets in a customer
-    ServiceNow instance).
+    CLI that creates or updates a ServiceNow basic-auth account through the
+    account REST handler
+    (/servicesNS/nobody/TA-gen_ai_cim/ta_gen_ai_cim_account/ta_gen_ai_cim_account).
 
-pull_snow_inventory.py
-    Modular-input style helper that pulls AI asset inventory from
-    ServiceNow into the `gen_ai_snow_case_map` KV store.
+Accounts and secrets
+--------------------
 
-sync_snow_asset.py
-    Periodic helper that reconciles Splunk-side asset records with
-    ServiceNow.
+Every secret lives under realm ta_gen_ai_cim_account__<account>, credential
+name password or client_secret, in the TA-gen_ai_cim app context. Since
+v1.9.0 metadata/default.meta [passwords] limits them to admin and sc_admin
+(export = none), and every reader below runs as a role that passes.
 
-load_pii_model.sh
-load_prompt_injection_model.sh
-    Convenience scripts that load the bundled MLTK models into Splunk
-    after installation. Safe to omit on Splunk Cloud where the customer
-    re-trains models from supplied training CSVs.
+    Realm (account)       Read by                         Runs as
+    ServiceNow account    sync_snow_asset,                the alert's session_key:
+                          pull_snow_inventory             the search owner, admin
+                                                          for the five shipped
+                                                          ServiceNow searches
+                          create_snow_aicase (ad hoc),    the invoking user
+                          | aicase
+    soar                  | genaiseedes, only with         admin (the shipped
+                          install_simulator = true        search is owner = admin)
+    Cisco Duo account     the Duo modular input           splunk-system-user (the
+                                                          input's own session)
 
+The ServiceNow consumers pick their account with
+sync_snow_asset.select_snow_account: the first account by name whose url is
+a *.service-now.com or *.servicenow.com host, else the first by name with a
+ServiceNow auth_type that is not named soar or duo. A Cisco Duo or soar
+account is never used as the ServiceNow account, whatever its name sorts as.
 
-Justification: passauth = splunk-system-user
---------------------------------------------
+passauth
+--------
 
-Both `aicase` and `genaiscore` declare `passauth = splunk-system-user` in
-`default/commands.conf`. This is required because the commands must:
-
-  1. Read the configured ServiceNow / LLM credential out of the Splunk
-     `storage/passwords` REST endpoint, which is restricted to system users.
-  2. Read or write to KV store collections (`gen_ai_snow_case_map`,
-     `gen_ai_review_findings`, `gen_ai_review_audit`) that hold operator
-     state across users.
-  3. Operate transparently when triggered by scheduled saved searches
-     (`ML - PII Detection Scoring`, `ML - Prompt Injection Scoring`, and
-     the GenAI scoring pipeline searches), where the dispatching role
-     varies by tenant.
-
-We considered narrower alternatives (`list_storage_passwords` capability
-on every consuming role, per-user OAuth) and rejected them because they
-either expanded user-visible privileges or required a per-customer auth
-flow that is not viable for unattended scheduled scoring.
-
-The commands do NOT execute arbitrary user input as code, do NOT shell
-out, and do NOT write files outside `$SPLUNK_HOME/var/log/splunk/`.
+No command sets passauth: Splunk ignores it for chunked (protocol v2)
+commands. Each runs under the invoking session (searchinfo.session_key).
+Access is gated by the command ACLs in metadata/default.meta ([commands/aicase]
+admin, sc_admin, power; [commands/genaiscore] and [commands/genaiseedes]
+admin, sc_admin) and by the ACLs on the confs and credentials each reads; the
+shipped scheduled searches that call genaiscore and genaiseedes are owned by
+admin. The commands do not execute user input as code, do not shell out, and
+write no files outside $SPLUNK_HOME/var/log/splunk/.

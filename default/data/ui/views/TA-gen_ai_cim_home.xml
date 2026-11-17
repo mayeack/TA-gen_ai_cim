@@ -21,7 +21,7 @@
             "type": "ds.search",
             "name": "Tokenomics",
             "options": {
-                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` eventtype=gen_ai_inference | stats sum(gen_ai.usage.total_tokens) as v",
+                "query": "index=gen_ai_log `exclude_scoring_sourcetypes` eventtype=gen_ai_inference | stats count as rows, sum(gen_ai.usage.total_tokens) as v | fillnull value=0 v | fields v",
                 "queryParameters": {
                     "earliest": "-24h",
                     "latest": "now"
@@ -46,6 +46,28 @@
                 "query": "`genai_cii_failed_checks` | stats count as v",
                 "queryParameters": {
                     "earliest": "-7d",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_card_05": {
+            "type": "ds.search",
+            "name": "Duo Identity Feed",
+            "options": {
+                "query": "`genai_duo_auth_events` | search event_type=\"authentication\" | stats count as v",
+                "queryParameters": {
+                    "earliest": "-24h",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_card_06": {
+            "type": "ds.search",
+            "name": "Identity Activity",
+            "options": {
+                "query": "| multisearch [ search `genai_duo_auth_events` | search event_type=\"authentication\" | eval identity_key=`genai_identity_join_key(user)` ] [ search `genai_identity_activity_events` | where `genai_identity_verified_turn` | eval identity_key=`genai_identity_join_key(user)` ] | stats dc(identity_key) as v",
+                "queryParameters": {
+                    "earliest": "-24h",
                     "latest": "now"
                 }
             }
@@ -112,7 +134,7 @@
             "options": {
                 "fontColor": "#FFFFFF",
                 "backgroundColor": "transparent",
-                "markdown": "# AI Governance\n\nTA-gen_ai_cim normalizes GenAI telemetry from index gen_ai_log into the gen_ai.* schema and turns it into governance: safety, privacy, cost, prompt injection and, with Cisco Identity Intelligence, compromised identities. Each card opens a dashboard; the number on the right is that dashboard's own data."
+                "markdown": "# AI Governance\n\nTA-gen_ai_cim normalizes GenAI telemetry from index gen_ai_log into the gen_ai.* schema and turns it into governance: safety, privacy, cost, prompt injection and, with Cisco Identity Intelligence and Cisco Duo, identity risk. Each card opens a dashboard; the number on the right is that dashboard's own data."
             }
         },
         "viz_rect_01": {
@@ -243,6 +265,70 @@
                 "numberPrecision": 0
             }
         },
+        "viz_rect_05": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_md_05": {
+            "type": "splunk.markdown",
+            "options": {
+                "fontColor": "#FFFFFF",
+                "backgroundColor": "transparent",
+                "markdown": "## 05 Duo Identity Feed\nCisco Duo authentications and users, mapped to CIM Authentication, ES identities and user risk  \n[Open Duo Identity Feed](/app/TA-gen_ai_cim/ta_gen_ai_cim_duo_identity)"
+            }
+        },
+        "viz_count_05": {
+            "type": "splunk.singlevalue",
+            "dataSources": {
+                "primary": "ds_card_05"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "underLabel": "Duo authentications, last 24h",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_rect_06": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_md_06": {
+            "type": "splunk.markdown",
+            "options": {
+                "fontColor": "#FFFFFF",
+                "backgroundColor": "transparent",
+                "markdown": "## 06 Identity Activity\nPer identity: Cisco Duo sign-ins and account state next to verified AI turns, blocks and ES user risk  \n[Open Identity Activity](/app/TA-gen_ai_cim/ta_gen_ai_cim_identity_activity)"
+            }
+        },
+        "viz_count_06": {
+            "type": "splunk.singlevalue",
+            "dataSources": {
+                "primary": "ds_card_06"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "underLabel": "identities active, last 24h",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
         "viz_score_title": {
             "type": "splunk.markdown",
             "options": {
@@ -327,7 +413,7 @@
         "type": "absolute",
         "options": {
             "width": 1440,
-            "height": 870,
+            "height": 1130,
             "showTitleAndDescription": true,
             "backgroundColor": "#171D21"
         },
@@ -463,11 +549,71 @@
                 }
             },
             {
+                "item": "viz_rect_05",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 630,
+                    "w": 1440,
+                    "h": 120
+                }
+            },
+            {
+                "item": "viz_md_05",
+                "type": "block",
+                "position": {
+                    "x": 24,
+                    "y": 638,
+                    "w": 1000,
+                    "h": 104
+                }
+            },
+            {
+                "item": "viz_count_05",
+                "type": "block",
+                "position": {
+                    "x": 1100,
+                    "y": 640,
+                    "w": 320,
+                    "h": 100
+                }
+            },
+            {
+                "item": "viz_rect_06",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 760,
+                    "w": 1440,
+                    "h": 120
+                }
+            },
+            {
+                "item": "viz_md_06",
+                "type": "block",
+                "position": {
+                    "x": 24,
+                    "y": 768,
+                    "w": 1000,
+                    "h": 104
+                }
+            },
+            {
+                "item": "viz_count_06",
+                "type": "block",
+                "position": {
+                    "x": 1100,
+                    "y": 770,
+                    "w": 320,
+                    "h": 100
+                }
+            },
+            {
                 "item": "viz_score_title",
                 "type": "block",
                 "position": {
                     "x": 0,
-                    "y": 640,
+                    "y": 900,
                     "w": 1440,
                     "h": 70
                 }
@@ -477,7 +623,7 @@
                 "type": "block",
                 "position": {
                     "x": 0,
-                    "y": 720,
+                    "y": 980,
                     "w": 280,
                     "h": 130
                 }
@@ -487,7 +633,7 @@
                 "type": "block",
                 "position": {
                     "x": 288,
-                    "y": 720,
+                    "y": 980,
                     "w": 280,
                     "h": 130
                 }
@@ -497,7 +643,7 @@
                 "type": "block",
                 "position": {
                     "x": 576,
-                    "y": 720,
+                    "y": 980,
                     "w": 280,
                     "h": 130
                 }
@@ -507,7 +653,7 @@
                 "type": "block",
                 "position": {
                     "x": 864,
-                    "y": 720,
+                    "y": 980,
                     "w": 280,
                     "h": 130
                 }
@@ -517,7 +663,7 @@
                 "type": "block",
                 "position": {
                     "x": 1152,
-                    "y": 720,
+                    "y": 980,
                     "w": 280,
                     "h": 130
                 }

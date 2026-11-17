@@ -1,0 +1,705 @@
+<dashboard version="2" theme="dark">
+    <label>Identity Activity</label>
+    <description>Per identity: Cisco Duo sign-ins and account state next to verified AI turns, application sign-ins, the Identity Risk Gate and Enterprise Security user risk</description>
+    <definition><![CDATA[
+{
+    "title": "Identity Activity",
+    "description": "Per identity: Cisco Duo sign-ins and account state next to verified AI turns, application sign-ins, the Identity Risk Gate and Enterprise Security user risk",
+    "inputs": {
+        "input_time": {
+            "type": "input.timerange",
+            "title": "Time Range",
+            "options": {
+                "token": "time",
+                "defaultValue": "-14d@d,now"
+            }
+        },
+        "input_identity": {
+            "type": "input.dropdown",
+            "title": "Identity",
+            "dataSources": {
+                "primary": "ds_identities"
+            },
+            "options": {
+                "token": "identity",
+                "defaultValue": "*",
+                "items": ">frame(label, value) | prepend(formattedStatics) | objects()"
+            },
+            "context": {
+                "formattedConfig": {
+                    "number": {
+                        "prefix": ""
+                    }
+                },
+                "formattedStatics": ">statics | formatByType(formattedConfig)",
+                "statics": [
+                    [
+                        "All identities"
+                    ],
+                    [
+                        "*"
+                    ]
+                ],
+                "label": ">primary | seriesByName(\"identity_key\") | renameSeries(\"label\") | formatByType(formattedConfig)",
+                "value": ">primary | seriesByName(\"identity_key\") | renameSeries(\"value\") | formatByType(formattedConfig)"
+            }
+        }
+    },
+    "defaults": {
+        "tokens": {
+            "default": {
+                "identity": {
+                    "value": "*"
+                }
+            }
+        }
+    },
+    "dataSources": {
+        "ds_base": {
+            "type": "ds.search",
+            "name": "Identities in the Duo and AI application feeds",
+            "options": {
+                "query": "| multisearch\n    [ search `genai_duo_auth_events`\n    | search event_type=\"authentication\"\n    | eval feed=\"duo\", identity_key=`genai_identity_join_key(user)`, duo_class=`genai_identity_duo_class` ]\n    [ search `genai_identity_activity_events`\n    | eval feed=\"app\", identity_key=`genai_identity_join_key(user)`, turn=if(`genai_identity_verified_turn`, 1, 0), blocked=if('gen_ai.policy.blocked'==\"true\", 1, 0) ]\n| where isnotnull(identity_key) AND identity_key!=\"\"\n| stats count as events, count(eval(feed==\"duo\")) as duo_signins, count(eval(duo_class==\"success\")) as duo_success, count(eval(duo_class==\"denied\" OR duo_class==\"fraud\")) as duo_denied_fraud, sum(turn) as ai_turns, sum(eval(turn*blocked)) as ai_blocked by identity_key\n| fillnull value=0 ai_turns, ai_blocked",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            }
+        },
+        "ds_identities": {
+            "type": "ds.chain",
+            "name": "Identity dropdown",
+            "options": {
+                "extend": "ds_base",
+                "query": "| sort 0 -events, identity_key\n| head 500\n| sort 0 identity_key\n| fields identity_key"
+            }
+        },
+        "ds_kpi_duo_identities": {
+            "type": "ds.chain",
+            "name": "Identities with Duo sign-ins",
+            "options": {
+                "extend": "ds_base",
+                "query": "| search identity_key=$identity|s$\n| where duo_signins>0\n| stats count as v"
+            }
+        },
+        "ds_kpi_duo_success": {
+            "type": "ds.chain",
+            "name": "Duo sign-ins succeeded",
+            "options": {
+                "extend": "ds_base",
+                "query": "| search identity_key=$identity|s$\n| stats count as rows, sum(duo_success) as v\n| fillnull value=0 v\n| fields v"
+            }
+        },
+        "ds_kpi_duo_denied": {
+            "type": "ds.chain",
+            "name": "Duo sign-ins denied or marked fraud",
+            "options": {
+                "extend": "ds_base",
+                "query": "| search identity_key=$identity|s$\n| stats count as rows, sum(duo_denied_fraud) as v\n| fillnull value=0 v\n| fields v"
+            }
+        },
+        "ds_kpi_ai_identities": {
+            "type": "ds.chain",
+            "name": "Identities with verified AI turns",
+            "options": {
+                "extend": "ds_base",
+                "query": "| search identity_key=$identity|s$\n| where ai_turns>0\n| stats count as v"
+            }
+        },
+        "ds_kpi_ai_blocked": {
+            "type": "ds.chain",
+            "name": "Verified AI turns blocked",
+            "options": {
+                "extend": "ds_base",
+                "query": "| search identity_key=$identity|s$\n| stats count as rows, sum(ai_blocked) as v\n| fillnull value=0 v\n| fields v"
+            }
+        },
+        "ds_overview": {
+            "type": "ds.search",
+            "name": "Identity overview",
+            "options": {
+                "query": "| multisearch\n    [ search `genai_duo_auth_events`\n    | search event_type=\"authentication\"\n    | eval feed=\"duo\", identity_key=`genai_identity_join_key(user)`, duo_class=`genai_identity_duo_class`, duo_result=lower(coalesce(result, \"unknown\")), duo_factor=coalesce(factor, \"unknown\") ]\n    [ search `genai_identity_activity_events`\n    | eval feed=\"app\", identity_key=`genai_identity_join_key(user)`, app_action='gen_ai.audit.action', turn=if(`genai_identity_verified_turn`, 1, 0), blocked=if('gen_ai.policy.blocked'==\"true\", 1, 0), gate=if(turn==1, coalesce('gen_ai.identity.risk.verdict', \"none\") . if('gen_ai.identity.check'==\"unavailable\", \", check unavailable\", \"\") . if('gen_ai.identity.override'==\"true\", \", override\", \"\"), null()) ]\n| fields _time, feed, identity_key, duo_class, duo_factor, duo_result, app_action, turn, blocked, gate\n| append\n    [ search `genai_duo_user_events`\n    | eval snapshot_total=tonumber(snapshot_total)\n    | eventstats count as snapshot_events, max(snapshot_total) as snapshot_expected, max(_time) as snapshot_time by snapshot_id\n    | where isnotnull(snapshot_id) AND snapshot_expected>0 AND snapshot_events==snapshot_expected\n    | eventstats max(snapshot_time) as newest_snapshot_time\n    | where snapshot_time==newest_snapshot_time\n    | dedup user_id\n    | eval feed=\"duo_user\", identity_key=`genai_identity_join_key(username)`, duo_status=lower(coalesce(status, \"unknown\")), duo_enrolled=if(lower(is_enrolled)==\"true\" OR is_enrolled==\"1\", \"yes\", \"no\")\n    | fields feed, identity_key, duo_status, duo_enrolled ]\n| append\n    [| tstats summariesonly=false count as n, sum(All_Risk.calculated_risk_score) as risk_score from datamodel=Risk.All_Risk where All_Risk.risk_object_type=\"user\" by All_Risk.risk_object, index\n    | rename All_Risk.risk_object as risk_object, index as risk_index\n    | eval feed=\"risk\", identity_key=`genai_identity_join_key(risk_object)`, risk_events=if(risk_index==\"notable\", 0, n), findings=if(risk_index==\"notable\", n, 0)\n    | search identity_key=$identity|s$\n    | stats sum(risk_events) as risk_events, sum(findings) as findings, sum(risk_score) as risk_score by feed, identity_key\n    | sort 0 -risk_score ]\n| where isnotnull(identity_key) AND identity_key!=\"\"\n| stats count(eval(feed==\"duo\")) as duo_signins, count(eval(duo_class==\"success\")) as duo_success, count(eval(duo_class==\"denied\")) as duo_denied, count(eval(duo_class==\"fraud\")) as duo_fraud, count(eval(duo_class==\"other\")) as duo_other, max(eval(if(feed==\"duo\", _time, null()))) as last_duo, latest(duo_factor) as last_duo_factor, latest(duo_result) as last_duo_result, count(eval(feed==\"app\")) as app_events, count(eval(app_action==\"identity_signin_success\")) as app_signins, sum(turn) as ai_turns, sum(eval(turn*blocked)) as ai_blocked, values(gate) as gate_verdicts, values(duo_status) as duo_status, values(duo_enrolled) as duo_enrolled, sum(risk_events) as risk_events, sum(findings) as findings, sum(risk_score) as risk_score by identity_key\n| eventstats count(duo_status) as snapshot_users\n| where duo_signins>0 OR app_events>0\n| search identity_key=$identity|s$\n| lookup identity_lookup_expanded identity as identity_key OUTPUT category as es_category\n| fillnull value=0 ai_turns, ai_blocked, risk_events, findings, risk_score\n| eval last_duo_signin=coalesce(strftime(last_duo, \"%Y-%m-%d %H:%M:%S\"), \"-\"), last_duo_factor=coalesce(last_duo_factor . \", \" . last_duo_result, \"-\"), duo_status=coalesce(mvjoin(duo_status, \", \"), if(snapshot_users>0, \"not in snapshot\", \"no snapshot in range\")), duo_enrolled=coalesce(mvjoin(duo_enrolled, \", \"), \"-\"), gate_verdicts=coalesce(mvjoin(gate_verdicts, \"; \"), \"-\"), es_category=coalesce(mvjoin(mvsort(es_category), \", \"), \"-\")\n| sort 0 -risk_score, -duo_fraud, -ai_blocked, identity_key\n| table identity_key, duo_status, duo_enrolled, duo_success, duo_denied, duo_fraud, duo_other, last_duo_signin, last_duo_factor, app_signins, ai_turns, ai_blocked, gate_verdicts, risk_events, findings, risk_score, es_category\n| rename identity_key as identity",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            }
+        },
+        "ds_kpi_risk": {
+            "type": "ds.chain",
+            "name": "Identities with ES user risk",
+            "options": {
+                "extend": "ds_overview",
+                "query": "| where risk_events>0 OR findings>0\n| stats count as v"
+            }
+        },
+        "ds_timeline": {
+            "type": "ds.search",
+            "name": "Activity timeline",
+            "options": {
+                "query": "| multisearch\n    [ search `genai_duo_auth_events`\n    | search event_type=\"authentication\"\n    | eval identity_key=`genai_identity_join_key(user)`, duo_class=`genai_identity_duo_class`, activity=case(duo_class==\"success\", \"Duo success\", duo_class==\"other\", \"Duo other\", true(), \"Duo failure\"), n=1 ]\n    [ search `genai_identity_activity_events`\n    | eval identity_key=`genai_identity_join_key(user)`, activity=case('gen_ai.audit.action'==\"identity_signin_success\", \"application sign-in\", `genai_identity_verified_turn` AND 'gen_ai.policy.blocked'==\"true\", \"AI turn blocked\", `genai_identity_verified_turn`, \"AI turn allowed\"), n=1 ]\n| where isnotnull(activity)\n| bin _time span=5m\n| stats sum(n) as n by _time, identity_key, activity\n| append\n    [| tstats summariesonly=false count as n from datamodel=Risk.All_Risk where All_Risk.risk_object_type=\"user\" by _time, All_Risk.risk_object, index span=5m\n    | rename All_Risk.risk_object as risk_object, index as risk_index\n    | eval identity_key=`genai_identity_join_key(risk_object)`, activity=if(risk_index==\"notable\", \"finding\", \"risk event\")\n    | search identity_key=$identity|s$\n    | addinfo\n    | eval span=if(isnum(info_max_time) AND info_max_time-info_min_time<=172800, 300, 3600), _time=floor(_time/span)*span\n    | stats sum(n) as n by _time, identity_key, activity\n    | sort 0 -_time ]\n| eventstats max(eval(if(activity==\"risk event\" OR activity==\"finding\", 0, 1))) as in_feed by identity_key\n| where in_feed==1\n| search identity_key=$identity|s$\n| timechart sum(n) by activity\n| fillnull value=0",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            }
+        },
+        "ds_duo_to_ai": {
+            "type": "ds.search",
+            "name": "Duo sign-in to AI activity",
+            "options": {
+                "query": "| multisearch\n    [ search `genai_duo_auth_events`\n    | search event_type=\"authentication\"\n    | eval kind=\"duo\", ord=0, identity_key=`genai_identity_join_key(user)`, link=txid, duo_class=`genai_identity_duo_class`, duo_time=_time, duo_application=coalesce(app, \"unknown\"), duo_factor=coalesce(factor, \"unknown\"), duo_result=lower(coalesce(result, \"unknown\")), duo_src=coalesce(src, \"unknown\") ]\n    [ search `genai_identity_activity_events`\n    | eval kind=case('gen_ai.audit.action'==\"identity_signin_success\", \"signin\", `genai_identity_verified_turn`, \"turn\"), ord=if(kind==\"signin\", 1, 2), identity_key=`genai_identity_join_key(user)`, link=if(kind==\"signin\", 'details.duo_txid', null()), app_src=if((in(lower(coalesce(src, \"\")), \"\", \"null\", \"unknown\", \"-\", \"::1\") OR like(src, \"127.%\")), \"unknown\", src) ]\n| where isnotnull(kind)\n| search identity_key=$identity|s$\n| fields _time, kind, ord, identity_key, link, duo_class, duo_time, duo_application, duo_factor, duo_result, duo_src, app_src\n| sort 0 str(identity_key), str(link), ord\n| streamstats reset_on_change=true last(duo_time) as id_time, last(duo_application) as id_application, last(duo_factor) as id_factor, last(duo_result) as id_result, last(duo_src) as id_src by identity_key, link\n| eval ok=if(kind==\"duo\" AND duo_class==\"success\", 1, null()), ok_time=if(ok==1, duo_time, null()), ok_application=if(ok==1, duo_application, null()), ok_factor=if(ok==1, duo_factor, null()), ok_src=if(ok==1, duo_src, null()), bad=if(kind==\"duo\" AND (duo_class==\"denied\" OR duo_class==\"fraud\"), 1, 0), signin_time=if(kind==\"signin\", _time, null())\n| sort 0 _time, ord, str(link)\n| streamstats last(ok_time) as ok_time, last(ok_application) as ok_application, last(ok_factor) as ok_factor, last(ok_src) as ok_src, last(signin_time) as signin_anchor by identity_key\n| streamstats time_window=10m sum(bad) as duo_denied_10m by identity_key\n| where kind!=\"duo\"\n| eval signin_anchor=coalesce(signin_anchor, 0), matched_on=case(kind==\"signin\" AND isnotnull(id_time), \"transaction id\", isnotnull(ok_time) AND _time-ok_time<=600, \"user and time\", true(), \"none\"), duo_time=case(matched_on==\"transaction id\", id_time, matched_on==\"user and time\", ok_time), duo_application=case(matched_on==\"transaction id\", id_application, matched_on==\"user and time\", ok_application, true(), \"-\"), duo_factor=case(matched_on==\"transaction id\", id_factor, matched_on==\"user and time\", ok_factor, true(), \"-\"), duo_result=case(matched_on==\"transaction id\", id_result, matched_on==\"user and time\", \"success\", true(), \"-\"), duo_src=case(matched_on==\"transaction id\", id_src, matched_on==\"user and time\", ok_src, true(), \"-\")\n| streamstats count as nth by identity_key, kind, signin_anchor\n| where kind==\"signin\" OR nth==1\n| eval app_event=if(kind==\"signin\", \"application sign-in\", \"first verified turn\"), duo_signin=case(matched_on!=\"none\", strftime(duo_time, \"%Y-%m-%d %H:%M:%S\"), now()-_time<900, \"Duo log may not be in yet\", true(), \"none within 10 min\"), app_time=strftime(_time, \"%Y-%m-%d %H:%M:%S\"), seconds_apart=if(matched_on!=\"none\", round(_time-duo_time, 0), null()), addresses_match=case(matched_on==\"none\" OR duo_src==\"unknown\" OR app_src==\"unknown\", \"unknown\", duo_src==app_src, \"yes\", true(), \"no\")\n| sort 0 -_time\n| head 500\n| table identity_key, duo_signin, duo_application, duo_factor, duo_result, duo_src, duo_denied_10m, app_event, app_time, app_src, seconds_apart, addresses_match, matched_on\n| rename identity_key as identity",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                },
+                "refresh": "5m",
+                "refreshType": "delay"
+            }
+        },
+        "ds_addresses": {
+            "type": "ds.search",
+            "name": "Source addresses by identity",
+            "options": {
+                "query": "| multisearch\n    [ search `genai_duo_auth_events`\n    | search event_type=\"authentication\"\n    | eval seen=\"duo\", identity_key=`genai_identity_join_key(user)`, address=src ]\n    [ search `genai_identity_activity_events`\n    | eval seen=\"app\", identity_key=`genai_identity_join_key(user)`, address=src ]\n| where isnotnull(address) AND NOT (in(lower(coalesce(address, \"\")), \"\", \"null\", \"unknown\", \"-\", \"::1\") OR like(address, \"127.%\"))\n| search identity_key=$identity|s$\n| stats count(eval(seen==\"duo\")) as duo_events, count(eval(seen==\"app\")) as app_events by identity_key, address\n| eval seen_by=case(duo_events>0 AND app_events>0, \"both\", duo_events>0, \"duo\", true(), \"app\")\n| stats values(eval(if(seen_by==\"both\", address, null()))) as both, values(eval(if(seen_by==\"duo\", address, null()))) as duo_only, values(eval(if(seen_by==\"app\", address, null()))) as application_only, dc(address) as addresses by identity_key\n| eval app_only_count=coalesce(mvcount(application_only), 0)\n| foreach both duo_only application_only\n    [ eval <<FIELD>>=coalesce(mvjoin(if(mvcount('<<FIELD>>')>10, mvappend(mvindex('<<FIELD>>', 0, 9), \"+\" . (mvcount('<<FIELD>>')-10) . \" more\"), '<<FIELD>>'), \", \"), \"-\") ]\n| sort 0 -app_only_count, -addresses, identity_key\n| table identity_key, both, duo_only, application_only, addresses\n| rename identity_key as identity",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            }
+        },
+        "ds_risk": {
+            "type": "ds.search",
+            "name": "Risk by detection",
+            "options": {
+                "query": "| multisearch\n    [ search `genai_duo_auth_events`\n    | search event_type=\"authentication\"\n    | eval identity_key=`genai_identity_join_key(user)` ]\n    [ search `genai_identity_activity_events`\n    | eval identity_key=`genai_identity_join_key(user)` ]\n| stats count as feed_events by identity_key\n| append\n    [| tstats summariesonly=false sum(All_Risk.calculated_risk_score) as risk_score from datamodel=Risk.All_Risk where All_Risk.risk_object_type=\"user\" by All_Risk.risk_object, source\n    | rename All_Risk.risk_object as risk_object, source as detection\n    | eval identity_key=`genai_identity_join_key(risk_object)`\n    | search identity_key=$identity|s$\n    | stats sum(risk_score) as risk_score by identity_key, detection\n    | sort 0 -risk_score ]\n| eventstats sum(feed_events) as feed_events by identity_key\n| where feed_events>0 AND isnotnull(detection)\n| search identity_key=$identity|s$\n| chart sum(risk_score) over identity_key by detection limit=10\n| fillnull value=0\n| addtotals fieldname=total_risk\n| sort 0 -total_risk\n| head 15\n| fields - total_risk\n| rename identity_key as identity",
+                "queryParameters": {
+                    "earliest": "$time.earliest$",
+                    "latest": "$time.latest$"
+                }
+            }
+        }
+    },
+    "visualizations": {
+        "viz_header": {
+            "type": "splunk.markdown",
+            "options": {
+                "fontColor": "#FFFFFF",
+                "backgroundColor": "transparent",
+                "markdown": "## Identity Activity\nPer identity, what Cisco Duo knows next to what the AI application saw. The identity is the lowercased local part of the login (macro genai_identity_join_key), so a Duo username and the user of a verified AI turn line up. Duo data comes through the genai_duo_* macros; application sign-ins and verified AI turns (one chat event each) through genai_identity_activity_events. The ES tile, Identity overview, Activity timeline and Risk by detection need Enterprise Security. Both inputs apply to every panel."
+            }
+        },
+        "viz_kpi_duo_identities": {
+            "type": "splunk.singlevalue",
+            "description": "Cisco Duo",
+            "dataSources": {
+                "primary": "ds_kpi_duo_identities"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "underLabel": "identities with Duo sign-ins",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_kpi_duo_success": {
+            "type": "splunk.singlevalue",
+            "description": "Cisco Duo",
+            "dataSources": {
+                "primary": "ds_kpi_duo_success"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "underLabel": "Duo sign-ins succeeded",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_kpi_duo_denied": {
+            "type": "splunk.singlevalue",
+            "description": "Cisco Duo",
+            "dataSources": {
+                "primary": "ds_kpi_duo_denied"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "> majorValue | rangeValue(majorColorConfig)",
+                "underLabel": "Duo sign-ins denied or marked fraud",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            },
+            "context": {
+                "majorColorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#FFFFFF"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#F8BE34"
+                    }
+                ]
+            }
+        },
+        "viz_kpi_ai_identities": {
+            "type": "splunk.singlevalue",
+            "description": "AI application",
+            "dataSources": {
+                "primary": "ds_kpi_ai_identities"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "underLabel": "identities with verified AI turns",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_kpi_ai_blocked": {
+            "type": "splunk.singlevalue",
+            "description": "AI application",
+            "dataSources": {
+                "primary": "ds_kpi_ai_blocked"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "> majorValue | rangeValue(majorColorConfig)",
+                "underLabel": "verified AI turns blocked",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            },
+            "context": {
+                "majorColorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#FFFFFF"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#F8BE34"
+                    }
+                ]
+            }
+        },
+        "viz_kpi_risk": {
+            "type": "splunk.singlevalue",
+            "description": "Needs Enterprise Security",
+            "dataSources": {
+                "primary": "ds_kpi_risk"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "> majorValue | rangeValue(majorColorConfig)",
+                "underLabel": "identities with ES user risk",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            },
+            "context": {
+                "majorColorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#FFFFFF"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#DC4E41"
+                    }
+                ]
+            }
+        },
+        "viz_rect_overview": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_overview": {
+            "type": "splunk.table",
+            "title": "Identity overview",
+            "description": "Needs Enterprise Security: without it this panel shows an error. Risk comes from Risk.All_Risk (risk_object_type user), es_category from identity_lookup_expanded. One row per identity with a Duo sign-in or AI application activity in the time range. duo_status and duo_enrolled: the newest complete Duo users snapshot in the range. duo_denied: Duo result denied or failure; duo_other: error or anything else. ai_turns and ai_blocked: verified turns, one per chat request, and those with gen_ai.policy.blocked true. gate_verdicts: Identity Risk Gate verdicts on those turns. risk_events: rows in the risk index (ES 8 intermediate findings); findings: rows in the notable index; risk_score: the total of both, as in ES entity risk, so a rule that writes a risk event and raises a finding counts once in each.",
+            "dataSources": {
+                "primary": "ds_overview"
+            },
+            "options": {
+                "count": 10,
+                "backgroundColor": "transparent",
+                "headerVisibility": "fixed",
+                "columnFormat": {
+                    "duo_fraud": {
+                        "rowColors": "> table | seriesByName(\"duo_fraud\") | rangeValue(alertColors)"
+                    },
+                    "ai_blocked": {
+                        "rowColors": "> table | seriesByName(\"ai_blocked\") | rangeValue(warnColors)"
+                    },
+                    "risk_score": {
+                        "rowColors": "> table | seriesByName(\"risk_score\") | rangeValue(alertColors)"
+                    },
+                    "findings": {
+                        "rowColors": "> table | seriesByName(\"findings\") | rangeValue(alertColors)"
+                    }
+                }
+            },
+            "context": {
+                "alertColors": [
+                    {
+                        "to": 1,
+                        "value": "#FFFFFF"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#DC4E41"
+                    }
+                ],
+                "warnColors": [
+                    {
+                        "to": 1,
+                        "value": "#FFFFFF"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#F8BE34"
+                    }
+                ]
+            }
+        },
+        "viz_rect_timeline": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_timeline": {
+            "type": "splunk.column",
+            "title": "Activity timeline",
+            "description": "Needs Enterprise Security: without it this panel shows an error. Duo authentications by outcome (failure: denied, failed or marked fraud; other: error or unknown), application sign-ins, verified AI turns (one per chat request) by gen_ai.policy.blocked, and Risk.All_Risk user risk for the identities in this view: risk event is a row in the risk index, dated at the activity; finding is a row in the notable index, dated when the rule ran. Risk is read in 5-minute buckets up to a 2-day range and hourly beyond, at most 50,000 bucket rows, newest first.",
+            "dataSources": {
+                "primary": "ds_timeline"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "stackMode": "stacked",
+                "legendDisplay": "bottom",
+                "xAxisTitleVisibility": "hide",
+                "yAxisTitleText": "events",
+                "seriesColorsByField": {
+                    "Duo success": "#53A051",
+                    "Duo failure": "#DC4E41",
+                    "Duo other": "#8C9BA5",
+                    "application sign-in": "#009CEB",
+                    "AI turn allowed": "#00CDAF",
+                    "AI turn blocked": "#F8BE34",
+                    "risk event": "#7B56DB",
+                    "finding": "#CB2196"
+                }
+            }
+        },
+        "viz_rect_duo_to_ai": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_duo_to_ai": {
+            "type": "splunk.table",
+            "title": "Duo sign-in to AI activity",
+            "description": "An application sign-in is matched on Duo's transaction id: the sign-in record carries it (details.duo_txid) and it equals the txid of the Duo authentication. A verified turn carries neither that id nor a session key, so the first verified turn after each application sign-in (or an identity's first in the range), and a sign-in whose transaction id is not in the range, are matched on user and time, not on a session key: the nearest earlier successful Duo authentication of the same identity within 10 minutes, to any Duo-protected application (duo_application says which). matched_on: transaction id, user and time, or none. duo_denied_10m: the identity's denied or fraud Duo authentications in the 10 minutes up to the application event. addresses_match compares the Duo access device address with the application client address: yes, no, or unknown when either is missing. Duo's log reaches Splunk minutes after the event (the input's lag plus its poll interval): an unmatched row under 15 minutes old reads Duo log may not be in yet, and the panel re-runs every 5 minutes.",
+            "dataSources": {
+                "primary": "ds_duo_to_ai"
+            },
+            "options": {
+                "count": 9,
+                "backgroundColor": "transparent",
+                "headerVisibility": "fixed",
+                "columnFormat": {
+                    "addresses_match": {
+                        "rowColors": "> table | seriesByName(\"addresses_match\") | matchValue(matchColors)"
+                    },
+                    "duo_denied_10m": {
+                        "rowColors": "> table | seriesByName(\"duo_denied_10m\") | rangeValue(warnColors)"
+                    }
+                }
+            },
+            "context": {
+                "matchColors": [
+                    {
+                        "match": "yes",
+                        "value": "#53A051"
+                    },
+                    {
+                        "match": "no",
+                        "value": "#DC4E41"
+                    },
+                    {
+                        "match": "unknown",
+                        "value": "#F8BE34"
+                    }
+                ],
+                "warnColors": [
+                    {
+                        "to": 1,
+                        "value": "#FFFFFF"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#F8BE34"
+                    }
+                ]
+            }
+        },
+        "viz_rect_addresses": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_addresses": {
+            "type": "splunk.table",
+            "title": "Source addresses by identity",
+            "description": "Client addresses per identity: seen by both Cisco Duo (access device) and the AI application (client address), by Duo only, or by the application only. Up to 10 addresses per cell.",
+            "dataSources": {
+                "primary": "ds_addresses"
+            },
+            "options": {
+                "count": 8,
+                "backgroundColor": "transparent",
+                "headerVisibility": "fixed"
+            }
+        },
+        "viz_rect_risk": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_risk": {
+            "type": "splunk.bar",
+            "title": "Risk by detection",
+            "description": "Needs Enterprise Security. Total risk score per identity, split by the detection that raised it (Risk.All_Risk, risk_object_type user), for identities with a Duo sign-in or AI application activity in the time range. The total is ES entity risk: each firing counts its risk event and, when the rule also raises one, its finding. Top 15 identities.",
+            "dataSources": {
+                "primary": "ds_risk"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "stackMode": "stacked",
+                "legendDisplay": "bottom",
+                "xAxisTitleVisibility": "hide",
+                "yAxisTitleText": "risk score"
+            }
+        }
+    },
+    "layout": {
+        "type": "absolute",
+        "options": {
+            "width": 1440,
+            "height": 1956,
+            "showTitleAndDescription": true,
+            "backgroundColor": "#171D21"
+        },
+        "globalInputs": [
+            "input_time",
+            "input_identity"
+        ],
+        "structure": [
+            {
+                "item": "viz_header",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 0,
+                    "w": 1440,
+                    "h": 110
+                }
+            },
+            {
+                "item": "viz_kpi_duo_identities",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 120,
+                    "w": 232,
+                    "h": 130
+                }
+            },
+            {
+                "item": "viz_kpi_duo_success",
+                "type": "block",
+                "position": {
+                    "x": 240,
+                    "y": 120,
+                    "w": 232,
+                    "h": 130
+                }
+            },
+            {
+                "item": "viz_kpi_duo_denied",
+                "type": "block",
+                "position": {
+                    "x": 480,
+                    "y": 120,
+                    "w": 232,
+                    "h": 130
+                }
+            },
+            {
+                "item": "viz_kpi_ai_identities",
+                "type": "block",
+                "position": {
+                    "x": 720,
+                    "y": 120,
+                    "w": 232,
+                    "h": 130
+                }
+            },
+            {
+                "item": "viz_kpi_ai_blocked",
+                "type": "block",
+                "position": {
+                    "x": 960,
+                    "y": 120,
+                    "w": 232,
+                    "h": 130
+                }
+            },
+            {
+                "item": "viz_kpi_risk",
+                "type": "block",
+                "position": {
+                    "x": 1200,
+                    "y": 120,
+                    "w": 232,
+                    "h": 130
+                }
+            },
+            {
+                "item": "viz_rect_overview",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 266,
+                    "w": 1440,
+                    "h": 460
+                }
+            },
+            {
+                "item": "viz_overview",
+                "type": "block",
+                "position": {
+                    "x": 8,
+                    "y": 274,
+                    "w": 1424,
+                    "h": 444
+                }
+            },
+            {
+                "item": "viz_rect_timeline",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 742,
+                    "w": 1440,
+                    "h": 340
+                }
+            },
+            {
+                "item": "viz_timeline",
+                "type": "block",
+                "position": {
+                    "x": 8,
+                    "y": 750,
+                    "w": 1424,
+                    "h": 324
+                }
+            },
+            {
+                "item": "viz_rect_duo_to_ai",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 1098,
+                    "w": 1440,
+                    "h": 440
+                }
+            },
+            {
+                "item": "viz_duo_to_ai",
+                "type": "block",
+                "position": {
+                    "x": 8,
+                    "y": 1106,
+                    "w": 1424,
+                    "h": 424
+                }
+            },
+            {
+                "item": "viz_rect_addresses",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 1554,
+                    "w": 712,
+                    "h": 380
+                }
+            },
+            {
+                "item": "viz_addresses",
+                "type": "block",
+                "position": {
+                    "x": 8,
+                    "y": 1562,
+                    "w": 696,
+                    "h": 364
+                }
+            },
+            {
+                "item": "viz_rect_risk",
+                "type": "block",
+                "position": {
+                    "x": 728,
+                    "y": 1554,
+                    "w": 712,
+                    "h": 380
+                }
+            },
+            {
+                "item": "viz_risk",
+                "type": "block",
+                "position": {
+                    "x": 736,
+                    "y": 1562,
+                    "w": 696,
+                    "h": 364
+                }
+            }
+        ]
+    }
+}
+]]></definition>
+</dashboard>

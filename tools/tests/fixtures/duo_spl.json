@@ -1,0 +1,471 @@
+[
+ {
+  "name": "auth: an approved push maps to CIM Authentication success",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Chrome\\\",\\\"browser_version\\\":\\\"120.0\\\",\\\"hostname\\\":null,\\\"ip\\\":\\\"198.51.100.23\\\",\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Mac OS X\\\",\\\"os_version\\\":\\\"14.1\\\"},\\\"alias\\\":\\\"\\\",\\\"application\\\":{\\\"key\\\":\\\"DIAPPKEY000000000001\\\",\\\"name\\\":\\\"Corp VPN\\\"},\\\"auth_device\\\":{\\\"ip\\\":\\\"203.0.113.50\\\",\\\"key\\\":\\\"DPDEVKEY000000000001\\\",\\\"name\\\":\\\"Duo Mobile device\\\"},\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"event_type\\\":\\\"authentication\\\",\\\"factor\\\":\\\"duo_push\\\",\\\"isotimestamp\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\",\\\"reason\\\":\\\"user_approved\\\",\\\"result\\\":\\\"success\\\",\\\"timestamp\\\":1767225600,\\\"trusted_endpoint_status\\\":\\\"not trusted\\\",\\\"txid\\\":\\\"0f5e8c1a-0000-4000-8000-000000000001\\\",\\\"user\\\":{\\\"groups\\\":[\\\"Duo Users\\\"],\\\"key\\\":\\\"DUUSERKEY00000000001\\\",\\\"name\\\":\\\"dana.ortiz\\\"}}\" | spath | eval <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_user>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_user_id>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_app>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_method>> | eval action_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-action>>, status_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-status>>, src=<<props:ta_gen_ai_cim:duo:authentication|EVAL-src>>, src_ip=<<props:ta_gen_ai_cim:duo:authentication|EVAL-src_ip>>, signature_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-signature>>, signature_id_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-signature_id>>, service_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-authentication_service>>, vendor_product_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-vendor_product>>, object_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-object>>, object_category_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-object_category>>, change_type_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-change_type>>, command_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-command>> | table user, user_id, src, src_ip, app, dest, authentication_method, action_out, status_out, signature_out, signature_id_out, service_out, vendor_product_out, object_out, object_category_out, change_type_out, command_out",
+  "expect": [
+   {
+    "user": "dana.ortiz",
+    "user_id": "DUUSERKEY00000000001",
+    "src": "198.51.100.23",
+    "src_ip": "198.51.100.23",
+    "app": "Corp VPN",
+    "dest": "Corp VPN",
+    "authentication_method": "duo_push",
+    "action_out": "success",
+    "status_out": null,
+    "signature_out": "Duo authentication success",
+    "signature_id_out": "user_approved",
+    "service_out": "duo",
+    "vendor_product_out": "Cisco Duo",
+    "object_out": null,
+    "command_out": null
+   }
+  ]
+ },
+ {
+  "name": "auth: a JSON null access device IP never becomes src (auth_device.ip is never used)",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Chrome\\\",\\\"ip\\\":null},\\\"alias\\\":\\\"\\\",\\\"application\\\":{\\\"key\\\":\\\"DIAPPKEY000000000001\\\",\\\"name\\\":\\\"Corp VPN\\\"},\\\"auth_device\\\":{\\\"ip\\\":\\\"203.0.113.50\\\",\\\"key\\\":\\\"DPDEVKEY000000000001\\\",\\\"name\\\":\\\"Duo Mobile device\\\"},\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"event_type\\\":\\\"authentication\\\",\\\"factor\\\":\\\"duo_push\\\",\\\"isotimestamp\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\",\\\"reason\\\":null,\\\"result\\\":\\\"success\\\",\\\"timestamp\\\":1767225600,\\\"trusted_endpoint_status\\\":\\\"not trusted\\\",\\\"txid\\\":\\\"0f5e8c1a-0000-4000-8000-000000000001\\\",\\\"user\\\":{\\\"groups\\\":[\\\"Duo Users\\\"],\\\"key\\\":\\\"DUUSERKEY00000000001\\\",\\\"name\\\":\\\"dana.ortiz\\\"}}\" | spath | eval <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_user>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_user_id>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_app>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_method>> | eval action_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-action>>, status_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-status>>, src=<<props:ta_gen_ai_cim:duo:authentication|EVAL-src>>, src_ip=<<props:ta_gen_ai_cim:duo:authentication|EVAL-src_ip>>, signature_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-signature>>, signature_id_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-signature_id>>, service_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-authentication_service>>, vendor_product_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-vendor_product>>, object_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-object>>, object_category_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-object_category>>, change_type_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-change_type>>, command_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-command>> | table user, user_id, src, src_ip, app, dest, authentication_method, action_out, status_out, signature_out, signature_id_out, service_out, vendor_product_out, object_out, object_category_out, change_type_out, command_out",
+  "expect": [
+   {
+    "user": "dana.ortiz",
+    "src": null,
+    "src_ip": null,
+    "action_out": "success",
+    "signature_id_out": "success"
+   }
+  ]
+ },
+ {
+  "name": "auth: a fraud report is a failure with signature_id user_marked_fraud",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Chrome\\\",\\\"browser_version\\\":\\\"120.0\\\",\\\"hostname\\\":null,\\\"ip\\\":\\\"198.51.100.23\\\",\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Mac OS X\\\",\\\"os_version\\\":\\\"14.1\\\"},\\\"alias\\\":\\\"\\\",\\\"application\\\":{\\\"key\\\":\\\"DIAPPKEY000000000001\\\",\\\"name\\\":\\\"Corp VPN\\\"},\\\"auth_device\\\":{\\\"ip\\\":\\\"203.0.113.50\\\",\\\"key\\\":\\\"DPDEVKEY000000000001\\\",\\\"name\\\":\\\"Duo Mobile device\\\"},\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"event_type\\\":\\\"authentication\\\",\\\"factor\\\":\\\"duo_push\\\",\\\"isotimestamp\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\",\\\"reason\\\":\\\"user_marked_fraud\\\",\\\"result\\\":\\\"fraud\\\",\\\"timestamp\\\":1767225600,\\\"trusted_endpoint_status\\\":\\\"not trusted\\\",\\\"txid\\\":\\\"0f5e8c1a-0000-4000-8000-000000000001\\\",\\\"user\\\":{\\\"groups\\\":[\\\"Duo Users\\\"],\\\"key\\\":\\\"DUUSERKEY00000000001\\\",\\\"name\\\":\\\"dana.ortiz\\\"}}\" | spath | eval <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_user>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_user_id>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_app>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_method>> | eval action_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-action>>, status_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-status>>, src=<<props:ta_gen_ai_cim:duo:authentication|EVAL-src>>, src_ip=<<props:ta_gen_ai_cim:duo:authentication|EVAL-src_ip>>, signature_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-signature>>, signature_id_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-signature_id>>, service_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-authentication_service>>, vendor_product_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-vendor_product>>, object_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-object>>, object_category_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-object_category>>, change_type_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-change_type>>, command_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-command>> | table user, user_id, src, src_ip, app, dest, authentication_method, action_out, status_out, signature_out, signature_id_out, service_out, vendor_product_out, object_out, object_category_out, change_type_out, command_out",
+  "expect": [
+   {
+    "action_out": "failure",
+    "signature_out": "Duo authentication fraud",
+    "signature_id_out": "user_marked_fraud"
+   }
+  ]
+ },
+ {
+  "name": "auth: denied and failure are failures, error stays error, anything else is unknown",
+  "spl": "| makeresults count=4 | streamstats count as n | eval _raw=case(n==1, \"{\\\"access_device\\\":{\\\"browser\\\":\\\"Chrome\\\",\\\"browser_version\\\":\\\"120.0\\\",\\\"hostname\\\":null,\\\"ip\\\":\\\"198.51.100.23\\\",\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Mac OS X\\\",\\\"os_version\\\":\\\"14.1\\\"},\\\"alias\\\":\\\"\\\",\\\"application\\\":{\\\"key\\\":\\\"DIAPPKEY000000000001\\\",\\\"name\\\":\\\"Corp VPN\\\"},\\\"auth_device\\\":{\\\"ip\\\":\\\"203.0.113.50\\\",\\\"key\\\":\\\"DPDEVKEY000000000001\\\",\\\"name\\\":\\\"Duo Mobile device\\\"},\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"event_type\\\":\\\"authentication\\\",\\\"factor\\\":\\\"duo_push\\\",\\\"isotimestamp\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\",\\\"reason\\\":\\\"no_response\\\",\\\"result\\\":\\\"denied\\\",\\\"timestamp\\\":1767225600,\\\"trusted_endpoint_status\\\":\\\"not trusted\\\",\\\"txid\\\":\\\"0f5e8c1a-0000-4000-8000-000000000001\\\",\\\"user\\\":{\\\"groups\\\":[\\\"Duo Users\\\"],\\\"key\\\":\\\"DUUSERKEY00000000001\\\",\\\"name\\\":\\\"dana.ortiz\\\"}}\", n==2, \"{\\\"access_device\\\":{\\\"browser\\\":\\\"Chrome\\\",\\\"browser_version\\\":\\\"120.0\\\",\\\"hostname\\\":null,\\\"ip\\\":\\\"198.51.100.23\\\",\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Mac OS X\\\",\\\"os_version\\\":\\\"14.1\\\"},\\\"alias\\\":\\\"\\\",\\\"application\\\":{\\\"key\\\":\\\"DIAPPKEY000000000001\\\",\\\"name\\\":\\\"Corp VPN\\\"},\\\"auth_device\\\":{\\\"ip\\\":\\\"203.0.113.50\\\",\\\"key\\\":\\\"DPDEVKEY000000000001\\\",\\\"name\\\":\\\"Duo Mobile device\\\"},\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"event_type\\\":\\\"authentication\\\",\\\"factor\\\":\\\"duo_push\\\",\\\"isotimestamp\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\",\\\"reason\\\":\\\"invalid_passcode\\\",\\\"result\\\":\\\"failure\\\",\\\"timestamp\\\":1767225600,\\\"trusted_endpoint_status\\\":\\\"not trusted\\\",\\\"txid\\\":\\\"0f5e8c1a-0000-4000-8000-000000000001\\\",\\\"user\\\":{\\\"groups\\\":[\\\"Duo Users\\\"],\\\"key\\\":\\\"DUUSERKEY00000000001\\\",\\\"name\\\":\\\"dana.ortiz\\\"}}\", n==3, \"{\\\"access_device\\\":{\\\"browser\\\":\\\"Chrome\\\",\\\"browser_version\\\":\\\"120.0\\\",\\\"hostname\\\":null,\\\"ip\\\":\\\"198.51.100.23\\\",\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Mac OS X\\\",\\\"os_version\\\":\\\"14.1\\\"},\\\"alias\\\":\\\"\\\",\\\"application\\\":{\\\"key\\\":\\\"DIAPPKEY000000000001\\\",\\\"name\\\":\\\"Corp VPN\\\"},\\\"auth_device\\\":{\\\"ip\\\":\\\"203.0.113.50\\\",\\\"key\\\":\\\"DPDEVKEY000000000001\\\",\\\"name\\\":\\\"Duo Mobile device\\\"},\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"event_type\\\":\\\"authentication\\\",\\\"factor\\\":\\\"duo_push\\\",\\\"isotimestamp\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\",\\\"reason\\\":null,\\\"result\\\":\\\"error\\\",\\\"timestamp\\\":1767225600,\\\"trusted_endpoint_status\\\":\\\"not trusted\\\",\\\"txid\\\":\\\"0f5e8c1a-0000-4000-8000-000000000001\\\",\\\"user\\\":{\\\"groups\\\":[\\\"Duo Users\\\"],\\\"key\\\":\\\"DUUSERKEY00000000001\\\",\\\"name\\\":\\\"dana.ortiz\\\"}}\", n==4, \"{\\\"access_device\\\":{\\\"browser\\\":\\\"Chrome\\\",\\\"browser_version\\\":\\\"120.0\\\",\\\"hostname\\\":null,\\\"ip\\\":\\\"198.51.100.23\\\",\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Mac OS X\\\",\\\"os_version\\\":\\\"14.1\\\"},\\\"alias\\\":\\\"\\\",\\\"application\\\":{\\\"key\\\":\\\"DIAPPKEY000000000001\\\",\\\"name\\\":\\\"Corp VPN\\\"},\\\"auth_device\\\":{\\\"ip\\\":\\\"203.0.113.50\\\",\\\"key\\\":\\\"DPDEVKEY000000000001\\\",\\\"name\\\":\\\"Duo Mobile device\\\"},\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"event_type\\\":\\\"authentication\\\",\\\"factor\\\":\\\"duo_push\\\",\\\"isotimestamp\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\",\\\"reason\\\":\\\"\\\",\\\"result\\\":\\\"queued\\\",\\\"timestamp\\\":1767225600,\\\"trusted_endpoint_status\\\":\\\"not trusted\\\",\\\"txid\\\":\\\"0f5e8c1a-0000-4000-8000-000000000001\\\",\\\"user\\\":{\\\"groups\\\":[\\\"Duo Users\\\"],\\\"key\\\":\\\"DUUSERKEY00000000001\\\",\\\"name\\\":\\\"dana.ortiz\\\"}}\") | spath | eval action_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-action>>, signature_id_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-signature_id>> | table n, action_out, signature_id_out",
+  "expect": [
+   {
+    "n": "1",
+    "action_out": "failure",
+    "signature_id_out": "no_response"
+   },
+   {
+    "n": "2",
+    "action_out": "failure",
+    "signature_id_out": "invalid_passcode"
+   },
+   {
+    "n": "3",
+    "action_out": "error",
+    "signature_id_out": "error"
+   },
+   {
+    "n": "4",
+    "action_out": "unknown",
+    "signature_id_out": "queued"
+   }
+  ]
+ },
+ {
+  "name": "auth: an enrollment is an account change (created), its outcome in status",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Chrome\\\",\\\"browser_version\\\":\\\"120.0\\\",\\\"hostname\\\":null,\\\"ip\\\":\\\"198.51.100.23\\\",\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Mac OS X\\\",\\\"os_version\\\":\\\"14.1\\\"},\\\"alias\\\":\\\"\\\",\\\"application\\\":{\\\"key\\\":\\\"DIAPPKEY000000000001\\\",\\\"name\\\":\\\"Corp VPN\\\"},\\\"auth_device\\\":{\\\"ip\\\":\\\"203.0.113.50\\\",\\\"key\\\":\\\"DPDEVKEY000000000001\\\",\\\"name\\\":\\\"Duo Mobile device\\\"},\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"event_type\\\":\\\"enrollment\\\",\\\"factor\\\":\\\"not_available\\\",\\\"isotimestamp\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\",\\\"reason\\\":\\\"user_enrolled\\\",\\\"result\\\":\\\"success\\\",\\\"timestamp\\\":1767225600,\\\"trusted_endpoint_status\\\":\\\"not trusted\\\",\\\"txid\\\":\\\"0f5e8c1a-0000-4000-8000-000000000001\\\",\\\"user\\\":{\\\"groups\\\":[\\\"Duo Users\\\"],\\\"key\\\":\\\"DUUSERKEY00000000001\\\",\\\"name\\\":\\\"dana.ortiz\\\"}}\" | spath | eval <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_user>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_user_id>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_app>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_method>> | eval action_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-action>>, status_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-status>>, src=<<props:ta_gen_ai_cim:duo:authentication|EVAL-src>>, src_ip=<<props:ta_gen_ai_cim:duo:authentication|EVAL-src_ip>>, signature_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-signature>>, signature_id_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-signature_id>>, service_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-authentication_service>>, vendor_product_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-vendor_product>>, object_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-object>>, object_category_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-object_category>>, change_type_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-change_type>>, command_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-command>> | table user, user_id, src, src_ip, app, dest, authentication_method, action_out, status_out, signature_out, signature_id_out, service_out, vendor_product_out, object_out, object_category_out, change_type_out, command_out",
+  "expect": [
+   {
+    "action_out": "created",
+    "status_out": "success",
+    "object_out": "dana.ortiz",
+    "object_category_out": "user",
+    "change_type_out": "AAA",
+    "command_out": "duo_enrollment",
+    "signature_out": "Duo enrollment success"
+   }
+  ]
+ },
+ {
+  "name": "auth: a failed enrollment has status failure",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Chrome\\\",\\\"browser_version\\\":\\\"120.0\\\",\\\"hostname\\\":null,\\\"ip\\\":\\\"198.51.100.23\\\",\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Mac OS X\\\",\\\"os_version\\\":\\\"14.1\\\"},\\\"alias\\\":\\\"\\\",\\\"application\\\":{\\\"key\\\":\\\"DIAPPKEY000000000001\\\",\\\"name\\\":\\\"Corp VPN\\\"},\\\"auth_device\\\":{\\\"ip\\\":\\\"203.0.113.50\\\",\\\"key\\\":\\\"DPDEVKEY000000000001\\\",\\\"name\\\":\\\"Duo Mobile device\\\"},\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"event_type\\\":\\\"enrollment\\\",\\\"factor\\\":\\\"duo_push\\\",\\\"isotimestamp\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\",\\\"reason\\\":\\\"error\\\",\\\"result\\\":\\\"failure\\\",\\\"timestamp\\\":1767225600,\\\"trusted_endpoint_status\\\":\\\"not trusted\\\",\\\"txid\\\":\\\"0f5e8c1a-0000-4000-8000-000000000001\\\",\\\"user\\\":{\\\"groups\\\":[\\\"Duo Users\\\"],\\\"key\\\":\\\"DUUSERKEY00000000001\\\",\\\"name\\\":\\\"dana.ortiz\\\"}}\" | spath | eval <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_user>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_user_id>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_app>>, <<alias:ta_gen_ai_cim:duo:authentication|FIELDALIAS-duo_auth_method>> | eval action_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-action>>, status_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-status>>, src=<<props:ta_gen_ai_cim:duo:authentication|EVAL-src>>, src_ip=<<props:ta_gen_ai_cim:duo:authentication|EVAL-src_ip>>, signature_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-signature>>, signature_id_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-signature_id>>, service_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-authentication_service>>, vendor_product_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-vendor_product>>, object_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-object>>, object_category_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-object_category>>, change_type_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-change_type>>, command_out=<<props:ta_gen_ai_cim:duo:authentication|EVAL-command>> | table user, user_id, src, src_ip, app, dest, authentication_method, action_out, status_out, signature_out, signature_id_out, service_out, vendor_product_out, object_out, object_category_out, change_type_out, command_out",
+  "expect": [
+   {
+    "action_out": "created",
+    "status_out": "failure"
+   }
+  ]
+ },
+ {
+  "name": "activity: an admin_login is a privileged authentication of the actor (no src_user)",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Firefox\\\",\\\"browser_version\\\":\\\"121.0\\\",\\\"ip\\\":{\\\"address\\\":\\\"192.0.2.44\\\"},\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Windows\\\",\\\"os_version\\\":\\\"11\\\"},\\\"action\\\":{\\\"details\\\":null,\\\"name\\\":\\\"admin_login\\\",\\\"type\\\":\\\"admin\\\"},\\\"activity_id\\\":\\\"7c1d2e3f-0000-4000-8000-0000000000aa\\\",\\\"actor\\\":{\\\"details\\\":null,\\\"key\\\":\\\"DEADMINKEY0000000001\\\",\\\"name\\\":\\\"ops.admin@corp.test\\\",\\\"type\\\":\\\"admin\\\"},\\\"akey\\\":\\\"DAACCOUNT00000000001\\\",\\\"outcome\\\":{\\\"result\\\":\\\"SUCCESS\\\"},\\\"target\\\":null,\\\"ts\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\"}\" | spath | eval <<alias:ta_gen_ai_cim:duo:activity|FIELDALIAS-duo_activity_command>>, <<alias:ta_gen_ai_cim:duo:activity|FIELDALIAS-duo_activity_object>> | eval action_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-action>>, status_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-status>>, user_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-user>>, src=<<props:ta_gen_ai_cim:duo:activity|EVAL-src>>, src_ip=<<props:ta_gen_ai_cim:duo:activity|EVAL-src_ip>>, src_user_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-src_user>>, object_category_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-object_category>>, change_type_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-change_type>>, app_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-app>>, dest_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-dest>>, signature_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-signature>>, service_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-authentication_service>> | table src, src_ip, command, signature_id, object, object_id, action_out, status_out, user_out, src_user_out, object_category_out, change_type_out, app_out, dest_out, signature_out, service_out",
+  "expect": [
+   {
+    "src": "192.0.2.44",
+    "src_ip": "192.0.2.44",
+    "command": "admin_login",
+    "signature_id": "admin_login",
+    "action_out": "success",
+    "status_out": "success",
+    "user_out": "ops.admin@corp.test",
+    "src_user_out": null,
+    "app_out": "Duo Admin Panel",
+    "dest_out": "Duo Admin Panel",
+    "signature_out": "Duo admin_login success",
+    "service_out": "duo"
+   }
+  ]
+ },
+ {
+  "name": "activity: a failed admin_login is a failure",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Firefox\\\",\\\"browser_version\\\":\\\"121.0\\\",\\\"ip\\\":{\\\"address\\\":\\\"192.0.2.44\\\"},\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Windows\\\",\\\"os_version\\\":\\\"11\\\"},\\\"action\\\":{\\\"details\\\":null,\\\"name\\\":\\\"admin_login\\\",\\\"type\\\":\\\"admin\\\"},\\\"activity_id\\\":\\\"7c1d2e3f-0000-4000-8000-0000000000aa\\\",\\\"actor\\\":{\\\"details\\\":null,\\\"key\\\":\\\"DEADMINKEY0000000001\\\",\\\"name\\\":\\\"ops.admin@corp.test\\\",\\\"type\\\":\\\"admin\\\"},\\\"akey\\\":\\\"DAACCOUNT00000000001\\\",\\\"outcome\\\":{\\\"result\\\":\\\"FAILURE\\\"},\\\"target\\\":null,\\\"ts\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\"}\" | spath | eval <<alias:ta_gen_ai_cim:duo:activity|FIELDALIAS-duo_activity_command>>, <<alias:ta_gen_ai_cim:duo:activity|FIELDALIAS-duo_activity_object>> | eval action_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-action>>, status_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-status>>, user_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-user>>, src=<<props:ta_gen_ai_cim:duo:activity|EVAL-src>>, src_ip=<<props:ta_gen_ai_cim:duo:activity|EVAL-src_ip>>, src_user_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-src_user>>, object_category_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-object_category>>, change_type_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-change_type>>, app_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-app>>, dest_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-dest>>, signature_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-signature>>, service_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-authentication_service>> | table src, src_ip, command, signature_id, object, object_id, action_out, status_out, user_out, src_user_out, object_category_out, change_type_out, app_out, dest_out, signature_out, service_out",
+  "expect": [
+   {
+    "action_out": "failure",
+    "status_out": "failure",
+    "signature_out": "Duo admin_login failure"
+   }
+  ]
+ },
+ {
+  "name": "activity: a user_update is an account change: user is the target, src_user the admin",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Firefox\\\",\\\"browser_version\\\":\\\"121.0\\\",\\\"ip\\\":{\\\"address\\\":\\\"192.0.2.44\\\"},\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Windows\\\",\\\"os_version\\\":\\\"11\\\"},\\\"action\\\":{\\\"details\\\":null,\\\"name\\\":\\\"user_update\\\",\\\"type\\\":\\\"admin\\\"},\\\"activity_id\\\":\\\"7c1d2e3f-0000-4000-8000-0000000000aa\\\",\\\"actor\\\":{\\\"details\\\":null,\\\"key\\\":\\\"DEADMINKEY0000000001\\\",\\\"name\\\":\\\"ops.admin@corp.test\\\",\\\"type\\\":\\\"admin\\\"},\\\"akey\\\":\\\"DAACCOUNT00000000001\\\",\\\"outcome\\\":{\\\"result\\\":\\\"SUCCESS\\\"},\\\"target\\\":{\\\"details\\\":null,\\\"key\\\":\\\"DUTARGETKEY000000001\\\",\\\"name\\\":\\\"lee.park\\\",\\\"type\\\":\\\"user\\\"},\\\"ts\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\"}\" | spath | eval <<alias:ta_gen_ai_cim:duo:activity|FIELDALIAS-duo_activity_command>>, <<alias:ta_gen_ai_cim:duo:activity|FIELDALIAS-duo_activity_object>> | eval action_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-action>>, status_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-status>>, user_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-user>>, src=<<props:ta_gen_ai_cim:duo:activity|EVAL-src>>, src_ip=<<props:ta_gen_ai_cim:duo:activity|EVAL-src_ip>>, src_user_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-src_user>>, object_category_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-object_category>>, change_type_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-change_type>>, app_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-app>>, dest_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-dest>>, signature_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-signature>>, service_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-authentication_service>> | table src, src_ip, command, signature_id, object, object_id, action_out, status_out, user_out, src_user_out, object_category_out, change_type_out, app_out, dest_out, signature_out, service_out",
+  "expect": [
+   {
+    "command": "user_update",
+    "object": "lee.park",
+    "object_id": "DUTARGETKEY000000001",
+    "action_out": "modified",
+    "status_out": "success",
+    "user_out": "lee.park",
+    "src_user_out": "ops.admin@corp.test",
+    "object_category_out": "user",
+    "change_type_out": "AAA",
+    "app_out": null,
+    "dest_out": null
+   }
+  ]
+ },
+ {
+  "name": "activity: create and delete names map to Change created / deleted; a non-user target keeps the actor",
+  "spl": "| makeresults count=2 | streamstats count as n | eval _raw=case(n==1, \"{\\\"access_device\\\":{\\\"browser\\\":\\\"Firefox\\\",\\\"browser_version\\\":\\\"121.0\\\",\\\"ip\\\":{\\\"address\\\":\\\"192.0.2.44\\\"},\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Windows\\\",\\\"os_version\\\":\\\"11\\\"},\\\"action\\\":{\\\"details\\\":null,\\\"name\\\":\\\"integration_create\\\",\\\"type\\\":\\\"admin\\\"},\\\"activity_id\\\":\\\"7c1d2e3f-0000-4000-8000-0000000000aa\\\",\\\"actor\\\":{\\\"details\\\":null,\\\"key\\\":\\\"DEADMINKEY0000000001\\\",\\\"name\\\":\\\"ops.admin@corp.test\\\",\\\"type\\\":\\\"admin\\\"},\\\"akey\\\":\\\"DAACCOUNT00000000001\\\",\\\"outcome\\\":{\\\"result\\\":\\\"SUCCESS\\\"},\\\"target\\\":{\\\"name\\\":\\\"Corp VPN\\\",\\\"type\\\":\\\"integration\\\"},\\\"ts\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\"}\", n==2, \"{\\\"access_device\\\":{\\\"browser\\\":\\\"Firefox\\\",\\\"browser_version\\\":\\\"121.0\\\",\\\"ip\\\":{\\\"address\\\":\\\"192.0.2.44\\\"},\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Windows\\\",\\\"os_version\\\":\\\"11\\\"},\\\"action\\\":{\\\"details\\\":null,\\\"name\\\":\\\"policy_delete\\\",\\\"type\\\":\\\"admin\\\"},\\\"activity_id\\\":\\\"7c1d2e3f-0000-4000-8000-0000000000aa\\\",\\\"actor\\\":{\\\"details\\\":null,\\\"key\\\":\\\"DEADMINKEY0000000001\\\",\\\"name\\\":\\\"ops.admin@corp.test\\\",\\\"type\\\":\\\"admin\\\"},\\\"akey\\\":\\\"DAACCOUNT00000000001\\\",\\\"outcome\\\":{\\\"result\\\":\\\"SUCCESS\\\"},\\\"target\\\":{\\\"name\\\":\\\"Legacy policy\\\",\\\"type\\\":\\\"policy\\\"},\\\"ts\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\"}\") | spath | eval action_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-action>>, user_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-user>>, object_category_out=<<props:ta_gen_ai_cim:duo:activity|EVAL-object_category>> | table n, action_out, user_out, object_category_out",
+  "expect": [
+   {
+    "n": "1",
+    "action_out": "created",
+    "user_out": "ops.admin@corp.test",
+    "object_category_out": "integration"
+   },
+   {
+    "n": "2",
+    "action_out": "deleted",
+    "user_out": "ops.admin@corp.test",
+    "object_category_out": "policy"
+   }
+  ]
+ },
+ {
+  "name": "eventtype: authentication event -> ta_gen_ai_cim_duo_authentication",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Chrome\\\",\\\"browser_version\\\":\\\"120.0\\\",\\\"hostname\\\":null,\\\"ip\\\":\\\"198.51.100.23\\\",\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Mac OS X\\\",\\\"os_version\\\":\\\"14.1\\\"},\\\"alias\\\":\\\"\\\",\\\"application\\\":{\\\"key\\\":\\\"DIAPPKEY000000000001\\\",\\\"name\\\":\\\"Corp VPN\\\"},\\\"auth_device\\\":{\\\"ip\\\":\\\"203.0.113.50\\\",\\\"key\\\":\\\"DPDEVKEY000000000001\\\",\\\"name\\\":\\\"Duo Mobile device\\\"},\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"event_type\\\":\\\"authentication\\\",\\\"factor\\\":\\\"duo_push\\\",\\\"isotimestamp\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\",\\\"reason\\\":\\\"user_approved\\\",\\\"result\\\":\\\"success\\\",\\\"timestamp\\\":1767225600,\\\"trusted_endpoint_status\\\":\\\"not trusted\\\",\\\"txid\\\":\\\"0f5e8c1a-0000-4000-8000-000000000001\\\",\\\"user\\\":{\\\"groups\\\":[\\\"Duo Users\\\"],\\\"key\\\":\\\"DUUSERKEY00000000001\\\",\\\"name\\\":\\\"dana.ortiz\\\"}}\" | spath | eval sourcetype=\"ta_gen_ai_cim:duo:authentication\" | search <<eventtype:ta_gen_ai_cim_duo_authentication>> | eval matched=\"yes\" | table matched",
+  "expect": [
+   {
+    "matched": "yes"
+   }
+  ]
+ },
+ {
+  "name": "eventtype: authentication event -/-> ta_gen_ai_cim_duo_enrollment",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Chrome\\\",\\\"browser_version\\\":\\\"120.0\\\",\\\"hostname\\\":null,\\\"ip\\\":\\\"198.51.100.23\\\",\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Mac OS X\\\",\\\"os_version\\\":\\\"14.1\\\"},\\\"alias\\\":\\\"\\\",\\\"application\\\":{\\\"key\\\":\\\"DIAPPKEY000000000001\\\",\\\"name\\\":\\\"Corp VPN\\\"},\\\"auth_device\\\":{\\\"ip\\\":\\\"203.0.113.50\\\",\\\"key\\\":\\\"DPDEVKEY000000000001\\\",\\\"name\\\":\\\"Duo Mobile device\\\"},\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"event_type\\\":\\\"authentication\\\",\\\"factor\\\":\\\"duo_push\\\",\\\"isotimestamp\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\",\\\"reason\\\":\\\"user_approved\\\",\\\"result\\\":\\\"success\\\",\\\"timestamp\\\":1767225600,\\\"trusted_endpoint_status\\\":\\\"not trusted\\\",\\\"txid\\\":\\\"0f5e8c1a-0000-4000-8000-000000000001\\\",\\\"user\\\":{\\\"groups\\\":[\\\"Duo Users\\\"],\\\"key\\\":\\\"DUUSERKEY00000000001\\\",\\\"name\\\":\\\"dana.ortiz\\\"}}\" | spath | eval sourcetype=\"ta_gen_ai_cim:duo:authentication\" | search <<eventtype:ta_gen_ai_cim_duo_enrollment>> | eval matched=\"yes\" | table matched",
+  "expect": []
+ },
+ {
+  "name": "eventtype: enrollment event -> ta_gen_ai_cim_duo_enrollment",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Chrome\\\",\\\"browser_version\\\":\\\"120.0\\\",\\\"hostname\\\":null,\\\"ip\\\":\\\"198.51.100.23\\\",\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Mac OS X\\\",\\\"os_version\\\":\\\"14.1\\\"},\\\"alias\\\":\\\"\\\",\\\"application\\\":{\\\"key\\\":\\\"DIAPPKEY000000000001\\\",\\\"name\\\":\\\"Corp VPN\\\"},\\\"auth_device\\\":{\\\"ip\\\":\\\"203.0.113.50\\\",\\\"key\\\":\\\"DPDEVKEY000000000001\\\",\\\"name\\\":\\\"Duo Mobile device\\\"},\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"event_type\\\":\\\"enrollment\\\",\\\"factor\\\":\\\"duo_push\\\",\\\"isotimestamp\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\",\\\"reason\\\":\\\"user_approved\\\",\\\"result\\\":\\\"success\\\",\\\"timestamp\\\":1767225600,\\\"trusted_endpoint_status\\\":\\\"not trusted\\\",\\\"txid\\\":\\\"0f5e8c1a-0000-4000-8000-000000000001\\\",\\\"user\\\":{\\\"groups\\\":[\\\"Duo Users\\\"],\\\"key\\\":\\\"DUUSERKEY00000000001\\\",\\\"name\\\":\\\"dana.ortiz\\\"}}\" | spath | eval sourcetype=\"ta_gen_ai_cim:duo:authentication\" | search <<eventtype:ta_gen_ai_cim_duo_enrollment>> | eval matched=\"yes\" | table matched",
+  "expect": [
+   {
+    "matched": "yes"
+   }
+  ]
+ },
+ {
+  "name": "eventtype: enrollment event -/-> ta_gen_ai_cim_duo_authentication",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Chrome\\\",\\\"browser_version\\\":\\\"120.0\\\",\\\"hostname\\\":null,\\\"ip\\\":\\\"198.51.100.23\\\",\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Mac OS X\\\",\\\"os_version\\\":\\\"14.1\\\"},\\\"alias\\\":\\\"\\\",\\\"application\\\":{\\\"key\\\":\\\"DIAPPKEY000000000001\\\",\\\"name\\\":\\\"Corp VPN\\\"},\\\"auth_device\\\":{\\\"ip\\\":\\\"203.0.113.50\\\",\\\"key\\\":\\\"DPDEVKEY000000000001\\\",\\\"name\\\":\\\"Duo Mobile device\\\"},\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"event_type\\\":\\\"enrollment\\\",\\\"factor\\\":\\\"duo_push\\\",\\\"isotimestamp\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\",\\\"reason\\\":\\\"user_approved\\\",\\\"result\\\":\\\"success\\\",\\\"timestamp\\\":1767225600,\\\"trusted_endpoint_status\\\":\\\"not trusted\\\",\\\"txid\\\":\\\"0f5e8c1a-0000-4000-8000-000000000001\\\",\\\"user\\\":{\\\"groups\\\":[\\\"Duo Users\\\"],\\\"key\\\":\\\"DUUSERKEY00000000001\\\",\\\"name\\\":\\\"dana.ortiz\\\"}}\" | spath | eval sourcetype=\"ta_gen_ai_cim:duo:authentication\" | search <<eventtype:ta_gen_ai_cim_duo_authentication>> | eval matched=\"yes\" | table matched",
+  "expect": []
+ },
+ {
+  "name": "eventtype: admin_login -> ta_gen_ai_cim_duo_admin_login",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Firefox\\\",\\\"browser_version\\\":\\\"121.0\\\",\\\"ip\\\":{\\\"address\\\":\\\"192.0.2.44\\\"},\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Windows\\\",\\\"os_version\\\":\\\"11\\\"},\\\"action\\\":{\\\"details\\\":null,\\\"name\\\":\\\"admin_login\\\",\\\"type\\\":\\\"admin\\\"},\\\"activity_id\\\":\\\"7c1d2e3f-0000-4000-8000-0000000000aa\\\",\\\"actor\\\":{\\\"details\\\":null,\\\"key\\\":\\\"DEADMINKEY0000000001\\\",\\\"name\\\":\\\"ops.admin@corp.test\\\",\\\"type\\\":\\\"admin\\\"},\\\"akey\\\":\\\"DAACCOUNT00000000001\\\",\\\"outcome\\\":{\\\"result\\\":\\\"SUCCESS\\\"},\\\"target\\\":null,\\\"ts\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\"}\" | spath | eval sourcetype=\"ta_gen_ai_cim:duo:activity\" | search <<eventtype:ta_gen_ai_cim_duo_admin_login>> | eval matched=\"yes\" | table matched",
+  "expect": [
+   {
+    "matched": "yes"
+   }
+  ]
+ },
+ {
+  "name": "eventtype: admin_login -/-> ta_gen_ai_cim_duo_activity",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Firefox\\\",\\\"browser_version\\\":\\\"121.0\\\",\\\"ip\\\":{\\\"address\\\":\\\"192.0.2.44\\\"},\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Windows\\\",\\\"os_version\\\":\\\"11\\\"},\\\"action\\\":{\\\"details\\\":null,\\\"name\\\":\\\"admin_login\\\",\\\"type\\\":\\\"admin\\\"},\\\"activity_id\\\":\\\"7c1d2e3f-0000-4000-8000-0000000000aa\\\",\\\"actor\\\":{\\\"details\\\":null,\\\"key\\\":\\\"DEADMINKEY0000000001\\\",\\\"name\\\":\\\"ops.admin@corp.test\\\",\\\"type\\\":\\\"admin\\\"},\\\"akey\\\":\\\"DAACCOUNT00000000001\\\",\\\"outcome\\\":{\\\"result\\\":\\\"SUCCESS\\\"},\\\"target\\\":null,\\\"ts\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\"}\" | spath | eval sourcetype=\"ta_gen_ai_cim:duo:activity\" | search <<eventtype:ta_gen_ai_cim_duo_activity>> | eval matched=\"yes\" | table matched",
+  "expect": []
+ },
+ {
+  "name": "eventtype: user_update -> ta_gen_ai_cim_duo_activity",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Firefox\\\",\\\"browser_version\\\":\\\"121.0\\\",\\\"ip\\\":{\\\"address\\\":\\\"192.0.2.44\\\"},\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Windows\\\",\\\"os_version\\\":\\\"11\\\"},\\\"action\\\":{\\\"details\\\":null,\\\"name\\\":\\\"user_update\\\",\\\"type\\\":\\\"admin\\\"},\\\"activity_id\\\":\\\"7c1d2e3f-0000-4000-8000-0000000000aa\\\",\\\"actor\\\":{\\\"details\\\":null,\\\"key\\\":\\\"DEADMINKEY0000000001\\\",\\\"name\\\":\\\"ops.admin@corp.test\\\",\\\"type\\\":\\\"admin\\\"},\\\"akey\\\":\\\"DAACCOUNT00000000001\\\",\\\"outcome\\\":{\\\"result\\\":\\\"SUCCESS\\\"},\\\"target\\\":{\\\"name\\\":\\\"lee.park\\\",\\\"type\\\":\\\"user\\\"},\\\"ts\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\"}\" | spath | eval sourcetype=\"ta_gen_ai_cim:duo:activity\" | search <<eventtype:ta_gen_ai_cim_duo_activity>> | eval matched=\"yes\" | table matched",
+  "expect": [
+   {
+    "matched": "yes"
+   }
+  ]
+ },
+ {
+  "name": "eventtype: user_update -/-> ta_gen_ai_cim_duo_admin_login",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Firefox\\\",\\\"browser_version\\\":\\\"121.0\\\",\\\"ip\\\":{\\\"address\\\":\\\"192.0.2.44\\\"},\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Windows\\\",\\\"os_version\\\":\\\"11\\\"},\\\"action\\\":{\\\"details\\\":null,\\\"name\\\":\\\"user_update\\\",\\\"type\\\":\\\"admin\\\"},\\\"activity_id\\\":\\\"7c1d2e3f-0000-4000-8000-0000000000aa\\\",\\\"actor\\\":{\\\"details\\\":null,\\\"key\\\":\\\"DEADMINKEY0000000001\\\",\\\"name\\\":\\\"ops.admin@corp.test\\\",\\\"type\\\":\\\"admin\\\"},\\\"akey\\\":\\\"DAACCOUNT00000000001\\\",\\\"outcome\\\":{\\\"result\\\":\\\"SUCCESS\\\"},\\\"target\\\":{\\\"name\\\":\\\"lee.park\\\",\\\"type\\\":\\\"user\\\"},\\\"ts\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\"}\" | spath | eval sourcetype=\"ta_gen_ai_cim:duo:activity\" | search <<eventtype:ta_gen_ai_cim_duo_admin_login>> | eval matched=\"yes\" | table matched",
+  "expect": []
+ },
+ {
+  "name": "eventtype: a gen_ai:json row with event_type=authentication is not Duo",
+  "spl": "| makeresults | eval _raw=\"{\\\"access_device\\\":{\\\"browser\\\":\\\"Chrome\\\",\\\"browser_version\\\":\\\"120.0\\\",\\\"hostname\\\":null,\\\"ip\\\":\\\"198.51.100.23\\\",\\\"location\\\":{\\\"city\\\":\\\"Springfield\\\",\\\"country\\\":\\\"Testland\\\",\\\"state\\\":\\\"North\\\"},\\\"os\\\":\\\"Mac OS X\\\",\\\"os_version\\\":\\\"14.1\\\"},\\\"alias\\\":\\\"\\\",\\\"application\\\":{\\\"key\\\":\\\"DIAPPKEY000000000001\\\",\\\"name\\\":\\\"Corp VPN\\\"},\\\"auth_device\\\":{\\\"ip\\\":\\\"203.0.113.50\\\",\\\"key\\\":\\\"DPDEVKEY000000000001\\\",\\\"name\\\":\\\"Duo Mobile device\\\"},\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"event_type\\\":\\\"authentication\\\",\\\"factor\\\":\\\"duo_push\\\",\\\"isotimestamp\\\":\\\"2026-01-01T00:00:00.000000+00:00\\\",\\\"reason\\\":\\\"user_approved\\\",\\\"result\\\":\\\"success\\\",\\\"timestamp\\\":1767225600,\\\"trusted_endpoint_status\\\":\\\"not trusted\\\",\\\"txid\\\":\\\"0f5e8c1a-0000-4000-8000-000000000001\\\",\\\"user\\\":{\\\"groups\\\":[\\\"Duo Users\\\"],\\\"key\\\":\\\"DUUSERKEY00000000001\\\",\\\"name\\\":\\\"dana.ortiz\\\"}}\" | spath | eval sourcetype=\"gen_ai:json\" | search <<eventtype:ta_gen_ai_cim_duo_authentication>> | eval matched=\"yes\" | table matched",
+  "expect": []
+ },
+ {
+  "name": "genai_duo_auth_events keeps Duo's own log and drops a PseudoCo sign-in that also says authentication_service=duo",
+  "spl": "| makeresults count=3 | streamstats count as n | eval index=case(n==1, \"gen_ai_log\", n==2, \"duo\", 1=1, \"duo\"), sourcetype=case(n==1, \"gen_ai:json\", n==2, \"ta_gen_ai_cim:duo:authentication\", 1=1, \"demobot:audit\"), authentication_service=\"duo\", action=\"failure\", user=\"dana.ortiz\" | search `genai_duo_auth_events` | table n",
+  "expect": [
+   {
+    "n": "2"
+   }
+  ]
+ },
+ {
+  "name": "genai_duo_identity_scope drops l5-* (any key), a persona email key, and a persona short name with no Duo email; keeps a customer user who only shares a persona short name",
+  "spl": "| makeresults count=6 | streamstats count as n | eval identity_keys=case(n==1, split(\"dana.ortiz|dana.ortiz@corp.test\", \"|\"), n==2, split(\"l5-ws1-03|l5-ws1-03@corp.test\", \"|\"), n==3, split(\"sam.lee|l5-ws2-01\", \"|\"), n==4, \"<<persona_key>>\", n==5, split(\"<<persona_key>>|<<persona_key>>@corp.test\", \"|\"), 1=1, split(\"lee.park|<<persona_email>>\", \"|\")), email=case(n==1, \"dana.ortiz@corp.test\", n==2, \"l5-ws1-03@corp.test\", n==3, \"sam.lee@corp.test\", n==4, null(), n==5, \"<<persona_key>>@corp.test\", 1=1, \"<<persona_email>>\") | `genai_duo_identity_scope` | table n",
+  "expect": [
+   {
+    "n": "1"
+   },
+   {
+    "n": "5"
+   }
+  ]
+ },
+ {
+  "name": "rule: 5 failures within 10 minutes raise risk 40 on the join key",
+  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 60, n==3, 120, n==4, 180, n==5, 240), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"user_cancelled\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"unknown\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), app=\"Corp VPN\", count=case(n==1, 1, n==2, 1, n==3, 1, n==4, 1, n==5, 1) | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
+  "expect": [
+   {
+    "user": "dana.ortiz",
+    "risk_score": "40",
+    "signature": "Duo authentication denial burst",
+    "severity": "medium",
+    "fraud_reports": "0",
+    "failures": "5",
+    "max_failures_10m": "5",
+    "duo_users": "dana.ortiz",
+    "src": "198.51.100.23",
+    "app": "Corp VPN"
+   }
+  ]
+ },
+ {
+  "name": "rule: 4 failures in 10 minutes and a 5th 18 minutes later raise nothing",
+  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 60, n==3, 120, n==4, 180, n==5, 1080), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), app=\"Corp VPN\", count=case(n==1, 1, n==2, 1, n==3, 1, n==4, 1, n==5, 1) | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
+  "expect": []
+ },
+ {
+  "name": "rule: a tstats row with count=5 is five failures",
+  "spl": "| makeresults count=1 | streamstats count as n | eval _time=1767225600+case(n==1, 0), user=case(n==1, \"dana.ortiz\"), action=case(n==1, \"failure\"), signature_id=case(n==1, \"no_response\"), src=case(n==1, \"198.51.100.23\"), app=\"Corp VPN\", count=case(n==1, 5) | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
+  "expect": [
+   {
+    "user": "dana.ortiz",
+    "risk_score": "40",
+    "failures": "5",
+    "max_failures_10m": "5"
+   }
+  ]
+ },
+ {
+  "name": "rule: one fraud report raises risk 80",
+  "spl": "| makeresults count=1 | streamstats count as n | eval _time=1767225600+case(n==1, 0), user=case(n==1, \"lee.park\"), action=case(n==1, \"failure\"), signature_id=case(n==1, \"user_marked_fraud\"), src=case(n==1, \"203.0.113.9\"), app=\"Corp VPN\", count=case(n==1, 1) | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
+  "expect": [
+   {
+    "user": "lee.park",
+    "risk_score": "80",
+    "signature": "Duo user marked fraud",
+    "severity": "high",
+    "fraud_reports": "1",
+    "failures": "1"
+   }
+  ]
+ },
+ {
+  "name": "rule: Lab 5 participant accounts never raise it",
+  "spl": "| makeresults count=6 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 30, n==3, 60, n==4, 90, n==5, 120, n==6, 150), user=case(n==1, \"l5-ws1-03\", n==2, \"l5-ws1-03\", n==3, \"l5-ws1-03\", n==4, \"l5-ws1-03\", n==5, \"l5-ws1-03\", n==6, \"l5-ws1-03\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\"), src=case(n==1, \"198.51.100.40\", n==2, \"198.51.100.40\", n==3, \"198.51.100.40\", n==4, \"198.51.100.40\", n==5, \"198.51.100.40\", n==6, \"198.51.100.40\"), app=\"Corp VPN\", count=case(n==1, 1, n==2, 1, n==3, 1, n==4, 1, n==5, 1, n==6, 1) | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
+  "expect": []
+ },
+ {
+  "name": "rule: an email-form Duo username keys on its lowercased local part",
+  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 30, n==3, 60, n==4, 90, n==5, 120), user=case(n==1, \"Dana.Ortiz@corp.test\", n==2, \"Dana.Ortiz@corp.test\", n==3, \"Dana.Ortiz@corp.test\", n==4, \"Dana.Ortiz@corp.test\", n==5, \"Dana.Ortiz@corp.test\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), app=\"Corp VPN\", count=case(n==1, 1, n==2, 1, n==3, 1, n==4, 1, n==5, 1) | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
+  "expect": [
+   {
+    "user": "dana.ortiz",
+    "duo_users": "Dana.Ortiz@corp.test",
+    "risk_score": "40"
+   }
+  ]
+ },
+ {
+  "name": "rule: a null or unknown Duo user never becomes a risk object",
+  "spl": "| makeresults count=10 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 30, n==3, 60, n==4, 90, n==5, 120, n==6, 150, n==7, 180, n==8, 210, n==9, 240, n==10, 270), user=case(n==1, \"unknown\", n==2, \"null\", n==3, \"unknown\", n==4, \"null\", n==5, \"unknown\", n==6, \"null\", n==7, \"unknown\", n==8, \"null\", n==9, \"unknown\", n==10, \"null\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\", n==7, \"failure\", n==8, \"failure\", n==9, \"failure\", n==10, \"failure\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\", n==7, \"no_response\", n==8, \"no_response\", n==9, \"no_response\", n==10, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\", n==7, \"198.51.100.23\", n==8, \"198.51.100.23\", n==9, \"198.51.100.23\", n==10, \"198.51.100.23\"), app=\"Corp VPN\", count=case(n==1, 1, n==2, 1, n==3, 1, n==4, 1, n==5, 1, n==6, 1, n==7, 1, n==8, 1, n==9, 1, n==10, 1) | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
+  "expect": []
+ },
+ {
+  "name": "rule: a PseudoCo sign-in denial never adds to a Duo burst (scope emulated with genai_duo_auth_events)",
+  "spl": "| makeresults count=8 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 40, n==3, 80, n==4, 200, n==5, 240, n==6, 280, n==7, 320, n==8, 360), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\", n==6, \"dana.ortiz\", n==7, \"dana.ortiz\", n==8, \"dana.ortiz\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\", n==7, \"failure\", n==8, \"failure\"), signature_id=case(n==1, \"denied\", n==2, \"denied\", n==3, \"denied\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\", n==7, \"no_response\", n==8, \"no_response\"), src=case(n==1, \"198.51.100.7\", n==2, \"198.51.100.7\", n==3, \"198.51.100.7\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\", n==7, \"198.51.100.23\", n==8, \"198.51.100.23\"), app=\"Corp VPN\", count=case(n==1, 1, n==2, 1, n==3, 1, n==4, 1, n==5, 1, n==6, 1, n==7, 1, n==8, 1) | eval index=if(n<=3, \"gen_ai_log\", \"duo\"), sourcetype=if(n<=3, \"gen_ai:json\", \"ta_gen_ai_cim:duo:authentication\") | search `genai_duo_auth_events` | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
+  "expect": [
+   {
+    "user": "dana.ortiz",
+    "failures": "5",
+    "max_failures_10m": "5",
+    "src": "198.51.100.23"
+   }
+  ]
+ },
+ {
+  "name": "rule: 3 PseudoCo + 3 Duo denials for one user raise nothing (only Duo's 3 count)",
+  "spl": "| makeresults count=6 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 40, n==3, 80, n==4, 200, n==5, 240, n==6, 280), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\", n==6, \"dana.ortiz\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\"), signature_id=case(n==1, \"denied\", n==2, \"denied\", n==3, \"denied\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\"), src=case(n==1, \"198.51.100.7\", n==2, \"198.51.100.7\", n==3, \"198.51.100.7\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\"), app=\"Corp VPN\", count=case(n==1, 1, n==2, 1, n==3, 1, n==4, 1, n==5, 1, n==6, 1) | eval index=if(n<=3, \"gen_ai_log\", \"duo\"), sourcetype=if(n<=3, \"gen_ai:json\", \"ta_gen_ai_cim:duo:authentication\") | search `genai_duo_auth_events` | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
+  "expect": []
+ },
+ {
+  "name": "lookup gen: the newest COMPLETE snapshot wins over a newer incomplete one",
+  "spl": "| makeresults count=3 | streamstats count as n | eval _raw=case(n==1, \"{\\\"user_id\\\":\\\"DU000000000685492430\\\",\\\"username\\\":\\\"dana.ortiz\\\",\\\"realname\\\":null,\\\"firstname\\\":\\\"Dana\\\",\\\"lastname\\\":\\\"Ortiz\\\",\\\"email\\\":\\\"Dana.Ortiz@corp.test\\\",\\\"status\\\":\\\"active\\\",\\\"is_enrolled\\\":true,\\\"created\\\":1700000000,\\\"last_login\\\":1767200000,\\\"alias1\\\":null,\\\"alias2\\\":null,\\\"alias3\\\":null,\\\"alias4\\\":null,\\\"aliases\\\":{\\\"alias1\\\":\\\"D.Ortiz\\\"},\\\"groups\\\":[{\\\"name\\\":\\\"Sales\\\"},{\\\"name\\\":\\\"Engineering\\\"}],\\\"snapshot_id\\\":\\\"duo-users-1767225600000\\\",\\\"snapshot_total\\\":2,\\\"snapshot_seq\\\":1}\", n==2, \"{\\\"user_id\\\":\\\"DU000000004167279740\\\",\\\"username\\\":\\\"lee.park\\\",\\\"realname\\\":\\\"Lee Park\\\",\\\"firstname\\\":null,\\\"lastname\\\":null,\\\"email\\\":\\\"lee.park@corp.test\\\",\\\"status\\\":\\\"locked out\\\",\\\"is_enrolled\\\":false,\\\"created\\\":1700000000,\\\"last_login\\\":1767200000,\\\"alias1\\\":\\\"\\\",\\\"alias2\\\":null,\\\"alias3\\\":null,\\\"alias4\\\":null,\\\"aliases\\\":{},\\\"groups\\\":[],\\\"snapshot_id\\\":\\\"duo-users-1767225600000\\\",\\\"snapshot_total\\\":2,\\\"snapshot_seq\\\":2}\", n==3, \"{\\\"user_id\\\":\\\"DU000000000685492430\\\",\\\"username\\\":\\\"dana.ortiz\\\",\\\"realname\\\":null,\\\"firstname\\\":null,\\\"lastname\\\":null,\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"status\\\":\\\"disabled\\\",\\\"is_enrolled\\\":true,\\\"created\\\":1700000000,\\\"last_login\\\":1767200000,\\\"alias1\\\":null,\\\"alias2\\\":null,\\\"alias3\\\":null,\\\"alias4\\\":null,\\\"aliases\\\":{},\\\"groups\\\":[],\\\"snapshot_id\\\":\\\"duo-users-1767312000000\\\",\\\"snapshot_total\\\":2,\\\"snapshot_seq\\\":1}\"), _time=case(n==1, 1767225600, n==2, 1767225600, n==3, 1767312000) | spath | fields - n",
+  "tail": {
+   "search": "GenAI - Identity - Duo Identity Lookup Gen",
+   "from": "| eval snapshot_total=tonumber(snapshot_total)",
+   "to": "| outputlookup"
+  },
+  "expect": [
+   {
+    "identity": "dana.ortiz|dana.ortiz@corp.test|d.ortiz",
+    "nick": "dana.ortiz",
+    "first": "Dana",
+    "last": "Ortiz",
+    "email": "dana.ortiz@corp.test",
+    "bunit": "Engineering",
+    "category": "cisco_duo|duo_status_active|duo_enrolled",
+    "watchlist": "false",
+    "startDate": "1700000000"
+   },
+   {
+    "identity": "lee.park|lee.park@corp.test",
+    "nick": "lee.park",
+    "first": "Lee",
+    "last": "Park",
+    "bunit": "cisco_duo",
+    "category": "cisco_duo|duo_status_locked_out|duo_unenrolled",
+    "watchlist": "true"
+   }
+  ]
+ },
+ {
+  "name": "lookup gen: the newer of two complete snapshots is used",
+  "spl": "| makeresults count=2 | streamstats count as n | eval _raw=case(n==1, \"{\\\"user_id\\\":\\\"DU000000000685492430\\\",\\\"username\\\":\\\"dana.ortiz\\\",\\\"realname\\\":null,\\\"firstname\\\":null,\\\"lastname\\\":null,\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"status\\\":\\\"active\\\",\\\"is_enrolled\\\":true,\\\"created\\\":1700000000,\\\"last_login\\\":1767200000,\\\"alias1\\\":null,\\\"alias2\\\":null,\\\"alias3\\\":null,\\\"alias4\\\":null,\\\"aliases\\\":{},\\\"groups\\\":[],\\\"snapshot_id\\\":\\\"duo-users-1767225600000\\\",\\\"snapshot_total\\\":1,\\\"snapshot_seq\\\":1}\", n==2, \"{\\\"user_id\\\":\\\"DU000000000685492430\\\",\\\"username\\\":\\\"dana.ortiz\\\",\\\"realname\\\":null,\\\"firstname\\\":null,\\\"lastname\\\":null,\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"status\\\":\\\"bypass\\\",\\\"is_enrolled\\\":true,\\\"created\\\":1700000000,\\\"last_login\\\":1767200000,\\\"alias1\\\":null,\\\"alias2\\\":null,\\\"alias3\\\":null,\\\"alias4\\\":null,\\\"aliases\\\":{},\\\"groups\\\":[],\\\"snapshot_id\\\":\\\"duo-users-1767312000000\\\",\\\"snapshot_total\\\":1,\\\"snapshot_seq\\\":1}\"), _time=case(n==1, 1767225600, n==2, 1767312000) | spath | fields - n",
+  "tail": {
+   "search": "GenAI - Identity - Duo Identity Lookup Gen",
+   "from": "| eval snapshot_total=tonumber(snapshot_total)",
+   "to": "| outputlookup"
+  },
+  "expect": [
+   {
+    "identity": "dana.ortiz|dana.ortiz@corp.test",
+    "category": "cisco_duo|duo_status_bypass|duo_enrolled",
+    "watchlist": "true"
+   }
+  ]
+ },
+ {
+  "name": "lookup gen: with no complete snapshot it emits nothing (the file is kept)",
+  "spl": "| makeresults count=2 | streamstats count as n | eval _raw=case(n==1, \"{\\\"user_id\\\":\\\"DU000000000685492430\\\",\\\"username\\\":\\\"dana.ortiz\\\",\\\"realname\\\":null,\\\"firstname\\\":null,\\\"lastname\\\":null,\\\"email\\\":\\\"dana.ortiz@corp.test\\\",\\\"status\\\":\\\"active\\\",\\\"is_enrolled\\\":true,\\\"created\\\":1700000000,\\\"last_login\\\":1767200000,\\\"alias1\\\":null,\\\"alias2\\\":null,\\\"alias3\\\":null,\\\"alias4\\\":null,\\\"aliases\\\":{},\\\"groups\\\":[],\\\"snapshot_id\\\":\\\"duo-users-1767225600000\\\",\\\"snapshot_total\\\":3,\\\"snapshot_seq\\\":1}\", n==2, \"{\\\"user_id\\\":\\\"DU000000004167279740\\\",\\\"username\\\":\\\"lee.park\\\",\\\"realname\\\":null,\\\"firstname\\\":null,\\\"lastname\\\":null,\\\"email\\\":\\\"lee.park@corp.test\\\",\\\"status\\\":\\\"active\\\",\\\"is_enrolled\\\":true,\\\"created\\\":1700000000,\\\"last_login\\\":1767200000,\\\"alias1\\\":null,\\\"alias2\\\":null,\\\"alias3\\\":null,\\\"alias4\\\":null,\\\"aliases\\\":{},\\\"groups\\\":[],\\\"snapshot_id\\\":\\\"duo-users-1767225600000\\\",\\\"snapshot_total\\\":3,\\\"snapshot_seq\\\":2}\"), _time=case(n==1, 1767225600, n==2, 1767225600) | spath | fields - n",
+  "tail": {
+   "search": "GenAI - Identity - Duo Identity Lookup Gen",
+   "from": "| eval snapshot_total=tonumber(snapshot_total)",
+   "to": "| outputlookup"
+  },
+  "expect": []
+ },
+ {
+  "name": "lookup gen: participants and personas stay out; a list of aliases is read",
+  "spl": "| makeresults count=3 | streamstats count as n | eval _raw=case(n==1, \"{\\\"user_id\\\":\\\"DU000000002413353391\\\",\\\"username\\\":\\\"l5-ws1-03\\\",\\\"realname\\\":null,\\\"firstname\\\":null,\\\"lastname\\\":null,\\\"email\\\":\\\"l5-ws1-03@corp.test\\\",\\\"status\\\":\\\"active\\\",\\\"is_enrolled\\\":true,\\\"created\\\":1700000000,\\\"last_login\\\":1767200000,\\\"alias1\\\":null,\\\"alias2\\\":null,\\\"alias3\\\":null,\\\"alias4\\\":null,\\\"aliases\\\":{},\\\"groups\\\":[],\\\"snapshot_id\\\":\\\"duo-users-1767225600000\\\",\\\"snapshot_total\\\":3,\\\"snapshot_seq\\\":1}\", n==2, \"{\\\"user_id\\\":\\\"DU000000003249240469\\\",\\\"username\\\":\\\"<<persona_key>>\\\",\\\"realname\\\":null,\\\"firstname\\\":null,\\\"lastname\\\":null,\\\"email\\\":null,\\\"status\\\":\\\"active\\\",\\\"is_enrolled\\\":true,\\\"created\\\":1700000000,\\\"last_login\\\":1767200000,\\\"alias1\\\":null,\\\"alias2\\\":null,\\\"alias3\\\":null,\\\"alias4\\\":null,\\\"aliases\\\":{},\\\"groups\\\":[],\\\"snapshot_id\\\":\\\"duo-users-1767225600000\\\",\\\"snapshot_total\\\":3,\\\"snapshot_seq\\\":2}\", n==3, \"{\\\"user_id\\\":\\\"DU000000003331627703\\\",\\\"username\\\":\\\"sam.lee\\\",\\\"realname\\\":null,\\\"firstname\\\":null,\\\"lastname\\\":null,\\\"email\\\":\\\"sam.lee@corp.test\\\",\\\"status\\\":\\\"active\\\",\\\"is_enrolled\\\":true,\\\"created\\\":1700000000,\\\"last_login\\\":1767200000,\\\"alias1\\\":null,\\\"alias2\\\":null,\\\"alias3\\\":null,\\\"alias4\\\":null,\\\"aliases\\\":[\\\"S.Lee\\\"],\\\"groups\\\":[],\\\"snapshot_id\\\":\\\"duo-users-1767225600000\\\",\\\"snapshot_total\\\":3,\\\"snapshot_seq\\\":3}\"), _time=case(n==1, 1767225600, n==2, 1767225600, n==3, 1767225600) | spath | fields - n",
+  "tail": {
+   "search": "GenAI - Identity - Duo Identity Lookup Gen",
+   "from": "| eval snapshot_total=tonumber(snapshot_total)",
+   "to": "| outputlookup"
+  },
+  "expect": [
+   {
+    "identity": "sam.lee|sam.lee@corp.test|s.lee",
+    "nick": "sam.lee"
+   }
+  ]
+ },
+ {
+  "name": "lookup gen: JSON nulls and empty strings never become identity keys",
+  "spl": "| makeresults count=2 | streamstats count as n | eval _raw=case(n==1, \"{\\\"user_id\\\":\\\"DU000000000685492430\\\",\\\"username\\\":\\\"dana.ortiz\\\",\\\"realname\\\":null,\\\"firstname\\\":null,\\\"lastname\\\":null,\\\"email\\\":null,\\\"status\\\":\\\"active\\\",\\\"is_enrolled\\\":true,\\\"created\\\":1700000000,\\\"last_login\\\":1767200000,\\\"alias1\\\":\\\"\\\",\\\"alias2\\\":null,\\\"alias3\\\":null,\\\"alias4\\\":null,\\\"aliases\\\":{},\\\"groups\\\":[],\\\"snapshot_id\\\":\\\"duo-users-1767225600000\\\",\\\"snapshot_total\\\":2,\\\"snapshot_seq\\\":1}\", n==2, \"{\\\"user_id\\\":\\\"DU000000004167279740\\\",\\\"username\\\":\\\"lee.park\\\",\\\"realname\\\":null,\\\"firstname\\\":null,\\\"lastname\\\":null,\\\"email\\\":null,\\\"status\\\":\\\"active\\\",\\\"is_enrolled\\\":true,\\\"created\\\":1700000000,\\\"last_login\\\":1767200000,\\\"alias1\\\":null,\\\"alias2\\\":null,\\\"alias3\\\":null,\\\"alias4\\\":null,\\\"aliases\\\":{},\\\"groups\\\":[],\\\"snapshot_id\\\":\\\"duo-users-1767225600000\\\",\\\"snapshot_total\\\":2,\\\"snapshot_seq\\\":2}\"), _time=case(n==1, 1767225600, n==2, 1767225600) | spath | fields - n",
+  "tail": {
+   "search": "GenAI - Identity - Duo Identity Lookup Gen",
+   "from": "| eval snapshot_total=tonumber(snapshot_total)",
+   "to": "| outputlookup"
+  },
+  "expect": [
+   {
+    "identity": "dana.ortiz"
+   },
+   {
+    "identity": "lee.park"
+   }
+  ]
+ }
+]
