@@ -1498,7 +1498,7 @@ for one room stack and `--lab5-teardown` turns it off again
 | PseudoCo Identity (SOAR) | real Duo Admin API containment of the room's configured victim only; `simulated: false`; no undo |
 | MedAdvice Identity Provider 1.1.0 | the Lab 4 simulator; refuses every Lab 5 identity |
 | `pseudoco_identity_personas` | ES identity rows for the persona cast; input ships disabled |
-| Compromised Identity dashboard | sign-ins, gate verdicts, CII failed checks, AI Defense blocks, the join, session revocations |
+| Compromised Identity dashboard | sign-ins, gate verdicts, CII failed checks (gate lookup or webhook, as the rule reads them), AI Defense blocks, the join (the rule's branches without its windows), session revocations |
 
 Two findings per victim are expected: the spray at the victim also raises the
 prompt-injection correlation. Work the Lab 5 one. ES's 24-hour risk threshold
@@ -1531,6 +1531,21 @@ the stack's RBA rule and the Risk data model's lag. On the ES 8.5.1 dry run of
   drops handout-code checks, `multisearch` accepts it, and the freshness and
   severity clauses behave as described. Not yet run against a real flagged
   user's events.
+- FIXED (2026-11-17): the *Compromised Identity* dashboard and home card 04
+  still read CII evidence from the webhook only. With no CII notification
+  target, their CII tile, CII table and join stayed at 0 while the rule fired
+  from the gate lookup. They now read both sources, as the rule does:
+  - the join runs the rule's four multisearch branches; a test pins them
+    equal, time windows aside, and the gate-block match is now the rule's
+    `^cisco_identity_intelligence$`;
+  - the CII tile and the home card count distinct user/check pairs, because
+    every event of a signed-in turn repeats the user's failing checks;
+  - the CII table gives one row per user, check and source, with first and
+    last seen and the number of observations.
+
+  Checked on splunk104 against the live data and makeresults rows: two
+  flagged turns give one row with 2 observations, UNTRUSTED counts,
+  new-country is dropped, and an empty window returns 0.
 - CHANGED (2026-11-16, Lab 5 decision D1): `duo-sign-in-threat-detected` no
   longer counts as takeover evidence. The takeover IDs now live in
   `genai_cii_takeover_check_ids` (`mfa-flood`, `impossible-travel`), the same
