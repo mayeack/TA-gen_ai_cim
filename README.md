@@ -1489,10 +1489,11 @@ for one room stack and `--lab5-teardown` turns it off again
 
 | Piece | What it is |
 |---|---|
-| *AI Governance - Compromised Identity AI Attack Correlation - Rule* | CII takeover-check failures (7 d) joined with AI Defense blocks (24 h) per identity; finding "GenAI Compromised Identity: $user$" |
+| *AI Governance - Compromised Identity AI Attack Correlation - Rule* | CII takeover-check failures (webhook, 7 d; or PseudoCo Assistant's own signed-in events, 24 h) joined with AI Defense blocks (24 h) per identity; finding "GenAI Compromised Identity: $user$" |
 | `genai_cii_*` macros | read the CII webhook events (index `cisco_identity_intelligence`) with `spath`; field paths provisional until the S6 capture |
-| `genai_cii_takeover_checks` | the only checks that count: `mfa-flood`, `impossible-travel`, `duo-sign-in-threat-detected` (CII check IDs); overridable in `local/` |
-| `cii_provenance` | `CII webhook`, `backfill (lab5-setup)` or `synthetic test event` - a room stack never holds synthetic events |
+| `genai_cii_takeover_checks` | the only checks that count: `mfa-flood`, `impossible-travel` (CII check IDs, listed in `genai_cii_takeover_check_ids`: the same checks the Identity Risk Gate refuses); overridable in `local/` |
+| `genai_cii_gate_failed_check_rows` | CII evidence from PseudoCo Assistant's own signed-in events: the takeover checks in `identity_failing_checks`, plus an UNTRUSTED trust level; no webhook needed |
+| `cii_provenance` | `CII webhook`, `backfill (lab5-setup)`, `PseudoCo Assistant gate lookup` or `synthetic test event` - a room stack never holds synthetic events |
 | Compromised Identity Response Plan | seeded when `seed_identity_response_plan = true`; containment = PseudoCo Identity -> disable user |
 | PseudoCo Identity (SOAR) | real Duo Admin API containment of the room's configured victim only; `simulated: false`; no undo |
 | MedAdvice Identity Provider 1.1.0 | the Lab 4 simulator; refuses every Lab 5 identity |
@@ -1513,6 +1514,28 @@ the stack's RBA rule and the Risk data model's lag. On the ES 8.5.1 dry run of
 
 **AI Trust Lab 5: "Verify: Cisco Identity Intelligence"**
 
+- ADDED (2026-11-16, Lab 5 backlog row 3): the Lab 5 rule reads CII evidence
+  from PseudoCo Assistant's own events, so it no longer needs a CII webhook.
+  The Identity Risk Gate looks the user up on every signed-in turn and every
+  event carries the answer (`identity_failing_checks`, `identity_trust_level`).
+  A fourth multisearch branch (last 24 hours, `gen_ai.identity.verified=true`)
+  runs the new macro `genai_cii_gate_failed_check_rows`: one row per takeover
+  check, names normalized to CII's check-ID form, plus an UNTRUSTED trust level
+  as the check `trust-level-untrusted`; `cii_provenance` reads
+  `PseudoCo Assistant gate lookup`. The rule now fires while the newest AI
+  Defense block **or** the newest CII evidence is under 5 minutes old, so a
+  flag that lands after the blocks still raises it. Severity is critical for
+  UNTRUSTED, or for an "Unblock me" override within 10 minutes of an AI Defense
+  block (the join now emits `lastOverrideTime`). Checked on the Mac's Splunk
+  10.4.3 with makeresults rows: the branch keeps MFA Flood and UNTRUSTED and
+  drops handout-code checks, `multisearch` accepts it, and the freshness and
+  severity clauses behave as described. Not yet run against a real flagged
+  user's events.
+- CHANGED (2026-11-16, Lab 5 decision D1): `duo-sign-in-threat-detected` no
+  longer counts as takeover evidence. The takeover IDs now live in
+  `genai_cii_takeover_check_ids` (`mfa-flood`, `impossible-travel`), the same
+  CII checks PseudoCo Assistant's Identity Risk Gate refuses a turn for, and
+  `test_lab5_conf.py` fails if the two drift.
 - ADDED: *AI Governance - Compromised Identity AI Attack Correlation - Rule*
   (ships **disabled**). Joins Cisco Identity Intelligence (CII) `FAILED_CHECK`
   events for a takeover check (MFA Flood, Impossible Travel, Duo Sign In Threat

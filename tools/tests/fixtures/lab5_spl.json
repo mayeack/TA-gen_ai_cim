@@ -165,7 +165,7 @@
     ]
   },
   {
-    "name": "only takeover checks survive: CII's catalogue (listCheckMetadata 2026-11-06) through the rows macro",
+    "name": "only takeover checks survive: CII's catalogue (listCheckMetadata 2026-11-06) through the rows macro; duo-sign-in-threat-detected is dropped since 2026-11-16, matching the Identity Risk Gate",
     "spl": "| makeresults count=6 | streamstats count as n | eval _raw=case(n==1, \"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"time\\\":\\\"2026-11-06T18:00:00Z\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"mfa-flood\\\",\\\"title\\\":\\\"MFA Flood\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"marcus.bell@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"NEUTRAL\\\"}}\", n==2, \"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"time\\\":\\\"2026-11-06T18:00:00Z\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"impossible-travel\\\",\\\"title\\\":\\\"Impossible Travel\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"marcus.bell@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"NEUTRAL\\\"}}\", n==3, \"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"time\\\":\\\"2026-11-06T18:00:00Z\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"duo-sign-in-threat-detected\\\",\\\"title\\\":\\\"Duo Sign In Threat Detected\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"marcus.bell@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"NEUTRAL\\\"}}\", n==4, \"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"time\\\":\\\"2026-11-06T18:00:00Z\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"is-bypass-code-used\\\",\\\"title\\\":\\\"A Bypass Code Was Used To Successfully Sign In\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"marcus.bell@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"NEUTRAL\\\"}}\", n==5, \"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"time\\\":\\\"2026-11-06T18:00:00Z\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"is-weak-mfa-used\\\",\\\"title\\\":\\\"Weak MFA Was Used To Successfully Sign In\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"marcus.bell@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"NEUTRAL\\\"}}\", 1=1, \"{\\\"version\\\":\\\"0\\\",\\\"id\\\":\\\"3a9f6ca8-08af-43f0-827a-ceda239d16f9\\\",\\\"detail-type\\\":\\\"FAILED_CHECK\\\",\\\"source\\\":\\\"908040f3__969f9802\\\",\\\"time\\\":\\\"2026-11-06T18:00:00Z\\\",\\\"resources\\\":[],\\\"detail\\\":{\\\"id\\\":\\\"8ca60986\\\",\\\"checkId\\\":\\\"user-account-locked-out\\\",\\\"severity\\\":\\\"high\\\",\\\"login\\\":\\\"marcus.bell@pseudocoassistant.com\\\",\\\"checkTags\\\":[],\\\"userTrustLevel\\\":\\\"NEUTRAL\\\"}}\") | `genai_cii_extract` | `genai_cii_failed_check_rows` | table n, identity_user, cii_check_id, cii_check",
     "expect": [
       {
@@ -177,10 +177,6 @@
       {
         "n": "2",
         "cii_check_id": "impossible-travel"
-      },
-      {
-        "n": "3",
-        "cii_check_id": "duo-sign-in-threat-detected"
       }
     ]
   },
@@ -200,5 +196,36 @@
         "cii_checks": "MFA Flood"
       }
     ]
+  },
+  {
+    "name": "gate lookup (row 3): a signed-in turn's takeover check is CII evidence; names normalized, the bypass-code check dropped",
+    "spl": "| makeresults | eval _raw=\"{\\\"enduser_id\\\":\\\"avery.kim\\\",\\\"user\\\":\\\"avery.kim\\\",\\\"guardrail_ids\\\":[],\\\"policy_blocked\\\":false,\\\"identity_verified\\\":true,\\\"identity_source\\\":\\\"duo\\\",\\\"identity_risk\\\":\\\"allow\\\",\\\"identity_check\\\":\\\"ok\\\",\\\"identity_duo_status\\\":\\\"active\\\",\\\"identity_trust_level\\\":\\\"NEUTRAL\\\",\\\"identity_failing_checks\\\":[\\\"MFA_Flood\\\",\\\"is-bypass-code-used\\\"]}\" | spath | eval gen_ai.identity.risk.failing_checks=<<props:EVAL-gen_ai.identity.risk.failing_checks>>, gen_ai.identity.risk.trust_level=<<props:EVAL-gen_ai.identity.risk.trust_level>> | `genai_cii_gate_failed_check_rows` | table identity_user, cii_check_id, cii_check, cii_trust_level, cii_provenance",
+    "expect": [
+      {
+        "identity_user": "avery.kim",
+        "cii_check_id": "mfa-flood",
+        "cii_check": "mfa-flood",
+        "cii_trust_level": "NEUTRAL",
+        "cii_provenance": "PseudoCo Assistant gate lookup"
+      }
+    ]
+  },
+  {
+    "name": "gate lookup (row 3): an UNTRUSTED trust level counts even with no takeover check",
+    "spl": "| makeresults | eval _raw=\"{\\\"enduser_id\\\":\\\"nina.osei\\\",\\\"user\\\":\\\"nina.osei\\\",\\\"guardrail_ids\\\":[],\\\"policy_blocked\\\":false,\\\"identity_verified\\\":true,\\\"identity_source\\\":\\\"duo\\\",\\\"identity_risk\\\":\\\"allow\\\",\\\"identity_check\\\":\\\"ok\\\",\\\"identity_duo_status\\\":\\\"active\\\",\\\"identity_trust_level\\\":\\\"untrusted\\\",\\\"identity_failing_checks\\\":[\\\"is-bypass-code-used\\\"]}\" | spath | eval gen_ai.identity.risk.failing_checks=<<props:EVAL-gen_ai.identity.risk.failing_checks>>, gen_ai.identity.risk.trust_level=<<props:EVAL-gen_ai.identity.risk.trust_level>> | `genai_cii_gate_failed_check_rows` | table identity_user, cii_check_id, cii_check, cii_trust_level, cii_provenance",
+    "expect": [
+      {
+        "identity_user": "nina.osei",
+        "cii_check_id": "trust-level-untrusted",
+        "cii_check": "Trust level UNTRUSTED",
+        "cii_trust_level": "UNTRUSTED",
+        "cii_provenance": "PseudoCo Assistant gate lookup"
+      }
+    ]
+  },
+  {
+    "name": "gate lookup (row 3): a trusted persona with only handout-code checks gives no evidence (H4)",
+    "spl": "| makeresults | eval _raw=\"{\\\"enduser_id\\\":\\\"marcus.bell\\\",\\\"user\\\":\\\"marcus.bell\\\",\\\"guardrail_ids\\\":[],\\\"policy_blocked\\\":false,\\\"identity_verified\\\":true,\\\"identity_source\\\":\\\"duo\\\",\\\"identity_risk\\\":\\\"allow\\\",\\\"identity_check\\\":\\\"ok\\\",\\\"identity_duo_status\\\":\\\"active\\\",\\\"identity_trust_level\\\":\\\"TRUSTED\\\",\\\"identity_failing_checks\\\":[\\\"is-bypass-code-used\\\",\\\"is-weak-mfa-used\\\"]}\" | spath | eval gen_ai.identity.risk.failing_checks=<<props:EVAL-gen_ai.identity.risk.failing_checks>>, gen_ai.identity.risk.trust_level=<<props:EVAL-gen_ai.identity.risk.trust_level>> | `genai_cii_gate_failed_check_rows` | table identity_user, cii_check_id, cii_check, cii_trust_level, cii_provenance",
+    "expect": []
   }
 ]

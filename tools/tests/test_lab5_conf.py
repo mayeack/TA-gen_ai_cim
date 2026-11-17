@@ -21,11 +21,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 LAB5_RULE = 'AI Governance - Compromised Identity AI Attack Correlation - Rule'
 LAB4_RULE = 'AI Governance - Prompt Injection Attack Correlation - Rule'
-# CII's check IDs (listCheckMetadata, 2026-11-06), and the three the Lab 5
-# webhook is assigned to: the only ones that count as takeover evidence.
+# CII's check IDs (listCheckMetadata, 2026-11-06), and the ones that count as
+# takeover evidence: the same two the Identity Risk Gate refuses a turn for.
 CII_CHECK_CATALOGUE = ('mfa-flood', 'impossible-travel', 'duo-sign-in-threat-detected', 'is-bypass-code-used',
                        'is-weak-mfa-used', 'user-account-locked-out')
-TAKEOVER_CHECKS = ('mfa-flood', 'impossible-travel', 'duo-sign-in-threat-detected')
+TAKEOVER_CHECKS = ('mfa-flood', 'impossible-travel')
+# PseudoCo Assistant backend/services/identity_gate.py BLOCKING_CHECKS (the
+# letters-only names the gate matches on), main 98e21b1. Change it together
+# with the gate and genai_cii_takeover_check_ids.
+GATE_BLOCKING_CHECKS = ('mfaflood', 'impossibletravel')
 # Per gen_ai.identity.risk.* EVAL, the names it must read in this order: the
 # flat fields PseudoCo Assistant 4.23.0 writes, then the nested pre-release
 # draft names as a fallback.
@@ -85,8 +89,17 @@ class Lab5RuleTests(unittest.TestCase):
         self.assertIn('earliest=-24h `genai_identity_ai_events` gen_ai.policy.blocked="true" '
                       'gen_ai.guardrail.ids="cisco_ai_defense"', s)
         self.assertIn('earliest=-7d `genai_cii_failed_checks`', s)
+        self.assertIn('earliest=-24h `genai_identity_ai_events` gen_ai.identity.verified="true" \n'
+                      '| `genai_cii_gate_failed_check_rows`', s)
         self.assertIn('`genai_identity_ai_attack_join`', s)
         self.assertEqual(self.rule['dispatch.earliest_time'], '-7d')
+
+    def test_fresh_cii_evidence_also_fires_and_overrides_are_critical(self):
+        s = self.rule['search']
+        self.assertIn('| where lastAiBlockTime>=relative_time(now(), "-5m") '
+                      'OR lastCiiTime>=relative_time(now(), "-5m")', s)
+        self.assertIn('identity_overrides>0 AND abs(lastAiBlockTime-lastOverrideTime)<=600, "critical"', s)
+        self.assertIn('isnotnull(mvfind(cii_trust_levels, "^UNTRUSTED$")), "critical"', s)
 
     def test_finding_and_risk_are_on_the_user_only(self):
         r = self.rule
@@ -120,7 +133,8 @@ class MacroTests(unittest.TestCase):
 
     def test_lab5_macros_exist_and_declare_iseval(self):
         for name in ('genai_cii_index', 'genai_cii_events', 'genai_cii_extract', 'genai_cii_failed_checks',
-                     'genai_cii_failed_check_rows', 'genai_cii_takeover_checks', 'genai_identity_join_key(1)',
+                     'genai_cii_failed_check_rows', 'genai_cii_takeover_check_ids', 'genai_cii_takeover_checks',
+                     'genai_cii_gate_failed_check_rows', 'genai_identity_join_key(1)',
                      'genai_identity_ai_events', 'genai_identity_participant_filter',
                      'genai_identity_ai_attack_join', 'genai_identity_ai_attack_filter'):
             self.assertIn(name, self.macros)
@@ -128,14 +142,37 @@ class MacroTests(unittest.TestCase):
 
     def test_only_takeover_checks_count(self):
         """H4: a bypass-code or weak-MFA failure, which every persona gets after a
-        handout code, never reaches the join; only the three takeover checks do."""
-        allow = self.macros['genai_cii_takeover_checks']['definition']
-        m = re.match(r'^search cii_check_id IN \((.*)\)$', allow)
-        self.assertIsNotNone(m, allow)
-        self.assertEqual(sorted(re.findall(r'"([^"]+)"', m.group(1))), sorted(TAKEOVER_CHECKS))
+        handout code, never reaches the join; only the takeover checks do."""
+        ids = self.macros['genai_cii_takeover_check_ids']['definition']
+        self.assertEqual(sorted(re.findall(r'"([^"]+)"', ids)), sorted(TAKEOVER_CHECKS))
+        self.assertEqual(self.macros['genai_cii_takeover_checks']['definition'],
+                         'search cii_check_id IN (`genai_cii_takeover_check_ids`)')
         rows = [line.strip() for line in self.macros['genai_cii_failed_check_rows']['definition'].split('\n')]
         self.assertEqual(rows[1:], ['| `genai_cii_takeover_checks`',
                                     '| eval identity_user=`genai_identity_join_key(cii_login)`'])
+
+    def test_takeover_checks_match_the_identity_gate(self):
+        """D1 (2026-11-16): the TA counts the same CII checks PseudoCo Assistant's
+        Identity Risk Gate refuses a turn for. Compared as letters and digits, the
+        way the gate itself matches check names."""
+        squash = lambda name: re.sub(r'[^a-z0-9]', '', name.lower())  # noqa: E731
+        self.assertEqual(sorted(squash(c) for c in TAKEOVER_CHECKS), sorted(GATE_BLOCKING_CHECKS))
+        self.assertNotIn('duo-sign-in-threat-detected',
+                         self.macros['genai_cii_takeover_check_ids']['definition'])
+
+    def test_gate_lookup_rows_count_takeover_checks_and_untrusted(self):
+        """Backlog row 3: the app's own signed-in events are CII evidence, one row
+        per takeover check, plus an UNTRUSTED trust level; names normalized."""
+        rows = self.macros['genai_cii_gate_failed_check_rows']['definition']
+        for needle in ("'gen_ai.identity.risk.failing_checks'", "'gen_ai.identity.risk.trust_level'",
+                       '"trust-level-untrusted"', '| mvexpand cii_check_id',
+                       '| search cii_check_id IN (`genai_cii_takeover_check_ids`, "trust-level-untrusted")',
+                       'identity_user=`genai_identity_join_key(user)`',
+                       'cii_provenance="PseudoCo Assistant gate lookup"'):
+            self.assertIn(needle, rows)
+        self.assertIn('lower(replace(trim(', rows)
+        self.assertIn('max(eval(if(signal=="identity_gate" AND gate_override==1, _time, null()))) as lastOverrideTime',
+                      self.macros['genai_identity_ai_attack_join']['definition'])
 
     def test_rule_and_dashboard_read_cii_through_the_filter(self):
         """The rule and the dashboard reach CII only through genai_cii_failed_checks
