@@ -66,6 +66,19 @@ after the run above (tools/lab5_steps.py documents each step):
 the CII backfill token) to a 0600 JSON file for the PseudoCo Assistant Lab 5
 setup tool, and prints only their last 4 characters.
 
+Staged assistant events (tools/staged_resend.py; tools/staged-resend-runbook.md
+has the order, the checks and what cannot be undone). The PseudoCo Assistant
+sends each event once, so a stack created after a scenario was staged never
+receives that scenario's sign-ins and AI turns. Export them once from the
+Splunk that holds them, review and approve the bundle, then copy it into each
+stack after --out (and --duo) have run there:
+
+    python3 staged_resend.py export --source https://<splunk>:8089 --host <host> \\
+        --persona <persona> --from <ISO time> --to <ISO time> --bundle <bundle.json>
+    python3 staged_resend.py review --bundle <bundle.json> [--approve <digest>]
+    python3 staged_resend.py send --bundle <bundle.json> --stack <url> --hec-file stack.json
+    python3 staged_resend.py verify --bundle <bundle.json> --stack <url>
+
 Cisco Duo identity feed (TA-gen_ai_cim 1.9.0), one run per stack that polls Duo
 (tools/duo_steps.py documents each step, D0-D8 and DT1-DT7):
 
@@ -186,6 +199,20 @@ def summary(rep):
     return counts.get('FAIL', 0)
 
 
+def stack_endpoints(stack):
+    """(host, stack name, splunkd URL) for --stack. The management port is 8089
+    unless --stack names another one, which is how a dev Splunk on this machine
+    is reached (https://localhost:8090). ACS and the HEC URL are built from the
+    stack name and never use that port. Raises ValueError on a port that is not
+    a number; the value is not repeated."""
+    text = str(stack or '').strip().rstrip('/')
+    netloc = urllib.parse.urlparse(text).netloc or text
+    host, _, port = netloc.partition(':')
+    if not host or (port and not port.isdigit()):
+        raise ValueError('--stack must be a host name or URL, with at most a numeric port')
+    return host, host.split('.')[0], 'https://{}:{}'.format(host, port or '8089')
+
+
 class AcsClient(object):
     """Admin Config Service - addresses a stack by name, Bearer token."""
 
@@ -233,37 +260,42 @@ def step_index(acs, rep, skip_acs):
         rep.fail(label, 'HTTP {} {}'.format(code, str(text)[:200]))
 
 
-def step_hec(acs, rep, skip_acs, out):
+def step_hec(acs, rep, skip_acs, out, sleep=time.sleep, wait_seconds=300):
+    """Finds or creates the stack's HEC token and puts its value in `out`.
+    ACS returns the value beside `spec`, and only from a GET: the create
+    answers 202 with the name alone, and the token exists a little later."""
     label = '2. HEC token'
     if skip_acs:
         rep.skip(label, 'ACS skipped - create the token manually')
         return
-    code, text = acs.call('/inputs/http-event-collectors', 'GET')
-    if code is None:
-        rep.skip(label, text)
+    state, token, detail = lab5.read_hec_token(acs, HEC_TOKEN_NAME)
+    if state == 'unavailable':
+        rep.skip(label, detail)
         return
-    if code == 200 and HEC_TOKEN_NAME in text:
-        try:
-            for item in json.loads(text).get('http-event-collectors', []):
-                spec = item.get('spec', item)
-                if spec.get('name') == HEC_TOKEN_NAME:
-                    out['hec_token'] = spec.get('token')
-        except Exception:
-            pass
+    if state == 'present':
+        out['hec_token'] = token
         rep.ok(label, 'already exists ({})'.format(HEC_TOKEN_NAME))
+        return
+    if state != 'absent':
+        rep.fail(label, detail or state)
         return
     code, text = acs.call('/inputs/http-event-collectors', 'POST', {
         'name': HEC_TOKEN_NAME, 'defaultIndex': INDEX_NAME,
         'defaultSourcetype': HEC_SOURCETYPE, 'allowedIndexes': [INDEX_NAME],
         'disabled': False})
-    if code in (200, 201, 202):
-        try:
-            out['hec_token'] = json.loads(text).get('token')
-        except Exception:
-            pass
-        rep.ok(label, 'created ({})'.format(HEC_TOKEN_NAME))
-    else:
+    if code not in (200, 201, 202):
         rep.fail(label, 'HTTP {} {}'.format(code, str(text)[:200]))
+        return
+    if getattr(acs, 'dry_run', False):
+        rep.ok(label, 'would be created ({})'.format(HEC_TOKEN_NAME))
+        return
+    token, state, detail = lab5.wait_hec_token(acs, HEC_TOKEN_NAME, sleep=sleep, wait_seconds=wait_seconds)
+    if not token:
+        rep.fail(label, 'created ({}), but ACS returned no value for it within {} s ({}); run again to read it'.format(
+            HEC_TOKEN_NAME, wait_seconds, detail or state))
+        return
+    out['hec_token'] = token
+    rep.ok(label, 'created ({})'.format(HEC_TOKEN_NAME))
 
 
 def saved_search_path(app, name):
@@ -465,7 +497,9 @@ class Parser(argparse.ArgumentParser):
 def build_parser():
     parser = Parser(description='Configure a Splunk Show stack for the AI Defense demo.', allow_abbrev=False)
     parser.add_argument('--stack', help='Stack URL, e.g. https://esp-shw-xxx.splunkcloud.com '
-                                        '(required unless --soar-only)')
+                                        '(required unless --soar-only). splunkd is reached on port 8089 '
+                                        'unless the URL names another port, which is how a dev Splunk on '
+                                        'this machine is addressed (https://localhost:8090, with --skip-acs)')
     parser.add_argument('--username', default='admin')
     parser.add_argument('--password', default=os.environ.get('SPLUNK_ADMIN_PASSWORD'),
                         help='Defaults to $SPLUNK_ADMIN_PASSWORD')
@@ -563,6 +597,12 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if args.stack:
+        try:
+            stack_endpoints(args.stack)
+        except ValueError as exc:
+            print('ERROR: {}.'.format(exc), file=sys.stderr)
+            return 2
     modes = [name for name, on in (('--duo', args.duo), ('--duo-teardown', args.duo_teardown),
                                    ('--lab5', args.lab5), ('--lab5-teardown', args.lab5_teardown)) if on]
     if len(modes) > 1 and (args.duo or args.duo_teardown):
@@ -621,9 +661,8 @@ def main(argv=None):
     if args.soar_only:
         return 1 if summary(rep) else 0
 
-    host = (urllib.parse.urlparse(args.stack.rstrip('/')).netloc or args.stack).split(':')[0]
-    stack_name = host.split('.')[0]
-    splunkd = seed.Splunkd('https://{}:8089'.format(host), username=args.username,
+    host, stack_name, mgmt = stack_endpoints(args.stack)
+    splunkd = seed.Splunkd(mgmt, username=args.username,
                            password=args.password, verify=False, dry_run=args.dry_run, echo=print)
     skip_acs = args.skip_acs or not args.acs_token
     acs = AcsClient(stack_name, args.acs_token, dry_run=args.dry_run)
@@ -663,6 +702,9 @@ def main(argv=None):
         lab5.write_out(args.out, {'hec_url': 'https://http-inputs-{}.splunkcloud.com/services/collector/event'.format(
             stack_name), 'hec_token': out['hec_token'], 'index': INDEX_NAME, 'sourcetype': HEC_SOURCETYPE})
         print('\nHEC URL and token ({}) written to {} (mode 0600).'.format(lab5.last4(out['hec_token']), args.out))
+        print('To copy staged assistant events into this stack (tools/staged-resend-runbook.md):\n'
+              '  python3 tools/staged_resend.py send --bundle <bundle.json> --stack {} --hec-file {}'.format(
+                  args.stack, args.out))
     elif out.get('hec_token'):
         print('\nPoint DemoBot at:')
         print('  URL   : https://http-inputs-{}.splunkcloud.com/services/collector/event'.format(stack_name))
@@ -692,9 +734,8 @@ def run_lab5(args):
     out = {}
     print('Mode    : {} ({})'.format('DRY RUN' if args.dry_run else 'apply',
                                     'Lab 5 teardown' if args.lab5_teardown else 'Lab 5 setup'))
-    host = (urllib.parse.urlparse(args.stack.rstrip('/')).netloc or args.stack).split(':')[0]
-    stack_name = host.split('.')[0]
-    splunkd = seed.Splunkd('https://{}:8089'.format(host), username=args.username,
+    host, stack_name, mgmt = stack_endpoints(args.stack)
+    splunkd = seed.Splunkd(mgmt, username=args.username,
                            password=args.password, verify=False, dry_run=args.dry_run, echo=print)
     code, _ = splunkd.get_json('/services/server/info')
     if code != 200:
@@ -799,10 +840,9 @@ def run_duo(args, splunkd=None, acs=None, creds=None, sleep=time.sleep, clock=ti
     rep = seed.Reporter(echo=print)
     print('Mode    : {} ({})'.format('DRY RUN' if args.dry_run else 'apply',
                                     'Duo feed teardown' if args.duo_teardown else 'Duo feed setup'))
-    host = (urllib.parse.urlparse(args.stack.rstrip('/')).netloc or args.stack).split(':')[0]
-    stack_name = host.split('.')[0]
+    host, stack_name, mgmt = stack_endpoints(args.stack)
     if splunkd is None:
-        splunkd = seed.Splunkd('https://{}:8089'.format(host), username=args.username,
+        splunkd = seed.Splunkd(mgmt, username=args.username,
                                password=args.password, verify=verify, dry_run=args.dry_run, echo=print)
         if ca_file:
             # Loaded into this one context, explicitly. The environment is no way in:
