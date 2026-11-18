@@ -248,16 +248,17 @@
   ]
  },
  {
-  "name": "rule: 5 failures within 10 minutes raise risk 40 on the join key",
-  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 60, n==3, 120, n==4, 180, n==5, 240), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"user_cancelled\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"unknown\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), app=\"Corp VPN\", count=case(n==1, 1, n==2, 1, n==3, 1, n==4, 1, n==5, 1) | fields - n",
+  "name": "rule: 5 failures within 10 minutes raise risk 40 on the join key, dated at the 5th failure",
+  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 60, n==3, 120, n==4, 180, n==5, 240), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"user_cancelled\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"unknown\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), _indextime=case(n==1, 1769817060, n==2, 1769817060, n==3, 1769817060, n==4, 1769817060, n==5, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), app=\"Corp VPN\" | fields - n",
   "tail": {
    "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
    "from": "| eval identity_user="
   },
-  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
   "expect": [
    {
     "user": "dana.ortiz",
+    "at": "240",
     "risk_score": "40",
     "signature": "Duo authentication denial burst",
     "severity": "medium",
@@ -266,100 +267,274 @@
     "max_failures_10m": "5",
     "duo_users": "dana.ortiz",
     "src": "198.51.100.23",
-    "app": "Corp VPN"
+    "app": "Corp VPN",
+    "burst_id": "dana.ortiz:burst:1767225840",
+    "burst_earliest": "1767225000",
+    "burst_latest": "1767226441"
    }
+  ],
+  "window": [
+   1769817000,
+   1769817600
   ]
  },
  {
   "name": "rule: 4 failures in 10 minutes and a 5th 18 minutes later raise nothing",
-  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 60, n==3, 120, n==4, 180, n==5, 1080), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), app=\"Corp VPN\", count=case(n==1, 1, n==2, 1, n==3, 1, n==4, 1, n==5, 1) | fields - n",
+  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 60, n==3, 120, n==4, 180, n==5, 1080), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), _indextime=case(n==1, 1769817060, n==2, 1769817060, n==3, 1769817060, n==4, 1769817060, n==5, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), app=\"Corp VPN\" | fields - n",
   "tail": {
    "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
    "from": "| eval identity_user="
   },
-  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
-  "expect": []
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [],
+  "window": [
+   1769817000,
+   1769817600
+  ]
  },
  {
-  "name": "rule: a tstats row with count=5 is five failures",
-  "spl": "| makeresults count=1 | streamstats count as n | eval _time=1767225600+case(n==1, 0), user=case(n==1, \"dana.ortiz\"), action=case(n==1, \"failure\"), signature_id=case(n==1, \"no_response\"), src=case(n==1, \"198.51.100.23\"), app=\"Corp VPN\", count=case(n==1, 5) | fields - n",
+  "name": "rule: five failures in the same second are five failures",
+  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 0, n==3, 0, n==4, 0, n==5, 0), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), _indextime=case(n==1, 1769817060, n==2, 1769817060, n==3, 1769817060, n==4, 1769817060, n==5, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), app=\"Corp VPN\" | fields - n",
   "tail": {
    "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
    "from": "| eval identity_user="
   },
-  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
   "expect": [
    {
     "user": "dana.ortiz",
+    "at": "0",
     "risk_score": "40",
     "failures": "5",
     "max_failures_10m": "5"
    }
+  ],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule: 5 failures spanning 599 seconds are inside the 10-minute window",
+  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 150, n==3, 300, n==4, 450, n==5, 599), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), _indextime=case(n==1, 1769817060, n==2, 1769817060, n==3, 1769817060, n==4, 1769817060, n==5, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [
+   {
+    "user": "dana.ortiz",
+    "at": "599",
+    "max_failures_10m": "5"
+   }
+  ],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule: 5 failures spanning exactly 600 seconds are not (the window excludes its far edge)",
+  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 150, n==3, 300, n==4, 450, n==5, 600), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), _indextime=case(n==1, 1769817060, n==2, 1769817060, n==3, 1769817060, n==4, 1769817060, n==5, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [],
+  "window": [
+   1769817000,
+   1769817600
   ]
  },
  {
   "name": "rule: one fraud report raises risk 80",
-  "spl": "| makeresults count=1 | streamstats count as n | eval _time=1767225600+case(n==1, 0), user=case(n==1, \"lee.park\"), action=case(n==1, \"failure\"), signature_id=case(n==1, \"user_marked_fraud\"), src=case(n==1, \"203.0.113.9\"), app=\"Corp VPN\", count=case(n==1, 1) | fields - n",
+  "spl": "| makeresults count=1 | streamstats count as n | eval _time=1767225600+case(n==1, 0), user=case(n==1, \"lee.park\"), signature_id=case(n==1, \"user_marked_fraud\"), src=case(n==1, \"203.0.113.9\"), _indextime=case(n==1, 1769817060), txid=case(n==1, \"tx-0001\"), action=case(n==1, \"failure\"), app=\"Corp VPN\" | fields - n",
   "tail": {
    "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
    "from": "| eval identity_user="
   },
-  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
   "expect": [
    {
     "user": "lee.park",
+    "at": "0",
     "risk_score": "80",
     "signature": "Duo user marked fraud",
     "severity": "high",
     "fraud_reports": "1",
-    "failures": "1"
+    "failures": "0",
+    "max_failures_10m": "0",
+    "burst_id": "lee.park:fraud:1767225600"
    }
+  ],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule: five fraud reports and one other failure raise one finding (80): a fraud report is never one of the 5 failures",
+  "spl": "| makeresults count=6 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 20, n==3, 30, n==4, 40, n==5, 50, n==6, 60), user=case(n==1, \"lee.park\", n==2, \"lee.park\", n==3, \"lee.park\", n==4, \"lee.park\", n==5, \"lee.park\", n==6, \"lee.park\"), signature_id=case(n==1, \"invalid_device\", n==2, \"user_marked_fraud\", n==3, \"user_marked_fraud\", n==4, \"user_marked_fraud\", n==5, \"user_marked_fraud\", n==6, \"user_marked_fraud\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\"), _indextime=case(n==1, 1769817060, n==2, 1769817060, n==3, 1769817060, n==4, 1769817060, n==5, 1769817060, n==6, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\", n==6, \"tx-0006\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [
+   {
+    "user": "lee.park",
+    "at": "20",
+    "risk_score": "80",
+    "signature": "Duo user marked fraud",
+    "severity": "high",
+    "fraud_reports": "5",
+    "failures": "1",
+    "max_failures_10m": "1",
+    "burst_id": "lee.park:fraud:1767225620"
+   }
+  ],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule: 4 failures and a fraud report within 10 minutes are not a burst: only the fraud finding",
+  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 10, n==3, 20, n==4, 30, n==5, 100), user=case(n==1, \"lee.park\", n==2, \"lee.park\", n==3, \"lee.park\", n==4, \"lee.park\", n==5, \"lee.park\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"user_marked_fraud\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), _indextime=case(n==1, 1769817060, n==2, 1769817060, n==3, 1769817060, n==4, 1769817060, n==5, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [
+   {
+    "user": "lee.park",
+    "at": "100",
+    "risk_score": "80",
+    "fraud_reports": "1",
+    "failures": "4",
+    "max_failures_10m": "4"
+   }
+  ],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule: a burst of 5 other failures and a fraud report indexed together raise both, each dated at its own event",
+  "spl": "| makeresults count=6 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 10, n==3, 20, n==4, 30, n==5, 40, n==6, 100), user=case(n==1, \"lee.park\", n==2, \"lee.park\", n==3, \"lee.park\", n==4, \"lee.park\", n==5, \"lee.park\", n==6, \"lee.park\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"user_marked_fraud\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\"), _indextime=case(n==1, 1769817060, n==2, 1769817060, n==3, 1769817060, n==4, 1769817060, n==5, 1769817060, n==6, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\", n==6, \"tx-0006\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [
+   {
+    "user": "lee.park",
+    "at": "40",
+    "risk_score": "40",
+    "signature": "Duo authentication denial burst",
+    "failures": "5",
+    "fraud_reports": "1",
+    "burst_id": "lee.park:burst:1767225640"
+   },
+   {
+    "user": "lee.park",
+    "at": "100",
+    "risk_score": "80",
+    "signature": "Duo user marked fraud",
+    "failures": "5",
+    "fraud_reports": "1",
+    "burst_id": "lee.park:fraud:1767225700"
+   }
+  ],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule: a fraud report indexed after its burst was judged raises only the fraud finding",
+  "spl": "| makeresults count=6 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 10, n==3, 20, n==4, 30, n==5, 40, n==6, 160), user=case(n==1, \"lee.park\", n==2, \"lee.park\", n==3, \"lee.park\", n==4, \"lee.park\", n==5, \"lee.park\", n==6, \"lee.park\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"user_marked_fraud\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\"), _indextime=case(n==1, 1769809800, n==2, 1769809800, n==3, 1769809800, n==4, 1769809800, n==5, 1769809800, n==6, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\", n==6, \"tx-0006\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [
+   {
+    "user": "lee.park",
+    "at": "160",
+    "risk_score": "80",
+    "signature": "Duo user marked fraud",
+    "failures": "5",
+    "fraud_reports": "1"
+   }
+  ],
+  "window": [
+   1769817000,
+   1769817600
   ]
  },
  {
   "name": "rule: Lab 5 participant accounts never raise it",
-  "spl": "| makeresults count=6 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 30, n==3, 60, n==4, 90, n==5, 120, n==6, 150), user=case(n==1, \"l5-ws1-03\", n==2, \"l5-ws1-03\", n==3, \"l5-ws1-03\", n==4, \"l5-ws1-03\", n==5, \"l5-ws1-03\", n==6, \"l5-ws1-03\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\"), src=case(n==1, \"198.51.100.40\", n==2, \"198.51.100.40\", n==3, \"198.51.100.40\", n==4, \"198.51.100.40\", n==5, \"198.51.100.40\", n==6, \"198.51.100.40\"), app=\"Corp VPN\", count=case(n==1, 1, n==2, 1, n==3, 1, n==4, 1, n==5, 1, n==6, 1) | fields - n",
+  "spl": "| makeresults count=6 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 30, n==3, 60, n==4, 90, n==5, 120, n==6, 150), user=case(n==1, \"l5-ws1-03\", n==2, \"l5-ws1-03\", n==3, \"l5-ws1-03\", n==4, \"l5-ws1-03\", n==5, \"l5-ws1-03\", n==6, \"l5-ws1-03\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\"), src=case(n==1, \"198.51.100.40\", n==2, \"198.51.100.40\", n==3, \"198.51.100.40\", n==4, \"198.51.100.40\", n==5, \"198.51.100.40\", n==6, \"198.51.100.40\"), _indextime=case(n==1, 1769817060, n==2, 1769817060, n==3, 1769817060, n==4, 1769817060, n==5, 1769817060, n==6, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\", n==6, \"tx-0006\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\"), app=\"Corp VPN\" | fields - n",
   "tail": {
    "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
    "from": "| eval identity_user="
   },
-  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
-  "expect": []
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [],
+  "window": [
+   1769817000,
+   1769817600
+  ]
  },
  {
   "name": "rule: an email-form Duo username keys on its lowercased local part",
-  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 30, n==3, 60, n==4, 90, n==5, 120), user=case(n==1, \"Dana.Ortiz@corp.test\", n==2, \"Dana.Ortiz@corp.test\", n==3, \"Dana.Ortiz@corp.test\", n==4, \"Dana.Ortiz@corp.test\", n==5, \"Dana.Ortiz@corp.test\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), app=\"Corp VPN\", count=case(n==1, 1, n==2, 1, n==3, 1, n==4, 1, n==5, 1) | fields - n",
+  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 30, n==3, 60, n==4, 90, n==5, 120), user=case(n==1, \"Dana.Ortiz@corp.test\", n==2, \"Dana.Ortiz@corp.test\", n==3, \"Dana.Ortiz@corp.test\", n==4, \"Dana.Ortiz@corp.test\", n==5, \"Dana.Ortiz@corp.test\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), _indextime=case(n==1, 1769817060, n==2, 1769817060, n==3, 1769817060, n==4, 1769817060, n==5, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), app=\"Corp VPN\" | fields - n",
   "tail": {
    "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
    "from": "| eval identity_user="
   },
-  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
   "expect": [
    {
     "user": "dana.ortiz",
     "duo_users": "Dana.Ortiz@corp.test",
     "risk_score": "40"
    }
+  ],
+  "window": [
+   1769817000,
+   1769817600
   ]
  },
  {
   "name": "rule: a null or unknown Duo user never becomes a risk object",
-  "spl": "| makeresults count=10 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 30, n==3, 60, n==4, 90, n==5, 120, n==6, 150, n==7, 180, n==8, 210, n==9, 240, n==10, 270), user=case(n==1, \"unknown\", n==2, \"null\", n==3, \"unknown\", n==4, \"null\", n==5, \"unknown\", n==6, \"null\", n==7, \"unknown\", n==8, \"null\", n==9, \"unknown\", n==10, \"null\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\", n==7, \"failure\", n==8, \"failure\", n==9, \"failure\", n==10, \"failure\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\", n==7, \"no_response\", n==8, \"no_response\", n==9, \"no_response\", n==10, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\", n==7, \"198.51.100.23\", n==8, \"198.51.100.23\", n==9, \"198.51.100.23\", n==10, \"198.51.100.23\"), app=\"Corp VPN\", count=case(n==1, 1, n==2, 1, n==3, 1, n==4, 1, n==5, 1, n==6, 1, n==7, 1, n==8, 1, n==9, 1, n==10, 1) | fields - n",
+  "spl": "| makeresults count=10 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 30, n==3, 60, n==4, 90, n==5, 120, n==6, 150, n==7, 180, n==8, 210, n==9, 240, n==10, 270), user=case(n==1, \"unknown\", n==2, \"null\", n==3, \"unknown\", n==4, \"null\", n==5, \"unknown\", n==6, \"null\", n==7, \"unknown\", n==8, \"null\", n==9, \"unknown\", n==10, \"null\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\", n==7, \"no_response\", n==8, \"no_response\", n==9, \"no_response\", n==10, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\", n==7, \"198.51.100.23\", n==8, \"198.51.100.23\", n==9, \"198.51.100.23\", n==10, \"198.51.100.23\"), _indextime=case(n==1, 1769817060, n==2, 1769817060, n==3, 1769817060, n==4, 1769817060, n==5, 1769817060, n==6, 1769817060, n==7, 1769817060, n==8, 1769817060, n==9, 1769817060, n==10, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\", n==6, \"tx-0006\", n==7, \"tx-0007\", n==8, \"tx-0008\", n==9, \"tx-0009\", n==10, \"tx-0010\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\", n==7, \"failure\", n==8, \"failure\", n==9, \"failure\", n==10, \"failure\"), app=\"Corp VPN\" | fields - n",
   "tail": {
    "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
    "from": "| eval identity_user="
   },
-  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
-  "expect": []
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [],
+  "window": [
+   1769817000,
+   1769817600
+  ]
  },
  {
   "name": "rule: a PseudoCo sign-in denial never adds to a Duo burst (scope emulated with genai_duo_auth_events)",
-  "spl": "| makeresults count=8 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 40, n==3, 80, n==4, 200, n==5, 240, n==6, 280, n==7, 320, n==8, 360), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\", n==6, \"dana.ortiz\", n==7, \"dana.ortiz\", n==8, \"dana.ortiz\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\", n==7, \"failure\", n==8, \"failure\"), signature_id=case(n==1, \"denied\", n==2, \"denied\", n==3, \"denied\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\", n==7, \"no_response\", n==8, \"no_response\"), src=case(n==1, \"198.51.100.7\", n==2, \"198.51.100.7\", n==3, \"198.51.100.7\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\", n==7, \"198.51.100.23\", n==8, \"198.51.100.23\"), app=\"Corp VPN\", count=case(n==1, 1, n==2, 1, n==3, 1, n==4, 1, n==5, 1, n==6, 1, n==7, 1, n==8, 1) | eval index=if(n<=3, \"gen_ai_log\", \"duo\"), sourcetype=if(n<=3, \"gen_ai:json\", \"ta_gen_ai_cim:duo:authentication\") | search `genai_duo_auth_events` | fields - n",
+  "spl": "| makeresults count=8 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 40, n==3, 80, n==4, 200, n==5, 240, n==6, 280, n==7, 320, n==8, 360), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\", n==6, \"dana.ortiz\", n==7, \"dana.ortiz\", n==8, \"dana.ortiz\"), signature_id=case(n==1, \"denied\", n==2, \"denied\", n==3, \"denied\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\", n==7, \"no_response\", n==8, \"no_response\"), src=case(n==1, \"198.51.100.7\", n==2, \"198.51.100.7\", n==3, \"198.51.100.7\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\", n==7, \"198.51.100.23\", n==8, \"198.51.100.23\"), _indextime=case(n==1, 1769817060, n==2, 1769817060, n==3, 1769817060, n==4, 1769817060, n==5, 1769817060, n==6, 1769817060, n==7, 1769817060, n==8, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\", n==6, \"tx-0006\", n==7, \"tx-0007\", n==8, \"tx-0008\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\", n==7, \"failure\", n==8, \"failure\"), app=\"Corp VPN\" | eval index=if(n<=3, \"gen_ai_log\", \"duo\"), sourcetype=if(n<=3, \"gen_ai:json\", \"ta_gen_ai_cim:duo:authentication\") | search `genai_duo_auth_events` | fields - n",
   "tail": {
    "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
    "from": "| eval identity_user="
   },
-  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
   "expect": [
    {
     "user": "dana.ortiz",
@@ -367,17 +542,1085 @@
     "max_failures_10m": "5",
     "src": "198.51.100.23"
    }
+  ],
+  "window": [
+   1769817000,
+   1769817600
   ]
  },
  {
   "name": "rule: 3 PseudoCo + 3 Duo denials for one user raise nothing (only Duo's 3 count)",
-  "spl": "| makeresults count=6 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 40, n==3, 80, n==4, 200, n==5, 240, n==6, 280), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\", n==6, \"dana.ortiz\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\"), signature_id=case(n==1, \"denied\", n==2, \"denied\", n==3, \"denied\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\"), src=case(n==1, \"198.51.100.7\", n==2, \"198.51.100.7\", n==3, \"198.51.100.7\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\"), app=\"Corp VPN\", count=case(n==1, 1, n==2, 1, n==3, 1, n==4, 1, n==5, 1, n==6, 1) | eval index=if(n<=3, \"gen_ai_log\", \"duo\"), sourcetype=if(n<=3, \"gen_ai:json\", \"ta_gen_ai_cim:duo:authentication\") | search `genai_duo_auth_events` | fields - n",
+  "spl": "| makeresults count=6 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 40, n==3, 80, n==4, 200, n==5, 240, n==6, 280), user=case(n==1, \"dana.ortiz\", n==2, \"dana.ortiz\", n==3, \"dana.ortiz\", n==4, \"dana.ortiz\", n==5, \"dana.ortiz\", n==6, \"dana.ortiz\"), signature_id=case(n==1, \"denied\", n==2, \"denied\", n==3, \"denied\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\"), src=case(n==1, \"198.51.100.7\", n==2, \"198.51.100.7\", n==3, \"198.51.100.7\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\"), _indextime=case(n==1, 1769817060, n==2, 1769817060, n==3, 1769817060, n==4, 1769817060, n==5, 1769817060, n==6, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\", n==6, \"tx-0006\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\"), app=\"Corp VPN\" | eval index=if(n<=3, \"gen_ai_log\", \"duo\"), sourcetype=if(n<=3, \"gen_ai:json\", \"ta_gen_ai_cim:duo:authentication\") | search `genai_duo_auth_events` | fields - n",
   "tail": {
    "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
    "from": "| eval identity_user="
   },
-  "append": " | table user, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app",
-  "expect": []
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule timing: late arrival - a 5th failure indexed long after the other 4 raises the burst, dated at that failure",
+  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 60, n==3, 120, n==4, 180, n==5, 240), user=case(n==1, \"nina.osei\", n==2, \"nina.osei\", n==3, \"nina.osei\", n==4, \"nina.osei\", n==5, \"nina.osei\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), _indextime=case(n==1, 1769809800, n==2, 1769809800, n==3, 1769809800, n==4, 1769809800, n==5, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "240",
+    "risk_score": "40",
+    "failures": "5",
+    "max_failures_10m": "5",
+    "burst_id": "nina.osei:burst:1767225840"
+   }
+  ],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule timing: late arrival - a 6th failure indexed after the burst was judged raises nothing",
+  "spl": "| makeresults count=6 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 10, n==3, 20, n==4, 30, n==5, 40, n==6, 50), user=case(n==1, \"nina.osei\", n==2, \"nina.osei\", n==3, \"nina.osei\", n==4, \"nina.osei\", n==5, \"nina.osei\", n==6, \"nina.osei\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\"), _indextime=case(n==1, 1769809800, n==2, 1769809800, n==3, 1769809800, n==4, 1769809800, n==5, 1769809800, n==6, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\", n==6, \"tx-0006\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule timing: late arrival - a second fraud report of a burst whose first was judged raises nothing",
+  "spl": "| makeresults count=2 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 30), user=case(n==1, \"jordan.reyes\", n==2, \"jordan.reyes\"), signature_id=case(n==1, \"user_marked_fraud\", n==2, \"user_marked_fraud\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\"), _indextime=case(n==1, 1769809800, n==2, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\"), action=case(n==1, \"failure\", n==2, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule timing: repeat burst - a fraud report 11 minutes after a judged one opens a new burst and raises again",
+  "spl": "| makeresults count=2 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 700), user=case(n==1, \"jordan.reyes\", n==2, \"jordan.reyes\"), signature_id=case(n==1, \"user_marked_fraud\", n==2, \"user_marked_fraud\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\"), _indextime=case(n==1, 1769809800, n==2, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\"), action=case(n==1, \"failure\", n==2, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [
+   {
+    "user": "jordan.reyes",
+    "at": "700",
+    "risk_score": "80",
+    "fraud_reports": "1",
+    "failures": "0",
+    "burst_id": "jordan.reyes:fraud:1767226300"
+   }
+  ],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule timing: a burst split over two polls (3 indexed before the slot, 3 in it) raises one finding",
+  "spl": "| makeresults count=6 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 5, n==3, 10, n==4, 15, n==5, 20, n==6, 25), user=case(n==1, \"nina.osei\", n==2, \"nina.osei\", n==3, \"nina.osei\", n==4, \"nina.osei\", n==5, \"nina.osei\", n==6, \"nina.osei\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\"), _indextime=case(n==1, 1769809800, n==2, 1769809800, n==3, 1769809800, n==4, 1769817060, n==5, 1769817060, n==6, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\", n==6, \"tx-0006\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "20",
+    "failures": "6",
+    "max_failures_10m": "6",
+    "burst_id": "nina.osei:burst:1767225620"
+   }
+  ],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule timing: an event indexed in the first second of the slot is judged in it",
+  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 10, n==3, 20, n==4, 30, n==5, 40), user=case(n==1, \"nina.osei\", n==2, \"nina.osei\", n==3, \"nina.osei\", n==4, \"nina.osei\", n==5, \"nina.osei\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), _indextime=case(n==1, 1769816999, n==2, 1769816999, n==3, 1769816999, n==4, 1769816999, n==5, 1769817000), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "40",
+    "failures": "5"
+   }
+  ],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule timing: a burst indexed wholly before the slot was judged by an earlier run",
+  "spl": "| makeresults count=5 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 10, n==3, 20, n==4, 30, n==5, 40), user=case(n==1, \"nina.osei\", n==2, \"nina.osei\", n==3, \"nina.osei\", n==4, \"nina.osei\", n==5, \"nina.osei\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\"), _indextime=case(n==1, 1769816999, n==2, 1769816999, n==3, 1769816999, n==4, 1769816999, n==5, 1769816999), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule timing: repeat burst - a second burst 11 minutes after a judged one raises its own finding",
+  "spl": "| makeresults count=10 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 10, n==3, 20, n==4, 30, n==5, 40, n==6, 700, n==7, 710, n==8, 720, n==9, 730, n==10, 740), user=case(n==1, \"nina.osei\", n==2, \"nina.osei\", n==3, \"nina.osei\", n==4, \"nina.osei\", n==5, \"nina.osei\", n==6, \"nina.osei\", n==7, \"nina.osei\", n==8, \"nina.osei\", n==9, \"nina.osei\", n==10, \"nina.osei\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\", n==7, \"no_response\", n==8, \"no_response\", n==9, \"no_response\", n==10, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\", n==7, \"198.51.100.23\", n==8, \"198.51.100.23\", n==9, \"198.51.100.23\", n==10, \"198.51.100.23\"), _indextime=case(n==1, 1769809800, n==2, 1769809800, n==3, 1769809800, n==4, 1769809800, n==5, 1769809800, n==6, 1769817060, n==7, 1769817060, n==8, 1769817060, n==9, 1769817060, n==10, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\", n==6, \"tx-0006\", n==7, \"tx-0007\", n==8, \"tx-0008\", n==9, \"tx-0009\", n==10, \"tx-0010\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\", n==7, \"failure\", n==8, \"failure\", n==9, \"failure\", n==10, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "740",
+    "risk_score": "40",
+    "failures": "5",
+    "max_failures_10m": "5",
+    "burst_id": "nina.osei:burst:1767226340",
+    "burst_earliest": "1767225700"
+   }
+  ],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule timing: repeat burst - failures 9 minutes after a judged burst belong to it and raise nothing",
+  "spl": "| makeresults count=8 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 10, n==3, 20, n==4, 30, n==5, 40, n==6, 560, n==7, 570, n==8, 580), user=case(n==1, \"nina.osei\", n==2, \"nina.osei\", n==3, \"nina.osei\", n==4, \"nina.osei\", n==5, \"nina.osei\", n==6, \"nina.osei\", n==7, \"nina.osei\", n==8, \"nina.osei\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\", n==7, \"no_response\", n==8, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\", n==7, \"198.51.100.23\", n==8, \"198.51.100.23\"), _indextime=case(n==1, 1769809800, n==2, 1769809800, n==3, 1769809800, n==4, 1769809800, n==5, 1769809800, n==6, 1769817060, n==7, 1769817060, n==8, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\", n==6, \"tx-0006\", n==7, \"tx-0007\", n==8, \"tx-0008\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\", n==7, \"failure\", n==8, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule timing: 30-day backfill - bursts 20 days apart indexed in one slot raise one finding each, dated at the event",
+  "spl": "| makeresults count=12 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 10, n==3, 20, n==4, 30, n==5, 40, n==6, 1728000, n==7, 1728010, n==8, 1728020, n==9, 1728030, n==10, 1728040, n==11, 1728050, n==12, 300), user=case(n==1, \"nina.osei\", n==2, \"nina.osei\", n==3, \"nina.osei\", n==4, \"nina.osei\", n==5, \"nina.osei\", n==6, \"nina.osei\", n==7, \"nina.osei\", n==8, \"nina.osei\", n==9, \"nina.osei\", n==10, \"nina.osei\", n==11, \"nina.osei\", n==12, \"jordan.reyes\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\", n==7, \"no_response\", n==8, \"no_response\", n==9, \"no_response\", n==10, \"no_response\", n==11, \"no_response\", n==12, \"user_marked_fraud\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\", n==7, \"198.51.100.23\", n==8, \"198.51.100.23\", n==9, \"198.51.100.23\", n==10, \"198.51.100.23\", n==11, \"198.51.100.23\", n==12, \"198.51.100.23\"), _indextime=case(n==1, 1769817060, n==2, 1769817060, n==3, 1769817060, n==4, 1769817060, n==5, 1769817060, n==6, 1769817060, n==7, 1769817060, n==8, 1769817060, n==9, 1769817060, n==10, 1769817060, n==11, 1769817060, n==12, 1769817060), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\", n==6, \"tx-0006\", n==7, \"tx-0007\", n==8, \"tx-0008\", n==9, \"tx-0009\", n==10, \"tx-0010\", n==11, \"tx-0011\", n==12, \"tx-0012\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\", n==7, \"failure\", n==8, \"failure\", n==9, \"failure\", n==10, \"failure\", n==11, \"failure\", n==12, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [
+   {
+    "user": "jordan.reyes",
+    "at": "300",
+    "risk_score": "80",
+    "signature": "Duo user marked fraud",
+    "burst_id": "jordan.reyes:fraud:1767225900"
+   },
+   {
+    "user": "nina.osei",
+    "at": "40",
+    "risk_score": "40",
+    "failures": "5",
+    "burst_id": "nina.osei:burst:1767225640"
+   },
+   {
+    "user": "nina.osei",
+    "at": "1728040",
+    "risk_score": "40",
+    "failures": "6",
+    "burst_id": "nina.osei:burst:1768953640"
+   }
+  ],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule timing: backfill equals live - the same events with the first burst already judged raise the same second finding",
+  "spl": "| makeresults count=12 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 10, n==3, 20, n==4, 30, n==5, 40, n==6, 1728000, n==7, 1728010, n==8, 1728020, n==9, 1728030, n==10, 1728040, n==11, 1728050, n==12, 300), user=case(n==1, \"nina.osei\", n==2, \"nina.osei\", n==3, \"nina.osei\", n==4, \"nina.osei\", n==5, \"nina.osei\", n==6, \"nina.osei\", n==7, \"nina.osei\", n==8, \"nina.osei\", n==9, \"nina.osei\", n==10, \"nina.osei\", n==11, \"nina.osei\", n==12, \"jordan.reyes\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\", n==7, \"no_response\", n==8, \"no_response\", n==9, \"no_response\", n==10, \"no_response\", n==11, \"no_response\", n==12, \"user_marked_fraud\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\", n==7, \"198.51.100.23\", n==8, \"198.51.100.23\", n==9, \"198.51.100.23\", n==10, \"198.51.100.23\", n==11, \"198.51.100.23\", n==12, \"198.51.100.23\"), _indextime=case(n==1, 1769809800, n==2, 1769809800, n==3, 1769809800, n==4, 1769809800, n==5, 1769809800, n==6, 1769817060, n==7, 1769817060, n==8, 1769817060, n==9, 1769817060, n==10, 1769817060, n==11, 1769817060, n==12, 1769809800), txid=case(n==1, \"tx-0001\", n==2, \"tx-0002\", n==3, \"tx-0003\", n==4, \"tx-0004\", n==5, \"tx-0005\", n==6, \"tx-0006\", n==7, \"tx-0007\", n==8, \"tx-0008\", n==9, \"tx-0009\", n==10, \"tx-0010\", n==11, \"tx-0011\", n==12, \"tx-0012\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\", n==7, \"failure\", n==8, \"failure\", n==9, \"failure\", n==10, \"failure\", n==11, \"failure\", n==12, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "1728040",
+    "risk_score": "40",
+    "failures": "6",
+    "burst_id": "nina.osei:burst:1768953640"
+   }
+  ],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule timing: a page Duo sent twice counts once (txid), so 3 failures indexed twice raise nothing",
+  "spl": "| makeresults count=6 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 10, n==3, 20, n==4, 0, n==5, 10, n==6, 20), user=case(n==1, \"nina.osei\", n==2, \"nina.osei\", n==3, \"nina.osei\", n==4, \"nina.osei\", n==5, \"nina.osei\", n==6, \"nina.osei\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\"), _indextime=case(n==1, 1769809800, n==2, 1769809800, n==3, 1769809800, n==4, 1769817060, n==5, 1769817060, n==6, 1769817060), txid=case(n==1, \"dup-0\", n==2, \"dup-1\", n==3, \"dup-2\", n==4, \"dup-0\", n==5, \"dup-1\", n==6, \"dup-2\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "rule timing: a judged burst sent again in a later slot raises nothing (its first copy decides when it was indexed)",
+  "spl": "| makeresults count=10 | streamstats count as n | eval _time=1767225600+case(n==1, 0, n==2, 10, n==3, 20, n==4, 30, n==5, 40, n==6, 0, n==7, 10, n==8, 20, n==9, 30, n==10, 40), user=case(n==1, \"nina.osei\", n==2, \"nina.osei\", n==3, \"nina.osei\", n==4, \"nina.osei\", n==5, \"nina.osei\", n==6, \"nina.osei\", n==7, \"nina.osei\", n==8, \"nina.osei\", n==9, \"nina.osei\", n==10, \"nina.osei\"), signature_id=case(n==1, \"no_response\", n==2, \"no_response\", n==3, \"no_response\", n==4, \"no_response\", n==5, \"no_response\", n==6, \"no_response\", n==7, \"no_response\", n==8, \"no_response\", n==9, \"no_response\", n==10, \"no_response\"), src=case(n==1, \"198.51.100.23\", n==2, \"198.51.100.23\", n==3, \"198.51.100.23\", n==4, \"198.51.100.23\", n==5, \"198.51.100.23\", n==6, \"198.51.100.23\", n==7, \"198.51.100.23\", n==8, \"198.51.100.23\", n==9, \"198.51.100.23\", n==10, \"198.51.100.23\"), _indextime=case(n==1, 1769809800, n==2, 1769809800, n==3, 1769809800, n==4, 1769809800, n==5, 1769809800, n==6, 1769817060, n==7, 1769817060, n==8, 1769817060, n==9, 1769817060, n==10, 1769817060), txid=case(n==1, \"dup-0\", n==2, \"dup-1\", n==3, \"dup-2\", n==4, \"dup-3\", n==5, \"dup-4\", n==6, \"dup-0\", n==7, \"dup-1\", n==8, \"dup-2\", n==9, \"dup-3\", n==10, \"dup-4\"), action=case(n==1, \"failure\", n==2, \"failure\", n==3, \"failure\", n==4, \"failure\", n==5, \"failure\", n==6, \"failure\", n==7, \"failure\", n==8, \"failure\", n==9, \"failure\", n==10, \"failure\"), app=\"Corp VPN\" | fields - n",
+  "tail": {
+   "search": "AI Governance - Duo Authentication Fraud or Denial Burst - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, risk_score, signature, severity, fraud_reports, failures, max_failures_10m, duo_users, src, app, burst_id, burst_earliest, burst_latest",
+  "expect": [],
+  "window": [
+   1769817000,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: backfill - burst, sign-in (with Duo's record of it) and blocked turn indexed in one slot raise one finding, dated at the blocked turn",
+  "spl": "| makeresults count=8 | streamstats count as n | eval f=split(mvindex(split(\"900|F;910|F;920|F;930|F;940|F;998|D|t1;1000|S|t1;1060|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "1060",
+    "chain_id": "nina.osei:takeover:1767226600",
+    "chain_earliest": "1767225940",
+    "chain_latest": "1767226661",
+    "signin_duo": "duo_push on Corp VPN",
+    "duo_failures_10m": "5",
+    "duo_app": "Corp VPN",
+    "blocked_turns": "1",
+    "guardrails": "cisco_ai_defense",
+    "app": "assistant",
+    "src": "192.0.2.10"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: backfill equals live - the same events with the application's half indexed earlier raise the same finding",
+  "spl": "| makeresults count=8 | streamstats count as n | eval f=split(mvindex(split(\"900|F;910|F;920|F;930|F;940|F;998|D|t1;1000|s|t1;1060|b\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "1060",
+    "chain_id": "nina.osei:takeover:1767226600",
+    "chain_earliest": "1767225940",
+    "chain_latest": "1767226661",
+    "signin_duo": "duo_push on Corp VPN",
+    "duo_failures_10m": "5",
+    "duo_app": "Corp VPN",
+    "blocked_turns": "1",
+    "guardrails": "cisco_ai_defense",
+    "app": "assistant",
+    "src": "192.0.2.10"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: live order - Duo's record of the sign-in is not indexed yet: the chain still raises, signin_duo says so",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"900|F;910|F;920|F;930|F;940|F;1000|s|t1;1060|b\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "1060",
+    "chain_id": "nina.osei:takeover:1767226600",
+    "chain_earliest": "1767225940",
+    "chain_latest": "1767226661",
+    "signin_duo": "none indexed",
+    "duo_failures_10m": "5",
+    "duo_app": "Corp VPN",
+    "blocked_turns": "1",
+    "guardrails": "cisco_ai_defense",
+    "app": "assistant",
+    "src": "192.0.2.10"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a chain indexed wholly before the slot was judged by an earlier run",
+  "spl": "| makeresults count=8 | streamstats count as n | eval f=split(mvindex(split(\"900|f;910|f;920|f;930|f;940|f;998|d|t1;1000|s|t1;1060|b\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: Duo's record of the sign-in arriving after the chain was judged raises nothing",
+  "spl": "| makeresults count=8 | streamstats count as n | eval f=split(mvindex(split(\"900|f;910|f;920|f;930|f;940|f;998|D|t1;1000|s|t1;1060|b\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a burst that comes after the sign-in and its turns raises nothing (the first staged pass)",
+  "spl": "| makeresults count=9 | streamstats count as n | eval f=split(mvindex(split(\"1000|S|t1;1030|A;1060|B;1100|F;1110|F;1120|F;1130|F;1140|F;1150|F\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a burst 30 min 05 s before the sign-in is outside the window",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"0|F;10|F;20|F;30|F;40|F;1845|S;1900|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a burst 29 min 59 s before the sign-in is inside it",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"0|F;10|F;20|F;30|F;40|F;1839|S;1900|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "1900",
+    "chain_id": "nina.osei:takeover:1767227439",
+    "chain_earliest": "1767225040",
+    "chain_latest": "1767227501"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a blocked turn 61 minutes after the sign-in is outside the window",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"0|F;10|F;20|F;30|F;40|F;100|S;3760|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a blocked turn exactly 60 minutes after the sign-in is inside the window",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"0|F;10|F;20|F;30|F;40|F;100|S;3700|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "3700",
+    "chain_id": "nina.osei:takeover:1767225700",
+    "chain_earliest": "1767225040",
+    "chain_latest": "1767229301"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a blocked turn 60 min 01 s after the sign-in is outside it",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"0|F;10|F;20|F;30|F;40|F;100|S;3701|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a second blocked turn after a judged one raises nothing",
+  "spl": "| makeresults count=8 | streamstats count as n | eval f=split(mvindex(split(\"0|f;10|f;20|f;30|f;40|f;100|s;200|b;300|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a late sign-in record between a judged sign-in and its blocked turn raises nothing",
+  "spl": "| makeresults count=8 | streamstats count as n | eval f=split(mvindex(split(\"0|f;10|f;20|f;30|f;40|f;100|s;200|b;150|S\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a late sign-in record ahead of two judged turns raises nothing (it holds the turn that completed the judged chain)",
+  "spl": "| makeresults count=9 | streamstats count as n | eval f=split(mvindex(split(\"0|f;10|f;20|f;30|f;40|f;100|s;200|b;300|b;150|S\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a late sign-in record after the turn that completed a judged chain raises its own finding for the later turn, as one pass would",
+  "spl": "| makeresults count=9 | streamstats count as n | eval f=split(mvindex(split(\"0|f;10|f;20|f;30|f;40|f;100|s;200|b;300|b;250|S\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "300",
+    "chain_id": "nina.osei:takeover:1767225850",
+    "chain_earliest": "1767225040",
+    "chain_latest": "1767225901",
+    "blocked_turns": "1"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: Lab 5 participant accounts never raise it",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"900|F;910|F;920|F;930|F;940|F;1000|S;1060|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"l5-ws1-01\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: allowed turns only raise nothing",
+  "spl": "| makeresults count=8 | streamstats count as n | eval f=split(mvindex(split(\"900|F;910|F;920|F;930|F;940|F;1000|S;1060|A;1120|A\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: 4 failures are not a burst",
+  "spl": "| makeresults count=6 | streamstats count as n | eval f=split(mvindex(split(\"900|F;910|F;920|F;930|F;1000|S;1060|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: an email-form Duo username and the application's short name are one identity; two blocked turns are one finding",
+  "spl": "| makeresults count=8 | streamstats count as n | eval f=split(mvindex(split(\"900|F;910|F;920|F;930|F;940|F;1000|S;1060|B;1120|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=if(k==\"F\", \"Dana.Ortiz@corp.test\", \"dana.ortiz\"), _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "dana.ortiz",
+    "at": "1060",
+    "chain_id": "dana.ortiz:takeover:1767226600",
+    "chain_earliest": "1767225940",
+    "chain_latest": "1767226721",
+    "blocked_turns": "2",
+    "signin_duo": "none indexed"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a Duo page sent twice counts once (txid): 3 failures indexed twice are not a burst",
+  "spl": "| makeresults count=8 | streamstats count as n | eval f=split(mvindex(split(\"900|f|dup0;910|f|dup1;920|f|dup2;900|F|dup0;910|F|dup1;920|F|dup2;1000|S;1060|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a turn that only claims the name (not verified) never counts",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"900|F;910|F;920|F;930|F;940|F;1000|S;1060|C\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: the application's own sign-in failure records are not Duo failures (4 Duo + 2 of them are not a burst)",
+  "spl": "| makeresults count=8 | streamstats count as n | eval f=split(mvindex(split(\"900|F;910|F;920|F;930|F;950|X;960|X;1000|S;1060|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: the application's sign-in failure record is not a sign-in",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"900|F;910|F;920|F;930|F;940|F;1000|X;1060|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: two sign-ins after one burst, each with a blocked turn, are two findings",
+  "spl": "| makeresults count=9 | streamstats count as n | eval f=split(mvindex(split(\"0|F;10|F;20|F;30|F;40|F;100|S;200|B;300|S;400|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "200",
+    "chain_id": "nina.osei:takeover:1767225700",
+    "chain_earliest": "1767225040",
+    "chain_latest": "1767225801",
+    "blocked_turns": "1"
+   },
+   {
+    "user": "nina.osei",
+    "at": "400",
+    "chain_id": "nina.osei:takeover:1767225900",
+    "chain_earliest": "1767225040",
+    "chain_latest": "1767226001",
+    "blocked_turns": "1"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a block by the Identity Risk Gate counts and is named in guardrails",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"900|F;910|F;920|F;930|F;940|F;1000|S;1060|G\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"jordan.reyes\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "jordan.reyes",
+    "at": "1060",
+    "chain_id": "jordan.reyes:takeover:1767226600",
+    "chain_earliest": "1767225940",
+    "chain_latest": "1767226661",
+    "guardrails": "cisco_identity_intelligence"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: a successful Duo authentication alone is never a sign-in",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"900|F;910|F;920|F;930|F;940|F;998|D|t1;1060|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: the burst named is the last one before the sign-in, with its own count",
+  "spl": "| makeresults count=13 | streamstats count as n | eval f=split(mvindex(split(\"0|F;10|F;20|F;30|F;40|F;1400|F;1410|F;1420|F;1430|F;1440|F;1450|F;1500|S;1560|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "1560",
+    "chain_id": "nina.osei:takeover:1767227100",
+    "chain_earliest": "1767226450",
+    "chain_latest": "1767227161",
+    "duo_failures_10m": "6"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: failures after the sign-in do not change the burst the finding names",
+  "spl": "| makeresults count=13 | streamstats count as n | eval f=split(mvindex(split(\"0|F;10|F;20|F;30|F;40|F;100|S;200|F;210|F;220|F;230|F;240|F;250|F;400|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "400",
+    "chain_id": "nina.osei:takeover:1767225700",
+    "chain_earliest": "1767225040",
+    "chain_latest": "1767226001",
+    "duo_failures_10m": "5",
+    "blocked_turns": "1"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: the application's events sent again (same transaction id, same event id) raise nothing",
+  "spl": "| makeresults count=9 | streamstats count as n | eval f=split(mvindex(split(\"900|f;910|f;920|f;930|f;940|f;1000|s|t1;1060|b|e1;1000|S|t1;1060|B|e1\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: arrival order - the blocked turn indexed last raises the chain",
+  "spl": "| makeresults count=8 | streamstats count as n | eval f=split(mvindex(split(\"900|f;910|f;920|f;930|f;940|f;998|d|t1;1000|s|t1;1060|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "1060",
+    "chain_id": "nina.osei:takeover:1767226600",
+    "chain_earliest": "1767225940",
+    "chain_latest": "1767226661",
+    "signin_duo": "duo_push on Corp VPN",
+    "duo_failures_10m": "5",
+    "duo_app": "Corp VPN",
+    "blocked_turns": "1",
+    "guardrails": "cisco_ai_defense",
+    "app": "assistant",
+    "src": "192.0.2.10"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: arrival order - the sign-in record indexed last raises the chain",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"900|f;910|f;920|f;930|f;940|f;1000|S;1060|b\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "1060",
+    "chain_id": "nina.osei:takeover:1767226600",
+    "chain_earliest": "1767225940",
+    "chain_latest": "1767226661",
+    "signin_duo": "none indexed",
+    "duo_failures_10m": "5",
+    "duo_app": "Corp VPN",
+    "blocked_turns": "1",
+    "guardrails": "cisco_ai_defense",
+    "app": "assistant",
+    "src": "192.0.2.10"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: arrival order - the sign-in record indexed after Duo's own record of it raises the chain and names that record",
+  "spl": "| makeresults count=8 | streamstats count as n | eval f=split(mvindex(split(\"900|f;910|f;920|f;930|f;940|f;998|d|t1;1000|S|t1;1060|b\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "1060",
+    "chain_id": "nina.osei:takeover:1767226600",
+    "chain_earliest": "1767225940",
+    "chain_latest": "1767226661",
+    "signin_duo": "duo_push on Corp VPN",
+    "duo_failures_10m": "5",
+    "duo_app": "Corp VPN",
+    "blocked_turns": "1",
+    "guardrails": "cisco_ai_defense",
+    "app": "assistant",
+    "src": "192.0.2.10"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: arrival order - the application's events indexed after the whole burst raise the chain",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"900|f;910|f;920|f;930|f;940|f;1000|S;1060|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "1060",
+    "chain_id": "nina.osei:takeover:1767226600",
+    "chain_earliest": "1767225940",
+    "chain_latest": "1767226661",
+    "signin_duo": "none indexed",
+    "duo_failures_10m": "5",
+    "duo_app": "Corp VPN",
+    "blocked_turns": "1",
+    "guardrails": "cisco_ai_defense",
+    "app": "assistant",
+    "src": "192.0.2.10"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: arrival order - a burst split over two slots (3 failures before, 2 in it) raises the chain",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"900|f;910|f;920|f;930|F;940|F;1000|s;1060|b\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "1060",
+    "chain_id": "nina.osei:takeover:1767226600",
+    "chain_earliest": "1767225940",
+    "chain_latest": "1767226661",
+    "signin_duo": "none indexed",
+    "duo_failures_10m": "5",
+    "duo_app": "Corp VPN",
+    "blocked_turns": "1",
+    "guardrails": "cisco_ai_defense",
+    "app": "assistant",
+    "src": "192.0.2.10"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: second chain - more blocked turns of a judged sign-in raise nothing while the second burst is not indexed",
+  "spl": "| makeresults count=9 | streamstats count as n | eval f=split(mvindex(split(\"0|f;10|f;20|f;30|f;40|f;120|s;180|b;1920|S;1980|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: second chain - its burst indexed last raises the second sign-in's own finding",
+  "spl": "| makeresults count=14 | streamstats count as n | eval f=split(mvindex(split(\"0|f;10|f;20|f;30|f;40|f;120|s;180|b;1800|F;1810|F;1820|F;1830|F;1840|F;1920|s;1980|b\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "1980",
+    "chain_id": "nina.osei:takeover:1767227520",
+    "chain_earliest": "1767226840",
+    "chain_latest": "1767227581",
+    "blocked_turns": "1",
+    "duo_failures_10m": "5"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: second chain - the same events indexed in one slot raise both findings",
+  "spl": "| makeresults count=14 | streamstats count as n | eval f=split(mvindex(split(\"0|F;10|F;20|F;30|F;40|F;120|S;180|B;1800|F;1810|F;1820|F;1830|F;1840|F;1920|S;1980|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "180",
+    "chain_id": "nina.osei:takeover:1767225720",
+    "chain_earliest": "1767225040",
+    "chain_latest": "1767225781",
+    "blocked_turns": "1"
+   },
+   {
+    "user": "nina.osei",
+    "at": "1980",
+    "chain_id": "nina.osei:takeover:1767227520",
+    "chain_earliest": "1767226840",
+    "chain_latest": "1767227581",
+    "blocked_turns": "1",
+    "duo_failures_10m": "5"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: nearest burst - raised while the nearer burst is not indexed, the finding names the earlier one",
+  "spl": "| makeresults count=7 | streamstats count as n | eval f=split(mvindex(split(\"0|f;10|f;20|f;30|f;40|f;1660|S;1720|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "1720",
+    "chain_id": "nina.osei:takeover:1767227260",
+    "chain_earliest": "1767225040",
+    "chain_latest": "1767227321",
+    "duo_failures_10m": "5"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: nearest burst - the nearer burst arriving after the chain was judged raises nothing",
+  "spl": "| makeresults count=13 | streamstats count as n | eval f=split(mvindex(split(\"0|f;10|f;20|f;30|f;40|f;1560|F;1570|F;1580|F;1590|F;1600|F;1610|F;1660|s;1720|b\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [],
+  "window": [
+   1769817300,
+   1769817600
+  ]
+ },
+ {
+  "name": "chain: nearest burst - the same events indexed in one slot name the nearer one",
+  "spl": "| makeresults count=13 | streamstats count as n | eval f=split(mvindex(split(\"0|F;10|F;20|F;30|F;40|F;1560|F;1570|F;1580|F;1590|F;1600|F;1610|F;1660|S;1720|B\", \";\"), n-1), \"|\"), _time=1767225600+tonumber(mvindex(f, 0)), K=mvindex(f, 1), k=upper(K), user=\"nina.osei\", _indextime=if(k==K, 1769817300, 1769817299), l=mvindex(f, 2), i=coalesce(l, \"r\" . n), txid=if(in(k, \"F\", \"D\"), i, null()), action=case(in(k, \"F\", \"X\"), \"failure\", in(k, \"D\", \"S\"), \"success\"), op=if(isnull(action), \"chat\", null()), app=case(in(k, \"F\", \"D\"), \"Corp VPN\", isnotnull(op), \"assistant\"), authentication_method=\"duo_push\", src=\"192.0.2.10\", details.duo_txid=if(k==\"S\", l, null()), gen_ai.audit.action=case(k==\"S\", \"identity_signin_success\", k==\"X\", \"identity_signin_failure\"), gen_ai.operation.name=op, gen_ai.provider.name=op, gen_ai.policy.blocked=case(k==\"A\", \"false\", isnotnull(op), \"true\"), gen_ai.identity.verified=if(in(k, \"A\", \"B\", \"G\"), \"true\", null()), gen_ai.event.id=if(isnull(txid), i, null()), gen_ai.guardrail.ids=case(k==\"G\", \"cisco_identity_intelligence\", in(k, \"B\", \"C\"), \"cisco_ai_defense\")",
+  "tail": {
+   "search": "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule",
+   "from": "| eval identity_user="
+  },
+  "append": " | eval at=_time-1767225600 | sort 0 user, at | table user, at, chain_id, signin_duo, duo_failures_10m, duo_app, blocked_turns, guardrails, app, src, chain_earliest, chain_latest",
+  "expect": [
+   {
+    "user": "nina.osei",
+    "at": "1720",
+    "chain_id": "nina.osei:takeover:1767227260",
+    "chain_earliest": "1767226610",
+    "chain_latest": "1767227321",
+    "duo_failures_10m": "6"
+   }
+  ],
+  "window": [
+   1769817300,
+   1769817600
+  ]
  },
  {
   "name": "lookup gen: the newest COMPLETE snapshot wins over a newer incomplete one",

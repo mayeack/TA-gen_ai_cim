@@ -66,6 +66,27 @@ after the run above (tools/lab5_steps.py documents each step):
 the CII backfill token) to a 0600 JSON file for the PseudoCo Assistant Lab 5
 setup tool, and prints only their last 4 characters.
 
+Cisco Duo identity feed (TA-gen_ai_cim 1.9.0), one run per stack that polls Duo
+(tools/duo_steps.py documents each step, D0-D8 and DT1-DT7):
+
+    export SPLUNK_ADMIN_PASSWORD='...' SPLUNK_ACS_TOKEN='...'
+    export DUO_LOG_FEED_API_HOST='api-XXXXXXXX.duosecurity.com' DUO_LOG_FEED_IKEY='...'
+    export DUO_LOG_FEED_SKEY='...'          # or leave it unset and type it at the hidden prompt
+    python3 show_postdeploy.py --stack <url> --duo --duo-poll-slot 0/5 --dry-run
+    python3 show_postdeploy.py --stack <url> --duo-teardown --duo-purge-data
+
+The Duo keys are the read-only Admin API application (Grant read log + Grant
+resource - Read), never the Lab 5 Identity Ops keys. The secret key comes from
+the environment variable named by --duo-skey-env or from a hidden prompt on a
+terminal: never from argv, never from a file, and no part of it is printed.
+--duo-auth-interval (seconds or cron) or --duo-poll-slot K/N says how often this
+stack polls; it has no default, because it depends on how many stacks poll one
+Duo tenant. The users snapshot (--duo-with-users) and the identity lookup search
+(--duo-with-lookup-gen) are opt-in. A Duo run verifies the stack's certificate
+on :8089 before it sends anything; --duo-ca-file PATH adds the CA that signed
+it when it is not a public one, and --duo-no-tls-verify switches verification
+off and says so. The other modes of this script do not verify it.
+
 Steps 1-2 need ACS (Splunk Cloud only). Supply --acs-token, or pass
 --skip-acs and create the index and HEC token by hand. Steps 3-9 use the
 splunkd REST API on :8089. Steps 10-13 use the SOAR REST API (basic auth or
@@ -91,6 +112,7 @@ import argparse
 import fnmatch
 import json
 import os
+import re
 import sys
 import time
 import urllib.parse
@@ -101,6 +123,7 @@ sys.path.insert(0, os.path.join(APP_ROOT, 'bin'))
 
 import genai_es_seed as seed  # noqa: E402  (shared with the | genaiseedes command)
 import lab5_steps as lab5  # noqa: E402  (AI Trust Lab 5, --lab5 / --lab5-teardown)
+import duo_steps as duo  # noqa: E402  (Cisco Duo feed, --duo / --duo-teardown)
 
 INDEX_NAME = 'gen_ai_log'
 HEC_TOKEN_NAME = 'demobot-ai-defense'
@@ -409,8 +432,38 @@ def step_soar_smoke_test(soar, rep, app, asset):
     rep.ok(label, 'scratch container {} closed'.format(container_id))
 
 
-def main():
-    parser = argparse.ArgumentParser(description='Configure a Splunk Show stack for the AI Defense demo.')
+class Parser(argparse.ArgumentParser):
+    """argparse repeats what it could not use, and one such token could be a
+    secret typed where it does not belong: after a mistaken option, or glued
+    to a flag that takes no value (--duo-rotate-key=<key> is the natural slip
+    when rotating). So nothing that came from argv is printed but what is
+    shaped like an option name. Three cases, and a rule for the rest:
+      * unknown arguments: the option names, cut at any "=", never a value;
+      * a value given to a flag that takes none ("ignored explicit argument
+        '<value>'"): the flag's name only;
+      * abbreviations are off (allow_abbrev=False), so "--duo-p=<value>" is an
+        unknown argument and never an "ambiguous option: <token>" message;
+      * any other message loses everything in quotes and everything after an
+        "=" before it is printed."""
+
+    def error(self, message):
+        hidden = '(values are not repeated here: a secret never belongs on the command line)'
+        if message.startswith('unrecognized arguments'):
+            names = sorted(set(token.split('=', 1)[0] for token in message.split(': ', 1)[-1].split()
+                               if re.match(r'^--[a-z][a-z0-9-]*(=|$)', token)))
+            message = 'unrecognized arguments{} {}. See --help'.format(': ' + ' '.join(names) if names else '', hidden)
+        elif 'ignored explicit argument' in message:
+            name = re.match(r'^argument (--?[A-Za-z][A-Za-z0-9-]*)', message)
+            message = 'argument {}: takes no value {}. See --help'.format(name.group(1) if name else '(a flag)',
+                                                                         hidden)
+        else:
+            message = re.sub(r'\'[^\']*\'|"[^"]*"', '(not repeated)', message)
+            message = re.sub(r'=\S+', '=(not repeated)', message)
+        super(Parser, self).error(message)
+
+
+def build_parser():
+    parser = Parser(description='Configure a Splunk Show stack for the AI Defense demo.', allow_abbrev=False)
     parser.add_argument('--stack', help='Stack URL, e.g. https://esp-shw-xxx.splunkcloud.com '
                                         '(required unless --soar-only)')
     parser.add_argument('--username', default='admin')
@@ -452,7 +505,71 @@ def main():
     group.add_argument('--lab5-room', default='', help='Room label recorded on the SOAR asset')
     parser.add_argument('--out', help='Write the HEC URL and token(s) to this 0600 JSON file instead of '
                                       'printing the token')
-    args = parser.parse_args()
+    # Every --duo-* value is a plain string checked in tools/duo_steps.py, whose
+    # messages never repeat the value: argparse's own type= and choices= do.
+    group = parser.add_argument_group(
+        'Cisco Duo identity feed (one run per stack that polls Duo; keys from ${}, ${} and ${} or a '
+        'prompt, never from argv)'.format(duo.ENV_HOST, duo.ENV_IKEY, duo.ENV_SKEY))
+    group.add_argument('--duo', action='store_true',
+                       help='Run only the Duo feed steps D0-D8 (see tools/duo_steps.py)')
+    group.add_argument('--duo-teardown', action='store_true',
+                       help='Reverse --duo; needs --duo-purge-data or --duo-keep-data. Pass the same '
+                            '--duo-attendee-role the setup was given: only the roles named are changed (any other '
+                            'role that still lists index duo is reported)')
+    group.add_argument('--duo-auth-interval', metavar='SECONDS|CRON',
+                       help='How often this stack reads the Duo authentication log: seconds (120 or more) or a '
+                            'five-field cron schedule. No default')
+    group.add_argument('--duo-poll-slot', metavar='K/N',
+                       help='Instead of --duo-auth-interval: this is stack K (from 0) of the N stacks polling '
+                            'one Duo tenant; it polls every N minutes, K minutes past, so the stacks never '
+                            'share a minute. N is one of {}'.format(', '.join(str(p) for p in duo.POLL_SLOT_PERIODS)))
+    group.add_argument('--duo-users-interval', metavar='SECONDS', default=str(duo.DEFAULT_USERS_INTERVAL),
+                       help='Seconds between users snapshots (default %(default)s, at least {})'.format(
+                           duo.MIN_USERS_INTERVAL))
+    group.add_argument('--duo-lookback-hours', metavar='HOURS', default=str(duo.DEFAULT_LOOKBACK_HOURS),
+                       help='How far back the first poll reads (default %(default)s = 30 days, at most 4320)')
+    group.add_argument('--duo-attendee-role', metavar='ROLE[,ROLE]', default=duo.ATTENDEE_ROLE,
+                       help="Role(s) given search access to index duo by --duo, and losing it again with "
+                            "--duo-teardown (default %(default)s; '' for none)")
+    group.add_argument('--duo-skey-env', metavar='NAME', default=duo.ENV_SKEY,
+                       help='NAME of the environment variable that holds the Duo secret key (default '
+                            '%(default)s). Unset on a terminal: a hidden prompt')
+    group.add_argument('--duo-rotate-key', action='store_true',
+                       help='Replace the API hostname, integration key and secret key of an existing account')
+    group.add_argument('--duo-reset-checkpoint', action='store_true',
+                       help='Drop a checkpoint left by an earlier input when index duo is empty, so the first '
+                            'poll reads --duo-lookback-hours again')
+    group.add_argument('--duo-with-users', action='store_true',
+                       help='Also create the users input: it indexes the user list of the whole Duo tenant '
+                            '(names, email addresses, status). Off unless asked for')
+    group.add_argument('--duo-with-lookup-gen', action='store_true',
+                       help='Also enable "{}" (needs --duo-with-users). Off unless asked for'.format(
+                           duo.LOOKUP_GEN))
+    group.add_argument('--duo-force', action='store_true',
+                       help='Create the inputs although a lab check failed (index retention, the rules)')
+    group.add_argument('--duo-ca-file', metavar='PATH',
+                       help='PEM file with the certificate of the CA that signed the certificate of the stack on '
+                            ':8089, when that is not a public CA. It is trusted for the stack only, beside the '
+                            'default roots (ACS stays on the default roots). SSL_CERT_FILE is not read')
+    group.add_argument('--duo-no-tls-verify', action='store_true',
+                       help='Do not verify the certificate of the stack on :8089. The Duo secret key and the '
+                            'admin password then go to a server that was not authenticated; the run says so')
+    group.add_argument('--duo-purge-data', action='store_true',
+                       help='With --duo-teardown: also delete index duo and the input checkpoints')
+    group.add_argument('--duo-keep-data', action='store_true',
+                       help='With --duo-teardown: keep index duo and the input checkpoints')
+    return parser
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    modes = [name for name, on in (('--duo', args.duo), ('--duo-teardown', args.duo_teardown),
+                                   ('--lab5', args.lab5), ('--lab5-teardown', args.lab5_teardown)) if on]
+    if len(modes) > 1 and (args.duo or args.duo_teardown):
+        print('ERROR: {} are separate runs.'.format(' and '.join(modes)), file=sys.stderr)
+        return 2
+    if args.duo or args.duo_teardown:
+        return run_duo(args)
     if args.lab5 or args.lab5_teardown:
         return run_lab5(args)
 
@@ -631,6 +748,109 @@ def run_lab5(args):
     print('\nNext: in the Cisco Security Cloud app, create the Identity Intelligence input (Webhook) into '
           'index {} and assign it to MFA Flood, Impossible Travel and Duo Sign In Threat Detected - '
           'BEFORE the takeover.'.format(lab5.CII_INDEX))
+    return 1 if failures else 0
+
+
+def run_duo(args, splunkd=None, acs=None, creds=None, sleep=time.sleep, clock=time.time):
+    """--duo / --duo-teardown for one stack (tools/duo_steps.py). Everything
+    argv carries is checked before the first request; the Duo secret key is
+    not on argv and is read only by the step that sends it. Unlike the other
+    modes, a Duo run verifies the stack's certificate unless told not to: the
+    Duo secret key travels on that connection."""
+    if not args.stack or not args.password:
+        print('ERROR: --duo needs --stack and $SPLUNK_ADMIN_PASSWORD.', file=sys.stderr)
+        return 2
+    if args.out:
+        print('ERROR: --out is not used by a Duo run: it writes no file, and the Duo keys are never written '
+              'to one.', file=sys.stderr)
+        return 2
+    roles = tuple(part.strip() for part in (args.duo_attendee_role or '').split(',') if part.strip())
+    settings = None
+    try:
+        if args.duo:
+            if bool(args.duo_auth_interval) == bool(args.duo_poll_slot):
+                raise ValueError('--duo needs exactly one of --duo-auth-interval and --duo-poll-slot: how '
+                                 'often this stack polls Duo depends on how many stacks poll the same tenant')
+            interval = duo.poll_slot(args.duo_poll_slot) if args.duo_poll_slot else args.duo_auth_interval
+            settings = duo.Settings(interval, users_interval=args.duo_users_interval,
+                                    lookback_hours=args.duo_lookback_hours, attendee_roles=roles,
+                                    users_input=args.duo_with_users, lookup_gen=args.duo_with_lookup_gen,
+                                    rotate_key=args.duo_rotate_key,
+                                    reset_checkpoint=args.duo_reset_checkpoint, force=args.duo_force)
+            creds = creds or duo.Credentials(skey_env=args.duo_skey_env)
+        elif args.duo_purge_data == args.duo_keep_data:
+            raise ValueError('--duo-teardown needs exactly one of --duo-purge-data (delete index duo and the '
+                             'checkpoints; ACS may restart the stack) and --duo-keep-data')
+        else:
+            duo.Settings('300', attendee_roles=roles)       # the role names only
+    except ValueError as exc:
+        print('ERROR: {}.'.format(exc), file=sys.stderr)
+        return 2
+    verify = not args.duo_no_tls_verify
+    ca_file = args.duo_ca_file
+    if ca_file and not verify:
+        print('ERROR: --duo-ca-file and --duo-no-tls-verify contradict each other: pass one of them.',
+              file=sys.stderr)
+        return 2
+    if ca_file and not os.path.isfile(ca_file):
+        # The value is not repeated: whatever was typed there is not a file.
+        print('ERROR: --duo-ca-file does not name a file.', file=sys.stderr)
+        return 2
+    rep = seed.Reporter(echo=print)
+    print('Mode    : {} ({})'.format('DRY RUN' if args.dry_run else 'apply',
+                                    'Duo feed teardown' if args.duo_teardown else 'Duo feed setup'))
+    host = (urllib.parse.urlparse(args.stack.rstrip('/')).netloc or args.stack).split(':')[0]
+    stack_name = host.split('.')[0]
+    if splunkd is None:
+        splunkd = seed.Splunkd('https://{}:8089'.format(host), username=args.username,
+                               password=args.password, verify=verify, dry_run=args.dry_run, echo=print)
+        if ca_file:
+            # Loaded into this one context, explicitly. The environment is no way in:
+            # Apple's Python (LibreSSL) ignores SSL_CERT_FILE, Splunk's launcher
+            # overwrites it, and where it is read it REPLACES the default roots, which
+            # ACS needs. This adds one CA for the stack and leaves ACS alone.
+            try:
+                splunkd.ctx.load_verify_locations(cafile=ca_file)
+            except (OSError, ValueError):       # ssl.SSLError is an OSError
+                print('ERROR: --duo-ca-file: no PEM certificate could be read from that file.', file=sys.stderr)
+                return 2
+    code, reply = splunkd.call('/services/server/info')
+    if code != 200:
+        if duo.certificate_refused(code, reply):
+            print('ERROR: the certificate of {} did not verify{}, so nothing was sent. If a private CA signed it, '
+                  'pass --duo-ca-file PATH with that CA\'s certificate (PEM). The SSL_CERT_FILE variable is not '
+                  'a way in: this Python may ignore it. Only as a last resort, --duo-no-tls-verify goes on '
+                  'without verification (the Duo secret key and the admin password then go to a server that '
+                  'was not authenticated).'.format(
+                      splunkd.mgmt, ' against the default roots and --duo-ca-file' if ca_file else ''),
+                  file=sys.stderr)
+        else:
+            print('ERROR: cannot reach {} (HTTP {})'.format(splunkd.mgmt, code), file=sys.stderr)
+        return 2
+    skip_acs = args.skip_acs or not args.acs_token
+    if acs is None:
+        acs = AcsClient(stack_name, args.acs_token, dry_run=args.dry_run)
+    print('Stack   : {}'.format(host))
+    print('TLS     : {}'.format(
+        ('the stack\'s certificate is verified' + (' (default roots and --duo-ca-file {})'.format(ca_file)
+                                                   if ca_file else '')) if verify else
+        'NOT VERIFIED (--duo-no-tls-verify): the Duo secret key and the admin password go to a server that '
+        'was not authenticated'))
+    print('ACS     : {}'.format('skipped' if skip_acs else stack_name))
+    if args.duo_teardown:
+        print('-' * 72)
+        duo.teardown(splunkd, acs, rep, skip_acs, args.duo_purge_data, roles, sleep=sleep, clock=clock)
+        return 1 if summary(rep) else 0
+    for line in duo.scope_lines(settings):
+        print(line)
+    print('-' * 72)
+    duo.setup(splunkd, acs, rep, creds, settings, skip_acs, sleep=sleep, clock=clock)
+    failures = summary(rep)
+    print('\nNext: the inputs poll within one interval and the first authentication poll reads the last '
+          '{} h (up to 1000 events a run). Then check the stack with the searches in '
+          'tools/lab5-identity-runbook.md ("T-1: is the staged Duo evidence in the stack?"), and run this '
+          'again at any time: it changes nothing that is already right, and its step D8 says whether every '
+          'burst and chain that is indexed was raised.'.format(settings.lookback_hours))
     return 1 if failures else 0
 
 

@@ -18,6 +18,9 @@ cannot see in a diff of one long JSON string:
     panels do not depend on it;
   - a verified AI turn is its one chat event (genai_identity_verified_turn),
     never every event that carries the identity flag;
+  - a turn that only claims an identity's name (genai_identity_claimed_turn: what
+    a prompt-injection spray writes) is counted beside the verified turns and
+    apart from them, never creates a row and is never read as a sign-in;
   - one classification of a Duo outcome (genai_identity_duo_class) feeds the
     tiles, the overview and the timeline;
   - risk events and findings are counted apart (ES 8's Risk data model reads
@@ -62,14 +65,30 @@ ES_NOTE = 'Needs Enterprise Security'
 TOKENS = ('$time.earliest$', '$time.latest$', '$identity|s$')
 IDENTITY_FILTER = '| search identity_key=$identity|s$'
 # Where events may come from: the Duo feed and the AI application, by macro.
-EVENT_MACROS = ('genai_duo_auth_events', 'genai_duo_user_events', 'genai_identity_activity_events')
-# The three macros behind the view (default/macros.conf, "IDENTITY ACTIVITY MACROS").
+EVENT_MACROS = ('genai_duo_auth_events', 'genai_duo_user_events', 'genai_identity_activity_events',
+                'genai_identity_claimed_events')
+# The five macros behind the view (default/macros.conf, "IDENTITY ACTIVITY MACROS").
 ACTIVITY_EVENTS = ('`genai_identity_ai_events` identity_* '
                    '(gen_ai.identity.verified="true" OR gen_ai.audit.action="identity_*")')
 VERIFIED_TURN = ("(isnull('gen_ai.audit.action') AND 'gen_ai.identity.verified'==\"true\" AND "
                  "isnotnull('gen_ai.provider.name') AND 'gen_ai.operation.name'==\"chat\")")
+CLAIMED_EVENTS = '`genai_identity_ai_events` gen_ai.operation.name="chat" NOT gen_ai.identity.verified="true"'
+CLAIMED_TURN = ("(isnull('gen_ai.audit.action') AND isnotnull('gen_ai.provider.name') AND "
+                "'gen_ai.operation.name'==\"chat\" AND coalesce('gen_ai.identity.verified', \"false\")!=\"true\" AND "
+                "isnotnull(user))")
+# The one label of a claimed turn on the timeline, and the only two searches that read one.
+CLAIMED = 'AI turn claimed, not verified'
+CLAIMED_SEARCHES = ('ds_overview', 'ds_timeline')
+# Its colour on the timeline: pale, the lightest series of the chart. A saturated orange
+# (#F1813F, between the red of a Duo failure and the yellow of a blocked turn) was the
+# first choice; under simulated protanopia it measured a CIEDE2000 distance of 2.8 from
+# the green of "Duo success", so a claimed turn could be read as a sign-in by colour.
+# Lightness separates it in every vision mode (13.8 or more from every other series).
+CLAIMED_COLOUR = '#FFEFBF'
 DUO_CLASS = ('case(lower(result)=="fraud" OR lower(reason)=="user_marked_fraud", "fraud", lower(result)=="success", '
              '"success", lower(result)=="denied" OR lower(result)=="failure", "denied", true(), "other")')
+# The detection that shares two of the view's macros (default/savedsearches.conf).
+JOINED_RULE = 'AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule'
 # The risk subsearches filter on the identity as well, one level in.
 NESTED_FILTER = '    ' + IDENTITY_FILTER
 # The Enterprise Security objects the view reads.
@@ -89,16 +108,23 @@ PANELS = [('viz_overview', 'splunk.table', 'Identity overview'),
           ('viz_risk', 'splunk.bar', 'Risk by detection')]
 ES_PANELS = ['viz_kpi_risk', 'viz_overview', 'viz_timeline', 'viz_risk']
 ACTIVITIES = ['Duo success', 'Duo failure', 'Duo other', 'application sign-in', 'AI turn allowed', 'AI turn blocked',
-              'risk event', 'finding']
+              CLAIMED, 'risk event', 'finding']
 OVERVIEW_COLUMNS = ['identity_key', 'duo_status', 'duo_enrolled', 'duo_success', 'duo_denied', 'duo_fraud', 'duo_other',
                     'last_duo_signin', 'last_duo_factor', 'app_signins', 'ai_turns', 'ai_blocked', 'gate_verdicts',
-                    'risk_events', 'findings', 'risk_score', 'es_category']
+                    'claimed_not_verified', 'claimed_blocked', 'risk_events', 'findings', 'risk_score', 'es_category']
 DUO_TO_AI_COLUMNS = ['identity_key', 'duo_signin', 'duo_application', 'duo_factor', 'duo_result', 'duo_src',
                      'duo_denied_10m', 'app_event', 'app_time', 'app_src', 'seconds_apart', 'addresses_match',
                      'matched_on']
 CONTENT_FIELDS = (r'input_messages|output_messages|gen_ai\.input|gen_ai\.output|system_instructions|explanation|'
                   r'_raw|email|phone|realname|firstname|lastname')
 WRITES = r'\|\s*(outputlookup|outputcsv|collect|sendalert|sendemail|delete|tscollect|mcollect|map|script)\b'
+
+
+def luminance(colour):
+    """WCAG relative luminance of a #RRGGBB colour, 0 (black) to 1 (white)."""
+    channels = [int(colour[i:i + 2], 16) / 255.0 for i in (1, 3, 5)]
+    linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
 
 
 def no_duplicate_keys(pairs):
@@ -374,6 +400,8 @@ class SearchRuleTests(ViewTestCase):
         # The application branch adds no terms of its own: the macro is the whole base search.
         self.assertEqual(self.spl.count('    [ search `genai_identity_activity_events`\n    | eval '),
                          self.spl.count('genai_identity_activity_events'))
+        self.assertEqual(self.spl.count('    [ search `genai_identity_claimed_events`\n    | eval '),
+                         self.spl.count('genai_identity_claimed_events'))
         for name in self.chains:
             self.assertNotIn('[', own_query(self.ds, name), 'a chain holds no subsearch: %s' % name)
         self.assertNotRegex(self.spl, r'\b(inputlookup|inputcsv|loadjob|savedsearch|makeresults|metadata|dbinspect)\b')
@@ -399,6 +427,7 @@ class SearchRuleTests(ViewTestCase):
         macros = read_conf('macros.conf')
         names = sorted(set(re.findall(r'`(\w+)(?:\([^`]*\))?`', self.spl)))
         self.assertEqual(names, ['genai_duo_auth_events', 'genai_duo_user_events', 'genai_identity_activity_events',
+                                 'genai_identity_claimed_events', 'genai_identity_claimed_turn',
                                  'genai_identity_duo_class', 'genai_identity_join_key',
                                  'genai_identity_verified_turn'])
         for name in names:
@@ -562,7 +591,8 @@ class PanelTests(ViewTestCase):
                       '    | sort 0 -risk_score ]\n', query)
         self.assertIn('sum(risk_events) as risk_events, sum(findings) as findings, sum(risk_score) as risk_score '
                       'by identity_key\n', query)
-        self.assertIn('| fillnull value=0 ai_turns, ai_blocked, risk_events, findings, risk_score\n', query)
+        self.assertIn('| fillnull value=0 ai_turns, ai_blocked, claimed_not_verified, claimed_blocked, risk_events, '
+                      'findings, risk_score\n', query)
         self.assertNotRegex(self.spl, r'risk_index\s*[!=]=\s*"risk"')
         description = self.viz['viz_overview']['description']
         for needle in ('risk_events: rows in the risk index', 'findings: rows in the notable index',
@@ -592,16 +622,16 @@ class PanelTests(ViewTestCase):
 
     def test_timeline_stacks_the_six_activity_types(self):
         query = own_query(self.ds, 'ds_timeline')
-        named = re.findall(r'"((?:Duo|application|AI|risk) [a-zA-Z -]+|finding)"', query)
+        named = re.findall(r'"((?:Duo|application|AI|risk) [a-zA-Z, -]+|finding)"', query)
         self.assertEqual(sorted(set(named)), sorted(ACTIVITIES))
         chart = self.viz['viz_timeline']
         self.assertEqual(chart['options']['stackMode'], 'stacked')
         self.assertEqual(list(chart['options']['seriesColorsByField']), ACTIVITIES)
         self.assertEqual(len(set(chart['options']['seriesColorsByField'].values())), len(ACTIVITIES))
         self.assertTrue(query.endswith(IDENTITY_FILTER + '\n| timechart sum(n) by activity\n| fillnull value=0'))
-        # Risk counts only for identities seen in a feed, like the overview.
-        self.assertIn('| eventstats max(eval(if(activity=="risk event" OR activity=="finding", 0, 1))) as in_feed '
-                      'by identity_key\n| where in_feed==1\n', query)
+        # Risk, and a claimed turn, count only for identities seen in a feed, like the overview.
+        self.assertIn('| eventstats max(eval(if(activity=="risk event" OR activity=="finding" OR '
+                      'activity=="%s", 0, 1))) as in_feed by identity_key\n| where in_feed==1\n' % CLAIMED, query)
 
     def test_timeline_uses_the_tiles_duo_classes_and_one_event_per_turn(self):
         query = own_query(self.ds, 'ds_timeline')
@@ -612,7 +642,8 @@ class PanelTests(ViewTestCase):
         # chat event (a tool call, a decision, an escalation record) gets no activity.
         self.assertIn('activity=case(\'gen_ai.audit.action\'=="identity_signin_success", "application sign-in", '
                       '`genai_identity_verified_turn` AND \'gen_ai.policy.blocked\'=="true", "AI turn blocked", '
-                      '`genai_identity_verified_turn`, "AI turn allowed"), n=1 ]\n| where isnotnull(activity)\n', query)
+                      '`genai_identity_verified_turn`, "AI turn allowed"), n=1 ]\n', query)
+        self.assertIn(' ]\n| where isnotnull(activity)\n| bin _time span=5m\n', query)
         self.assertNotIn('NOT `genai_identity_verified_turn`', self.spl)
 
     def test_timeline_risk_is_split_filtered_and_bounded_inside_the_subsearch(self):
@@ -741,6 +772,118 @@ class PanelTests(ViewTestCase):
                       chart['description'])
 
 
+class ClaimedTurnTests(ViewTestCase):
+    """A turn that only claims an identity's name (no verified session behind it: what a
+    prompt-injection spray writes) is counted beside the verified turns and apart from
+    them, per identity and on the timeline, and can never be read as a sign-in."""
+
+    def test_claimed_turns_are_read_in_the_overview_and_the_timeline_only(self):
+        """One more multisearch branch in two searches. The base search behind the five
+        Duo and application tiles and the dropdown, the sign-in chain, the address table
+        and Risk by detection never read a claimed turn, so none of them can move."""
+        for name in self.ds:
+            query = own_query(self.ds, name)
+            if name not in CLAIMED_SEARCHES:
+                self.assertNotIn('claimed', query, name)
+                continue
+            self.assertEqual(query.count('    [ search `genai_identity_claimed_events`\n    | eval '), 1, name)
+            self.assertEqual(query.count('`genai_identity_claimed_events`'), 1, name)
+            self.assertEqual(query.count('`genai_identity_claimed_turn`'), 1, name)
+            # A branch of the multisearch, after the application's: before the first main-pipeline command.
+            self.assertLess(query.index('`genai_identity_activity_events`'),
+                            query.index('`genai_identity_claimed_events`'), name)
+            self.assertLess(query.index('`genai_identity_claimed_events`'), query.index('\n| '), name)
+        self.assertEqual(sorted(n for n in self.searches if 'claimed' in own_query(self.ds, n)),
+                         sorted(CLAIMED_SEARCHES))
+        for name, _label, _feed in KPIS[:5]:
+            self.assertNotIn('claimed', self.feeds(name), name)
+        self.assertNotIn('claimed', full_query(self.ds, 'ds_identities'))
+        _root, home = studio(HOME)
+        self.assertNotIn('claimed', home['dataSources']['ds_card_06']['options']['query'])
+
+    def test_overview_counts_claimed_turns_beside_verified_turns_and_apart(self):
+        query = own_query(self.ds, 'ds_overview')
+        branch = branch_eval(query, 'genai_identity_claimed_events')
+        self.assertEqual(branch, '| eval feed="claimed", identity_key=`genai_identity_join_key(user)`, '
+                                 'claimed=if(`genai_identity_claimed_turn`, 1, 0), '
+                                 'claimed_blocked=if(claimed==1 AND \'gen_ai.policy.blocked\'=="true", 1, 0)')
+        # The branch sets none of the fields the verified columns are made from, and its
+        # feed is not "app": ai_turns, ai_blocked, app_signins, gate_verdicts and the row
+        # filter (app_events) cannot see a claimed turn.
+        for field in ('turn', 'blocked', 'gate', 'app_action'):
+            self.assertNotRegex(branch, r'[ ,]%s=' % field)
+        self.assertIn('count(eval(feed=="app")) as app_events', query)
+        self.assertIn('| fields _time, feed, identity_key, duo_class, duo_factor, duo_result, app_action, turn, '
+                      'blocked, gate, claimed, claimed_blocked\n', query)
+        self.assertIn('sum(turn) as ai_turns, sum(eval(turn*blocked)) as ai_blocked, values(gate) as gate_verdicts, '
+                      'sum(claimed) as claimed_not_verified, sum(claimed_blocked) as claimed_blocked, ', query)
+        # Its columns follow the verified ones (the gate's verdicts belong to verified turns).
+        at = OVERVIEW_COLUMNS.index('claimed_not_verified')
+        self.assertEqual(OVERVIEW_COLUMNS[at - 3:at + 2], ['ai_turns', 'ai_blocked', 'gate_verdicts',
+                                                           'claimed_not_verified', 'claimed_blocked'])
+        # Two counts, never one: nothing adds them, and the sort and the row filter ignore the new one.
+        self.assertNotRegex(self.spl, r'(ai_turns|ai_blocked)\s*\+|\+\s*(ai_turns|ai_blocked|claimed)')
+        self.assertIn('| sort 0 -risk_score, -duo_fraud, -ai_blocked, identity_key\n', query)
+        fmt = self.viz['viz_overview']['options']['columnFormat']
+        self.assertEqual(fmt['claimed_not_verified'],
+                         {'rowColors': '> table | seriesByName("claimed_not_verified") | rangeValue(warnColors)'})
+        description = self.viz['viz_overview']['description']
+        self.assertIn('gate_verdicts: Identity Risk Gate verdicts on those turns. claimed_not_verified and '
+                      'claimed_blocked: chat requests that carried this identity\'s name with no verified session '
+                      'behind them', description)
+        self.assertIn('never part of ai_turns', description)
+
+    def test_a_claimed_name_never_creates_a_row_a_dropdown_entry_or_a_bar(self):
+        """The name on an unverified turn is request text. It only enriches an identity
+        that a Duo sign-in or an application identity event already put in the view."""
+        overview = own_query(self.ds, 'ds_overview')
+        self.assertLess(overview.index('sum(claimed) as claimed_not_verified'),
+                        overview.index('\n| where duo_signins>0 OR app_events>0\n'))
+        self.assertNotRegex(overview, r'\| where [^\n]*claimed')
+        timeline = own_query(self.ds, 'ds_timeline')
+        self.assertIn('OR activity=="%s", 0, 1))) as in_feed by identity_key\n| where in_feed==1\n' % CLAIMED,
+                      timeline)
+        self.assertIn('a name that is only claimed gets no row', self.viz['viz_overview']['description'])
+        self.assertIn('drawn only for identities with a Duo sign-in or application identity activity in the range',
+                      self.viz['viz_timeline']['description'])
+
+    def test_timeline_draws_claimed_turns_as_one_series_of_their_own(self):
+        query = own_query(self.ds, 'ds_timeline')
+        self.assertEqual(branch_eval(query, 'genai_identity_claimed_events'),
+                         '| eval identity_key=`genai_identity_join_key(user)`, '
+                         'activity=if(`genai_identity_claimed_turn`, "%s", null()), n=1' % CLAIMED)
+        colours = self.viz['viz_timeline']['options']['seriesColorsByField']
+        self.assertEqual(colours[CLAIMED], CLAIMED_COLOUR)
+        self.assertEqual(list(colours).index(CLAIMED), list(colours).index('AI turn blocked') + 1)
+        # Pale: lighter than every other series by a wide margin, so it is told apart by
+        # lightness, also by a viewer who cannot tell red, orange and green apart.
+        others = [luminance(colour) for name, colour in colours.items() if name != CLAIMED]
+        self.assertGreater(luminance(colours[CLAIMED]), max(others) + 0.25)
+        self.assertEqual((round(luminance('#000000'), 3), round(luminance('#FFFFFF'), 3)), (0.0, 1.0))
+        # timechart folds every series past its default limit of 10 into OTHER.
+        self.assertLessEqual(len(ACTIVITIES), 10)
+        self.assertNotRegex(query, r'timechart[^\n]*\blimit=')
+        self.assertIn('AI turns claimed, not verified (chat requests that carried the identity\'s name with no '
+                      'verified session, blocked or not: never a sign-in', self.viz['viz_timeline']['description'])
+
+    def test_a_claimed_turn_can_never_be_read_as_a_sign_in(self):
+        """Its label says "not verified" and names neither a sign-in nor Duo; the sign-in
+        chain, which pairs application events with Duo sign-ins, never reads one; no tile
+        counts one; and every text that explains it says it is never a sign-in."""
+        self.assertIn('not verified', CLAIMED)
+        self.assertNotRegex(CLAIMED.lower(), r'sign-?in|duo|application')
+        self.assertNotIn('claimed', own_query(self.ds, 'ds_duo_to_ai'))
+        self.assertFalse([c for c in DUO_TO_AI_COLUMNS if 'claimed' in c])
+        for _name, label, _feed in KPIS:
+            self.assertNotIn('claimed', label)
+        for text in (self.viz['viz_header']['options']['markdown'], self.viz['viz_overview']['description'],
+                     self.viz['viz_timeline']['description']):
+            self.assertIn('never a sign-in', text)
+        self.assertIn('A turn that only names an identity, with no verified session behind it '
+                      '(genai_identity_claimed_turn), is counted apart as claimed, not verified: it is never a '
+                      'sign-in.', self.viz['viz_header']['options']['markdown'])
+
+
 class EnterpriseSecurityTests(ViewTestCase):
     """The ES side is Risk.All_Risk (user risk) and identity_lookup_expanded."""
 
@@ -783,10 +926,12 @@ class EnterpriseSecurityTests(ViewTestCase):
 
 
 class MacroTests(unittest.TestCase):
-    """The three macros behind the view (default/macros.conf): one definition each
-    of the application's identity events, a verified AI turn and a Duo outcome."""
+    """The five macros behind the view (default/macros.conf): one definition each of
+    the application's identity events, a verified AI turn, the events a claimed turn
+    is read from, a claimed (not verified) AI turn, and a Duo outcome."""
 
-    NAMES = ('genai_identity_activity_events', 'genai_identity_verified_turn', 'genai_identity_duo_class')
+    NAMES = ('genai_identity_activity_events', 'genai_identity_verified_turn', 'genai_identity_claimed_events',
+             'genai_identity_claimed_turn', 'genai_identity_duo_class')
 
     def setUp(self):
         self.macros = read_conf('macros.conf')
@@ -797,6 +942,8 @@ class MacroTests(unittest.TestCase):
         self.assertEqual(self.macros['genai_identity_activity_events']['definition'], ACTIVITY_EVENTS)
         self.assertEqual(self.macros['genai_identity_verified_turn']['definition'], VERIFIED_TURN)
         self.assertEqual(self.macros['genai_identity_duo_class']['definition'], DUO_CLASS)
+        self.assertEqual(self.macros['genai_identity_claimed_events']['definition'], CLAIMED_EVENTS)
+        self.assertEqual(self.macros['genai_identity_claimed_turn']['definition'], CLAIMED_TURN)
         for name in self.NAMES:
             self.assertEqual(sorted(self.macros[name]), ['definition', 'iseval'], name)
             self.assertEqual(self.macros[name]['iseval'], '0', name)
@@ -807,7 +954,7 @@ class MacroTests(unittest.TestCase):
             block = '\n'.join(head[-30:])
             self.assertIn('# ' + name + '\n', block, name)
             self.assertIn('# Usage:', block, name)
-        # The Duo feed keeps its five macros; these three are the view's, not the feed's.
+        # The Duo feed keeps its five macros; these five are the view's, not the feed's.
         self.assertFalse([n for n in self.NAMES if n.startswith('genai_duo_')])
 
     def test_raw_term_only_narrows_the_scan(self):
@@ -852,6 +999,73 @@ class MacroTests(unittest.TestCase):
         for stanza in ('demobot:audit', 'demobot:escalation'):
             text = ' '.join('%s = %s' % pair for pair in read_conf('props.conf')[stanza].items())
             self.assertNotRegex(text, r'gen_ai\.(operation|provider)\.name', stanza)
+
+    def test_a_claimed_turn_is_a_chat_event_with_a_name_and_no_verified_identity(self):
+        """The mirror of a verified turn: the same chat event (provider set, operation
+        chat, not an audit record), a user named, and the identity NOT verified. No
+        event can be both, because the two differ only in the identity term. A missing
+        identity_verified is the normal case (a spray's turn and every anonymous turn
+        write no identity key), so that one term reads null as not verified."""
+        turn = self.macros['genai_identity_verified_turn']['definition']
+        claimed = self.macros['genai_identity_claimed_turn']['definition']
+        self.assertTrue(claimed.startswith('(') and claimed.endswith(')'), claimed)
+
+        def terms(text):
+            return set(text[1:-1].split(' AND '))
+        self.assertEqual(terms(turn) & terms(claimed), {"isnull('gen_ai.audit.action')",
+                                                        "isnotnull('gen_ai.provider.name')",
+                                                        "'gen_ai.operation.name'==\"chat\""})
+        self.assertEqual(terms(turn) - terms(claimed), {"'gen_ai.identity.verified'==\"true\""})
+        self.assertEqual(terms(claimed) - terms(turn), {"coalesce('gen_ai.identity.verified', \"false\")!=\"true\"",
+                                                        'isnotnull(user)'})
+        self.assertNotRegex(claimed, r'\bOR\b|\bNOT\b')
+        # The TA's own EVAL leaves a missing key null (it has no "false" default), which is why the term coalesces.
+        verified = re.sub(r'\s+', ' ', read_conf('props.conf')['gen_ai:json']['EVAL-gen_ai.identity.verified'])
+        self.assertTrue(verified.endswith('1=1, null())'), verified)
+
+    def test_claimed_events_macro_only_narrows(self):
+        """genai_identity_claimed_turn decides; the event macro only keeps the scan and
+        the row count down. Its operation term is a field alias, so the value is also a
+        raw term (chat); its identity term drops the chat events of signed-in turns.
+        Both are implied by the predicate, so the count never rests on two definitions.
+        It has no raw term identity_*: a claimed turn's events hold no identity key."""
+        definition = self.macros['genai_identity_claimed_events']['definition']
+        self.assertEqual(definition.split(' ', 1), ['`genai_identity_ai_events`',
+                                                    'gen_ai.operation.name="chat" NOT gen_ai.identity.verified="true"'])
+        self.assertNotIn('|', definition)
+        self.assertNotIn('identity_*', definition)
+        claimed = self.macros['genai_identity_claimed_turn']['definition']
+        self.assertIn("'gen_ai.operation.name'==\"chat\"", claimed)
+        self.assertIn("coalesce('gen_ai.identity.verified', \"false\")!=\"true\"", claimed)
+        props = read_conf('props.conf')
+        self.assertEqual(props['gen_ai:json']['FIELDALIAS-genai_operation_name'],
+                         'operation_name AS gen_ai.operation.name')
+        for stanza, keys in props.items():
+            self.assertNotIn('EVAL-gen_ai.operation.name', keys, stanza)
+        self.assertEqual(read_conf('fields.conf')['gen_ai.operation.name'], {'INDEXED': 'false'})
+
+    def test_banner_names_the_detection_that_shares_two_macros(self):
+        """An override of genai_identity_activity_events or genai_identity_verified_turn
+        changes the joined rule (LR-06) as well as the panels, and the banner says
+        so. The claimed-turn macros and the Duo class feed the view alone."""
+        banner = self.text[self.text.index('# IDENTITY ACTIVITY MACROS - v1.9.0'):
+                           self.text.index('# genai_identity_activity_events\n')]
+        banner = re.sub(r'\s+', ' ', ' '.join(line.lstrip('#').strip() for line in banner.split('\n')))
+        self.assertIn('Two of them are not the dashboard\'s alone. "%s" (LR-06) reads the application\'s events '
+                      'through genai_identity_activity_events and decides what a blocked verified turn is with '
+                      'genai_identity_verified_turn, so an override of either changes that detection as well as the '
+                      'panels.' % JOINED_RULE, banner)
+        self.assertIn('keep an override of it to index, sourcetype and field terms with no pipe', banner)
+        searches = read_conf('savedsearches.conf')
+        used_by = {name: sorted(stanza for stanza, keys in searches.items() if '`%s`' % name in keys.get('search', ''))
+                   for name in self.NAMES}
+        self.assertEqual(used_by, {'genai_identity_activity_events': [JOINED_RULE],
+                                   'genai_identity_verified_turn': [JOINED_RULE],
+                                   'genai_identity_claimed_events': [], 'genai_identity_claimed_turn': [],
+                                   'genai_identity_duo_class': []})
+        # Both event macros stay search terms only: the rule and the view put terms after them.
+        for name in ('genai_identity_activity_events', 'genai_identity_claimed_events'):
+            self.assertNotIn('|', self.macros[name]['definition'], name)
 
     def test_duo_classes_add_up_and_agree_with_the_cim_action(self):
         """fraud + denied is what the TA's CIM mapping calls action=failure (denied,
@@ -906,7 +1120,11 @@ class MenuHomeAndDocsTests(unittest.TestCase):
         row = rows[at[0] + 1]
         self.assertTrue(row.startswith('| **Identity Activity** | Per identity, '), row)
         self.assertIn('need Enterprise Security', row)
+        self.assertIn('counted apart as claimed, not verified (never a sign-in)', row)
         self.assertIn('| *Identity Activity* dashboard | per identity: ', readme)
+        self.assertIn('| `genai_identity_activity_events`, `genai_identity_verified_turn`, '
+                      '`genai_identity_claimed_events`, `genai_identity_claimed_turn`, `genai_identity_duo_class` | '
+                      'the five macros behind *Identity Activity*', readme)
         release = readme[readme.index('### v1.9.0'):readme.index('### v1.8.0')]
         entry = release[release.index('- ADDED: *Identity Activity* dashboard (`%s`,' % VIEW):]
         entry = re.sub(r'\s+', ' ', entry[:entry.index('\n- ', 2)])
@@ -929,12 +1147,122 @@ class MenuHomeAndDocsTests(unittest.TestCase):
         self.assertNotRegex(validation, r'[\w.+-]+@[\w-]+\.[\w.-]+|\b\d{1,3}(?:\.\d{1,3}){3}\b|duosecurity')
         self.assertRegex(readme, r'(?m)^Version: 1\.9\.0\s*$')
 
+    def test_readme_changelog_has_the_claimed_not_verified_entry(self):
+        readme = self.text('README.md')
+        release = readme[readme.index('### v1.9.0'):readme.index('### v1.8.0')]
+        entry = release[release.index('- ADDED (*Identity Activity*, lab-readiness review 2026-11-17): claimed, not'):]
+        entry = re.sub(r'\s+', ' ', entry[:entry.index('\n- ', 2)])
+        for needle in ('read as 0 AI turns for that persona', '`claimed_not_verified` and `claimed_blocked` after '
+                       '`gate_verdicts`', '*AI turn claimed, not verified*', '`genai_identity_claimed_turn`',
+                       '`genai_identity_claimed_events`', 'never a sign-in, never part of `ai_turns`',
+                       'gets no row, no dropdown entry and no bar', 'do not read claimed turns',
+                       'the application\'s HEC feed does not'):
+            self.assertIn(needle, entry)
+        self.assertNotRegex(entry, r'[\w.+-]+@[\w-]+\.[\w.-]+|\b\d{1,3}(?:\.\d{1,3}){3}\b|duosecurity')
+        # It follows the dashboard's own entry, which is unchanged.
+        self.assertLess(release.index('- ADDED: *Identity Activity* dashboard'), release.index(
+            '- ADDED (*Identity Activity*, lab-readiness review 2026-11-17)'))
+
+    def claimed_section(self):
+        """The README's "Identity Activity: claimed, not verified turns" section."""
+        readme = self.text('README.md')
+        start = readme.index('### Identity Activity: claimed, not verified turns\n')
+        return readme[start:readme.index('\n### ', start + 4)]
+
+    def test_readme_says_what_a_claimed_turn_is_and_what_a_staged_lab_needs(self):
+        """A claimed count of 0 has three innocent causes a facilitator must rule out
+        before the room looks: no spray named the persona, the application's events
+        never reached this stack (its HEC feed does not backfill), or the persona is
+        outside the time range. The README says each, in this order."""
+        readme = self.text('README.md')
+        # After the joined rule (which a claimed turn never counts for), before the input's section.
+        self.assertLess(readme.index('### The joined rule: Duo burst, sign-in, blocked AI turn'),
+                        readme.index('### Identity Activity: claimed, not verified turns'))
+        section = self.claimed_section()
+        self.assertTrue(readme[readme.index(section) + len(section):].startswith('\n### How the input reads Duo\n'))
+        flat = re.sub(r'\s+', ' ', section)
+        needles = ('counts two kinds of AI turn for an identity, side by side, and never adds them',
+                   '**Verified** (`ai_turns`, `ai_blocked`;', '(`genai_identity_verified_turn`)',
+                   '**Claimed, not verified** (`claimed_not_verified`, `claimed_blocked`;',
+                   '(`genai_identity_claimed_turn`, read through `genai_identity_claimed_events`)',
+                   'is never a sign-in, is never matched to a Duo sign-in, and never counts for the joined rule',
+                   'gets no row, no dropdown entry and no bar',
+                   '**What a staged lab needs.**',
+                   '1. The staged scenario includes a prompt-injection spray that names the persona.',
+                   '2. The application\'s events for the staging are in that stack.',
+                   'the application\'s HEC feed does not',
+                   'all read 0 for the staged days unless those events are sent to that stack as well (nothing in '
+                   'the TA does that)',
+                   'the view counts events and does not drop a second copy',
+                   '3. The spray, and a Duo sign-in or an application identity event of the persona, fall inside '
+                   'the time range of the view',
+                   '0 means the stack holds no such turn in that range: no spray named the persona, the '
+                   'application\'s events never reached this stack, or the spray is outside the range.')
+        found = [flat.find(needle) for needle in needles]
+        self.assertEqual([needle for needle, at in zip(needles, found) if at < 0], [])
+        self.assertEqual(found, sorted(found))
+        self.assertNotRegex(flat, r'[\w.+-]+@[\w-]+\.[\w.-]+|\b\d{1,3}(?:\.\d{1,3}){3}\b|duosecurity')
+
+    def test_staging_check_is_the_views_own_definition_in_the_readme_and_the_runbook(self):
+        """The read-only check a facilitator runs at T-1 counts with the view's two
+        macros and its join key, and the README and the runbook print the same
+        search (the runbook says victim where the README says persona). The
+        runbook's .html carries the same section as its .md."""
+        check = ['`genai_identity_claimed_events`', '| where `genai_identity_claimed_turn`',
+                 '| eval identity_key=`genai_identity_join_key(user)`', '| search identity_key="<persona>"',
+                 '| stats count as claimed_not_verified, count(eval(\'gen_ai.policy.blocked\'=="true")) as '
+                 'claimed_blocked,', '    min(_time) as first, max(_time) as last',
+                 '| eval first=strftime(first, "%F %T"), last=strftime(last, "%F %T")']
+
+        def fenced(markdown_text):
+            return markdown_text.split('```spl\n', 1)[1].split('\n```', 1)[0].split('\n')
+        self.assertEqual(fenced(self.claimed_section()), check)
+        self.assertIsNone(re.search(WRITES, ' '.join(check)))
+        self.assertNotRegex(' '.join(check), r'\bindex\s*=|\bsourcetype\s*=')
+        # The check's two counts are the overview's two columns.
+        overview = studio(VIEW)[1]['dataSources']['ds_overview']['options']['query']
+        for column in ('claimed_not_verified', 'claimed_blocked'):
+            self.assertIn(' as %s' % column, overview)
+            self.assertIn(' as %s' % column, ' '.join(check))
+        heading = 'T-1: is the spray that named the victim in the stack?'
+        runbook = self.text('tools', 'lab5-identity-runbook.md')
+        start = runbook.index('## %s\n' % heading)
+        section = runbook[start:runbook.index('\n## ', start + 4)]
+        self.assertEqual([line.replace('<victim>', '<persona>') for line in fenced(section)], check)
+        self.assertLess(runbook.index('## T-1: is the victim\'s evidence in the stack?'), start)
+        self.assertLess(start, runbook.index('## Lab day'))
+        html = self.text('tools', 'lab5-identity-runbook.html')
+        page = html[html.index('>%s</h2>' % heading):]
+        page = page[:page.index('<h2 ')]
+        needs = ('The staged scenario includes a spray that names the victim.',
+                 'PseudoCo Assistant\'s events for the staging are in this stack.',
+                 'The victim has a Duo sign-in or an application identity event in the view\'s time range')
+        for need in needs:
+            self.assertIn('**%s' % need.split('\n')[0], re.sub(r'\s+', ' ', section))
+            self.assertIn('<strong>%s' % need, re.sub(r'\s+', ' ', page))
+        for text in (re.sub(r'\s+', ' ', section), re.sub(r'\s+', ' ', page)):
+            for needle in ('Nothing in the TA does that.', 'the view counts events and does not drop a second copy',
+                           'A name that is only claimed gets no row.',
+                           '0 means the stack holds no such turn in that range: no spray named the victim, '
+                           'PseudoCo Assistant\'s events never reached this stack, or the spray is outside the '
+                           'range.'):
+                self.assertIn(needle, text)
+        # The page's code block is the same search, HTML-escaped.
+        code = page.split('<pre><code class="language-spl">', 1)[1].split('</code></pre>', 1)[0]
+        code = code.replace('&quot;', '"').replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+        self.assertEqual([line.replace('<victim>', '<persona>') for line in code.rstrip('\n').split('\n')], check)
+
     def test_claude_md_lists_the_dashboard_and_its_tests(self):
         claude = re.sub(r'\s+', ' ', self.text('CLAUDE.md'))
         self.assertIn('*Identity Activity* (`%s`, v1.9.0' % VIEW, claude)
         self.assertIn('`test_identity_activity.py`', claude)
         for needle in ('`genai_identity_verified_turn`', '`genai_identity_activity_events`',
-                       '`genai_identity_duo_class`', '`details.duo_txid`', 'assert_draw_order`'):
+                       '`genai_identity_duo_class`', '`details.duo_txid`', 'assert_draw_order`',
+                       '`genai_identity_claimed_turn`', '`genai_identity_claimed_events`',
+                       'never creates a row, a dropdown entry or a bar',
+                       'The first two macros also feed the joined rule (LR-06)',
+                       'Its timeline colour is pale on purpose',
+                       'the five `genai_identity_*` macros'):
             self.assertIn(needle, claude)
 
 
@@ -999,6 +1327,34 @@ SHAPES = ['avery.example|100|chat|false|-|192.0.2.10', 'avery.example|101|tool_c
           'avery.example|200|tool_call|true|-|-', 'avery.example|201|chat|true|-|192.0.2.10',
           'avery.example|202|escalation|-|-|-', 'avery.example|203|decision|-|-|-',
           'avery.example|90|signin|-|-|192.0.2.10', 'avery.example|300|anonymous|false|-|192.0.2.10']
+# Application rows of the claimed-turn simulations: name | offset | shape | policy_blocked.
+# chat, tool_call and signin are a signed-in turn's chat event, its tool call and the
+# identity_signin_success audit record. claim is a chat event with no identity key at all
+# (what a spray's turn and every anonymous turn write), claim_false one that says
+# identity_verified false, claim_tool the tool call of such a turn, claim_audit the audit
+# record of an anonymous session (session_started). A name of "-" is an event with no user.
+CLAIM_ROW = ('eval f=split(row, "|"), user=nullif(mvindex(f, 0), "-"), _time=%s+tonumber(mvindex(f, 1)), '
+             'shape=mvindex(f, 2), operation_name=case(in(shape, "chat", "claim", "claim_false"), "chat", '
+             'in(shape, "tool_call", "claim_tool"), "tool_call"), '
+             'provider_name=if(isnotnull(operation_name), "ollama", null()), '
+             'identity_verified=case(in(shape, "chat", "tool_call"), "true", shape=="claim_false", "false"), '
+             'policy_blocked=nullif(mvindex(f, 3), "-"), '
+             'audit_id=if(in(shape, "signin", "claim_audit"), "audit-1", null()), '
+             'action=case(shape=="signin", "identity_signin_success", shape=="claim_audit", "session_started")' % T0)
+# nina.osei: two Duo sign-ins, an application sign-in, a signed-in turn with a tool call
+#   (allowed) and one that was blocked; then four claimed turns, three blocked: one names her
+#   with an email-shaped login in another case, one says identity_verified false. The tool
+#   call and the audit record of an anonymous turn are not turns.
+# jordan.reyes: one Duo sign-in and nothing signed in at the application; two claimed turns.
+# marcus.bell: only claimed, in neither feed: no row and no bar. A name with words after
+#   it is not jordan.reyes, and an event with no user claims nobody.
+CLAIM_DUO = ['nina.osei|10|-|success|-|192.0.2.10', 'nina.osei|20|-|denied|-|192.0.2.10',
+             'jordan.reyes|30|-|success|-|192.0.2.20']
+CLAIM_APP = ['nina.osei|90|signin|-', 'nina.osei|100|chat|false', 'nina.osei|101|tool_call|false',
+             'nina.osei|200|chat|true', 'nina.osei|300|claim|true', 'NINA.OSEI@corp.test|310|claim|true',
+             'nina.osei|320|claim_false|true', 'nina.osei|330|claim|false', 'nina.osei|331|claim_tool|true',
+             'nina.osei|332|claim_audit|-', 'jordan.reyes|400|claim|true', 'jordan.reyes|410|claim|false',
+             'marcus.bell|500|claim|true', 'jordan.reyes extra words|510|claim|true', '-|520|claim|true']
 
 
 def app_props():
@@ -1074,6 +1430,48 @@ def sim_chain(duo, app):
     return build
 
 
+def field_filter(definition):
+    """The field filter of an application event macro: its definition without the base
+    search and without the raw term that only narrows the scan. Run as "| search" on
+    makeresults rows it keeps what the macro would return."""
+    found = re.match(r'^`genai_identity_ai_events` (?:identity_\* )?(.+)$', definition)
+    return found.group(1)
+
+
+def three_feeds(query, duo, app, macro_filters):
+    """duo and app rows through the three branch evals of query. appendpipe forks the
+    application rows into the application branch and the claimed branch, so their text
+    is in the search once. With macro_filters each fork first applies the field filter
+    of its event macro, as on a real search (the overview counts every event the
+    application macro returns as application activity). Without, every row goes through
+    BOTH branch evals, so the two predicates alone must keep the counts apart."""
+    def fork(macro, definition, mark):
+        keep = ' | search %s' % field_filter(definition) if macro_filters else ''
+        return 'appendpipe [ where isnull(fork)%s %s | eval fork=%d ]' % (keep, branch_eval(query, macro), mark)
+    return ('%s %s | %s | %s | where isnotnull(fork) | append [ %s %s ]' % (
+        rows(app, CLAIM_ROW), app_props(), fork('genai_identity_activity_events', ACTIVITY_EVENTS, 1),
+        fork('genai_identity_claimed_events', CLAIMED_EVENTS, 2), rows(duo, DUO_ROW),
+        branch_eval(query, 'genai_duo_auth_events')))
+
+
+def sim_overview_claimed(ds):
+    q = ds['ds_overview']['options']['query']
+    tail = resolve(q[q.index('| where isnotnull(identity_key)'):q.index('| lookup identity_lookup_expanded')])
+    fill = [line for line in q.split('\n') if line.startswith('| fillnull value=0 ai_turns')][0]
+    return (three_feeds(q, CLAIM_DUO, CLAIM_APP, True) + ' ' + tail.replace('\n', ' ') + fill +
+            ' | sort 0 str(identity_key)' +
+            answer('identity_key . ": verified " . ai_turns . " (blocked " . ai_blocked . "), claimed not verified " . '
+                   'claimed_not_verified . " (blocked " . claimed_blocked . ")"'))
+
+
+def sim_timeline_claimed(ds):
+    q = ds['ds_timeline']['options']['query']
+    in_feed = [line for line in q.split('\n') if line.startswith('| eventstats max(eval(if(activity==')][0]
+    return (three_feeds(q, CLAIM_DUO, CLAIM_APP, False) + ' | where isnotnull(activity) '
+            '| stats sum(n) as n by identity_key, activity ' + in_feed + ' | where in_feed==1 '
+            '| sort 0 str(identity_key), str(activity)' + answer('identity_key . " " . activity . " " . n'))
+
+
 def sim_risk(name):
     def build(ds):
         q = ds[name]['options']['query']
@@ -1137,6 +1535,18 @@ SIMULATIONS = [
                                                'blake.example: risk events 0, findings 1, score 60'),
     ('timeline_risk', sim_risk('ds_timeline'), 'avery.example finding 1; avery.example risk event 3; '
                                                'blake.example finding 1'),
+    # A spray names nina.osei (signed in elsewhere in the range) and jordan.reyes (Duo sign-in only):
+    # their claimed turns sit beside their verified turns and never in them. marcus.bell is named
+    # too but is in neither feed, and one name has words after it: neither gets a row.
+    ('overview_claimed', sim_overview_claimed,
+     'jordan.reyes: verified 0 (blocked 0), claimed not verified 2 (blocked 1); '
+     'nina.osei: verified 2 (blocked 1), claimed not verified 4 (blocked 3)'),
+    # The same rows with no event-macro filter: every application row goes through both branch
+    # evals, and each chat event still gives exactly one bar.
+    ('timeline_claimed', sim_timeline_claimed,
+     'jordan.reyes AI turn claimed, not verified 2; jordan.reyes Duo success 1; nina.osei AI turn allowed 1; '
+     'nina.osei AI turn blocked 1; nina.osei AI turn claimed, not verified 4; nina.osei Duo failure 1; '
+     'nina.osei Duo success 1; nina.osei application sign-in 1'),
 ]
 
 
@@ -1180,6 +1590,24 @@ class SimulationTextTests(ViewTestCase):
             self.assertIn(tail, built[name])
             self.assertIn(branch_eval(chain, 'genai_duo_auth_events'), built[name])
         self.assertIn('risk_events=if(risk_index=="notable", 0, n)', built['overview_risk'])
+        # The claimed-turn simulations run all three branch evals of their search, the two
+        # application ones on the same rows; the overview's also runs the macros' own filters.
+        for name, source in (('overview_claimed', 'ds_overview'), ('timeline_claimed', 'ds_timeline')):
+            query = own_query(self.ds, source)
+            for macro in ('genai_duo_auth_events', 'genai_identity_activity_events', 'genai_identity_claimed_events'):
+                self.assertIn(branch_eval(query, macro), built[name], (name, macro))
+            self.assertEqual(built[name].count('appendpipe [ where isnull(fork)'), 2, name)
+        self.assertEqual(field_filter(ACTIVITY_EVENTS),
+                         '(gen_ai.identity.verified="true" OR gen_ai.audit.action="identity_*")')
+        self.assertEqual(field_filter(CLAIMED_EVENTS),
+                         'gen_ai.operation.name="chat" NOT gen_ai.identity.verified="true"')
+        for definition in (ACTIVITY_EVENTS, CLAIMED_EVENTS):
+            self.assertIn(' | search %s | eval ' % field_filter(definition), built['overview_claimed'])
+            self.assertNotIn(' | search %s | eval ' % field_filter(definition), built['timeline_claimed'])
+        self.assertIn('sum(claimed) as claimed_not_verified', built['overview_claimed'])
+        self.assertIn('| where duo_signins>0 OR app_events>0 ', built['overview_claimed'])
+        self.assertIn('OR activity=="%s", 0, 1))) as in_feed by identity_key | where in_feed==1 ' % CLAIMED,
+                      built['timeline_claimed'])
         self.assertIn('| addinfo | eval span=', built['timeline_risk'])
         # The application rows get this branch's props text, not a copy of it.
         props = read_conf('props.conf')['gen_ai:json']
