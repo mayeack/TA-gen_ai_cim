@@ -2014,7 +2014,7 @@ range.
 
 ## Version History
 
-### v1.9.0 (unreleased - tag after the Duo feed is verified on a running splunkd)
+### v1.9.0 (2026-11-17)
 
 **Cisco Duo identity feed for ES and UEBA** (everything new ships off; see
 [Cisco Duo identity feed](#cisco-duo-identity-feed-v190))
@@ -2590,7 +2590,7 @@ range.
   Not exercised: the UEBA pages (the instance runs ES Essentials), a search
   head cluster, and `tools/show_postdeploy.py --duo` against any real stack.
 
-### v1.8.0 (unreleased - tag after real PseudoCo Assistant 4.23.0 events fill the identity fields)
+### v1.8.0 (2026-11-07; never tagged, first released in v1.9.0)
 
 **AI Trust Lab 5: "Verify: Cisco Identity Intelligence"**
 
