@@ -274,8 +274,9 @@ index=notable search_name="AI Governance - Duo Denial Burst to Blocked AI Turn C
 
 No row there is expected while the stack holds no identity events of PseudoCo
 Assistant for the victim: the Duo input backfills its history into a new
-stack, the assistant's HEC feed does not, and nothing in the TA sends those
-events again. Whether they are in the stack:
+stack, the assistant's HEC feed does not. `tools/staged_resend.py` copies those
+events into a stack that was created later (see "T-1: copy the staged
+assistant events into the stack" below). Whether they are in the stack:
 
 ```spl
 `genai_identity_activity_events`
@@ -295,6 +296,34 @@ The joined finding needs all three: a staged burst above, an
 the joined rule raises nothing on this stack and *Identity Activity* reads 0
 for the victim's sign-ins and turns, whatever the Duo feed shows.
 
+## T-1: copy the staged assistant events into the stack
+
+PseudoCo Assistant sends each event once, to the HEC destinations it has at
+that moment, so a stack created after the staging holds none of the victim's
+application sign-ins or AI turns. `tools/staged_resend.py` copies them from the
+Splunk that does hold them. `tools/staged-resend-runbook.md` is the full
+procedure; in short:
+
+1. **Once, after the staging:** `export` reads the staged events from the
+   facilitator's Splunk into a bundle file, and `review --approve` records that
+   you looked at what it holds. The bundle carries whole events, prompt text
+   and client address included: keep it out of any repository.
+2. **Per stack, after `--out` and `--duo` have run there:** `send` copies the
+   bundle over HEC with each event's original time, host, source and text, and
+   marks every copy with the indexed fields `resend`, `resend_bundle` and
+   `resend_orig_indextime`. It refuses while the joined rule is off or the Duo
+   half is not in the stack yet, sends one event first and continues only if
+   that one arrived unchanged, and never sends an event the stack already
+   holds.
+3. **Then:** `verify` checks every copy and waits for the joined finding.
+
+```bash
+python3 tools/staged_resend.py send --bundle <bundle.json> --stack https://<stack>.splunkcloud.com --hec-file stack.json
+python3 tools/staged_resend.py verify --bundle <bundle.json> --stack https://<stack>.splunkcloud.com
+```
+
+A copy cannot be taken back: the tool cannot delete from an index.
+
 ## T-1: is the spray that named the victim in the stack?
 
 *Identity Activity* (TA-gen_ai_cim 1.9.0) counts a prompt-injection spray that
@@ -309,9 +338,9 @@ own stack:
    moment. A stack created after the staging has none of them, so
    `claimed_not_verified`, `ai_turns` and `app_signins` all read 0 there for
    the staged days, whatever the Duo feed backfills, unless those events are
-   sent to it as well. Nothing in the TA does that. Each event must arrive
-   once, with its original time: the view counts events and does not drop a
-   second copy.
+   sent to it as well. `tools/staged_resend.py` does that, once per event and
+   with its original time, which matters here: the view counts events and
+   does not drop a second copy.
 3. **The victim has a Duo sign-in or an application identity event in the
    view's time range** (default: the last 14 days), and the spray falls in it
    too. A name that is only claimed gets no row.

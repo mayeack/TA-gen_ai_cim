@@ -2192,7 +2192,7 @@ class DocsTests(StackCase):
             self.assertIn(needle, application)
         self.assertNotRegex(buckets + application, r'\bindex\s*=|\bsourcetype\s*=')     # contract macros only
         flat = re.sub(r'\s+', ' ', section)
-        for needle in ("the assistant's HEC feed does not", 'nothing in the TA sends those events again',
+        for needle in ("the assistant's HEC feed does not", '`tools/staged_resend.py` copies those events into a stack',
                        'its last step (D8) says whether every burst and chain that is indexed was raised'):
             self.assertIn(needle, flat)
         # The ids the findings search prints are the ids D8 compares.

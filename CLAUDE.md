@@ -155,6 +155,36 @@ ML detections, and a ServiceNow AI Case Management integration.
     test, and a "bad command line" test patches `seed.http_request` to raise,
     so "before any request" is asserted and not assumed.
   - Nothing in it has run against a real Splunk Cloud stack, ACS or Duo.
+- **The staged-event re-send** (`tools/staged_resend.py`, 2026-11-17;
+  `export`, `review`, `send`, `verify`; procedure in
+  `tools/staged-resend-runbook.md`). PseudoCo Assistant sends each event
+  once, so a stack created after a scenario was staged gets its sign-ins and
+  AI turns only through this tool. Rules to keep:
+  - A copy is the original event: same `_time`, host, source, sourcetype,
+    index and `log_type`, and the event text spliced in as text, never parsed
+    and written out again. The only mark is three HEC indexed fields
+    (`resend`, `resend_bundle`, `resend_orig_indextime`); nothing in
+    `default/`, `bin/` or `lookups/` may read them, and no `fields.conf`
+    stanza declares them (a test fails if either changes).
+  - An event is identified by its body's own id. `send` never sends what the
+    stack already holds, writes its ledger line before each request, sends one
+    canary event first, and never sends again after an answer it cannot
+    class: that run ends with exit 3 and the ids stay held.
+  - The bundle and its ledger hold whole events (prompt text, client
+    address): mode 0600, never inside a git tree, never in a fixture. Tests
+    and docs use persona names, `@corp.test` and RFC 5737 addresses.
+  - No option takes a secret. The HEC token comes from the 0600 file
+    `show_postdeploy.py --out` writes, or a named environment variable;
+    nothing prints it.
+  - Tested against loopback fakes only (`tools/tests/test_staged_resend.py`,
+    `fake_resend_stack.py`); `tools/tests/staged_resend_scratch_e2e.py` is the
+    opt-in run against a dev Splunk and a scratch index. It has never run
+    against a Splunk Cloud stack.
+- `show_postdeploy.py` reads a HEC token by name and from beside `spec`
+  (ACS answers a create with 202 and the name only; `tools/lab5_steps.py`
+  `read_hec_token` / `wait_hec_token`, `tools/tests/test_show_postdeploy_hec.py`),
+  and `--stack` may name the management port for a dev Splunk
+  (`https://localhost:8090`, with `--skip-acs`).
 - `elements/`, `README/` — internal docs, excluded from the package, except
   `README/*.conf.spec` (top level only), which Splunk reads from there and which
   therefore ship: `README/inputs.conf.spec` (the `ta_gen_ai_cim_duo` scheme)
@@ -582,7 +612,7 @@ after `package.sh` to enforce the mechanical rules. Offline tests:
 PYTHONPATH=tools/soar/tests/phantom_shim /opt/splunk104/bin/splunk cmd python3.13 \
     -m unittest discover -s tools/soar/tests            # seeder + both SOAR apps
 python3 -m unittest discover -s tools/identity/tests   # Lab 5 persona rows
-python3 -m unittest discover -s tools/tests             # Lab 5 + Duo conf, Duo account, packaging, the Duo stack tool (+ live SPL with SPLUNK_TEST_*)
+python3 -m unittest discover -s tools/tests             # Lab 5 + Duo conf, Duo account, packaging, the Duo stack tool, the staged-event re-send (+ live SPL with SPLUNK_TEST_*)
 python3 -m unittest discover -s tools/duo/tests          # Duo client + modular input vs fake Duo (also runs under splunk cmd python3.9 / python3.13)
 /opt/splunk104/bin/splunk cmd python3.13 -m unittest discover -s tools/tests -p 'test_duo_account.py'  # + the real splunk.admin round trip
 python3 tools/tests/fixtures/duo_spl_gen.py --check     # Duo SPL fixtures are current (like gen_personas.py --check)

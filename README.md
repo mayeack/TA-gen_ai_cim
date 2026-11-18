@@ -1895,9 +1895,10 @@ show it above 0 for the persona, on the stack the attendee looks at:
    backfills its history into a new stack; the application's HEC feed does
    not. On a stack created after the staging, `claimed_not_verified`,
    `ai_turns` and `app_signins` all read 0 for the staged days unless those
-   events are sent to that stack as well (nothing in the TA does that). Send
-   each event once, with its original time: unlike the joined rule, the view
-   counts events and does not drop a second copy.
+   events are sent to that stack as well. `tools/staged_resend.py` does that
+   (`tools/staged-resend-runbook.md`): each event once, with its original
+   time. That matters because, unlike the joined rule, the view counts events
+   and does not drop a second copy.
 3. The spray, and a Duo sign-in or an application identity event of the
    persona, fall inside the time range of the view (default: the last 14
    days).
@@ -2013,6 +2014,24 @@ range.
 ---
 
 ## Version History
+
+### Unreleased (repo tooling after v1.9.0; the packaged add-on is unchanged)
+
+- ADDED (dev tooling): `tools/staged_resend.py` (`export`, `review`, `send`,
+  `verify`) copies staged PseudoCo Assistant events into a stack that was
+  created after they were sent, with each event's original time, host, source
+  and text, marked with the indexed fields `resend`, `resend_bundle` and
+  `resend_orig_indextime`. Without it the joined rule raises nothing on such a
+  stack and *Identity Activity* reads 0 for application sign-ins and AI turns.
+  Procedure: `tools/staged-resend-runbook.md`. Tested against loopback fakes;
+  never run against a real HEC or a Splunk Cloud stack.
+- FIXED (dev tooling): `tools/show_postdeploy.py` looked for a stack's HEC
+  token inside `spec` and in the create answer. ACS returns it beside `spec`,
+  and only from a GET once the token exists, so `--out` wrote no file on a real
+  stack. Both HEC steps now read the token by name and wait for it. Checked
+  against Splunk's ACS documentation, not against a real stack.
+- CHANGED (dev tooling): `--stack` may name the management port, so the stack
+  tools can be pointed at a dev Splunk (`https://localhost:8090 --skip-acs`).
 
 ### v1.9.0 (2026-11-17)
 

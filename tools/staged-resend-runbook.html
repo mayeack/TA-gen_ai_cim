@@ -1,0 +1,1372 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Staged events re-send runbook: copying a staged scenario into a stack created later</title>
+<style>
+:root {
+  --bg: #ffffff; --fg: #1c1e21; --muted: #5c6370; --border: #d7dae0;
+  --code-bg: #f5f6f8; --accent: #0b5fff; --thead: #f0f2f5;
+  --quote-bg: #fff8e6; --quote-br: #e0a800;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a; --fg: #e4e6eb; --muted: #9aa0a6; --border: #333740;
+    --code-bg: #1c1f24; --accent: #5b9bff; --thead: #1f232a;
+    --quote-bg: #2a2415; --quote-br: #c99a00;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14161a; --fg: #e4e6eb; --muted: #9aa0a6; --border: #333740;
+  --code-bg: #1c1f24; --accent: #5b9bff; --thead: #1f232a;
+  --quote-bg: #2a2415; --quote-br: #c99a00;
+}
+:root[data-theme="light"] {
+  --bg: #ffffff; --fg: #1c1e21; --muted: #5c6370; --border: #d7dae0;
+  --code-bg: #f5f6f8; --accent: #0b5fff; --thead: #f0f2f5;
+  --quote-bg: #fff8e6; --quote-br: #e0a800;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); margin: 0;
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+  padding: 2.5rem 1.25rem 5rem;
+}
+main { max-width: 62rem; margin: 0 auto; }
+h1, h2, h3, h4 { line-height: 1.25; margin: 2.2rem 0 .85rem; font-weight: 650; }
+h1 { font-size: 2rem; margin-top: 0; letter-spacing: -.02em; }
+h2 { font-size: 1.45rem; padding-bottom: .35rem; border-bottom: 1px solid var(--border); }
+h3 { font-size: 1.15rem; }
+h4 { font-size: 1rem; color: var(--muted); }
+p, ul, ol { margin: 0 0 1rem; }
+li { margin: .3rem 0; }
+a { color: var(--accent); }
+hr { border: 0; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+code {
+  background: var(--code-bg); padding: .15em .4em; border-radius: 4px;
+  font: .875em/1.5 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: .9rem 1rem; overflow-x: auto; margin: 0 0 1.2rem;
+}
+pre code { background: none; padding: 0; font-size: .85em; }
+.table-wrap { overflow-x: auto; margin: 0 0 1.3rem; }
+table { border-collapse: collapse; width: 100%; font-size: .93em; }
+th, td { border: 1px solid var(--border); padding: .5rem .7rem; text-align: left; vertical-align: top; }
+th { background: var(--thead); font-weight: 620; }
+blockquote {
+  margin: 0 0 1.2rem; padding: .75rem 1rem; background: var(--quote-bg);
+  border-left: 4px solid var(--quote-br); border-radius: 0 6px 6px 0;
+}
+blockquote p:last-child { margin-bottom: 0; }
+img { max-width: 100%; }
+input[type=checkbox] { margin-right: .5rem; }
+</style>
+</head>
+<body>
+<main>
+<h1 id="staged-events-re-send-runbook-copying-a-staged-scenario-into-a-stack-created-later">Staged events re-send runbook: copying a staged scenario into a stack created later</h1>
+<p><code>tools/staged_resend.py</code> copies the PseudoCo Assistant events of one staged
+scenario from the facilitator's Splunk into a Splunk stack that did not exist
+when the scenario was staged. The Cisco Duo input backfills its own history
+into a new stack; the assistant's HEC feed does not. Without this copy a late
+stack has the Duo half of a takeover chain and none of the application half,
+so the joined rule never raises its finding and <em>Identity Activity</em> shows no
+application sign-ins or AI turns for the persona.</p>
+<p>The copy is verbatim: each event keeps its text, time, host, source,
+sourcetype, index and <code>log_type</code>, and gets three label fields that say it is a
+copy (see <a href="#the-label">The label</a>).</p>
+<p>Run it from a checkout of the TA (<code>tools/</code> is not in the package). Dev-only
+tooling, for room and test stacks. Never on a customer stack.</p>
+<p><strong>Read this first.</strong> A sent event cannot be taken back: the tool cannot delete
+from an index (see <a href="#what-cannot-be-undone">What cannot be undone</a>). Nothing in
+it has run against a real Splunk Cloud stack, ACS or a real HEC; the first room
+stack is the first real proof unless the scratch end-to-end has been run on a
+dev Splunk first.</p>
+<p>Contents: <a href="#what-it-does-in-four-commands">the four commands</a>,
+<a href="#the-order-on-a-new-stack">the order</a>,
+<a href="#secrets-where-each-one-comes-from">secrets</a>,
+<a href="#export-read-the-scenario-into-a-bundle-once"><code>export</code></a>,
+<a href="#review-read-what-will-be-sent-then-approve-it"><code>review</code></a>,
+<a href="#send-copy-the-bundle-into-one-stack"><code>send</code></a>,
+<a href="#the-label">the label</a>,
+<a href="#verify-prove-the-copy-and-the-finding"><code>verify</code></a>,
+<a href="#checking-by-hand">checking by hand</a>,
+<a href="#what-cannot-be-undone">what cannot be undone</a>,
+<a href="#deadlines">deadlines</a>,
+<a href="#before-the-first-room-stack">before the first room stack</a>,
+<a href="#one-stack-start-to-finish">one stack, start to finish</a>,
+<a href="#what-has-not-been-proven">what has not been proven</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Word</th>
+<th>Meaning here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>facilitator's Splunk</td>
+<td>the Splunk that received the scenario live, when it was staged. The source of the copy</td>
+</tr>
+<tr>
+<td>stack</td>
+<td>a Splunk Cloud (Splunk Show) stack created later. The target</td>
+</tr>
+<tr>
+<td>persona</td>
+<td>a lab identity such as <code>nina.osei</code>, from <code>lookups/pseudoco_identity_personas.csv</code></td>
+</tr>
+<tr>
+<td>host label</td>
+<td>the <code>host</code> value the assistant's events carry (<code>l5-dev</code> for the dev copy), not a machine name</td>
+</tr>
+<tr>
+<td>bundle</td>
+<td>the file <code>export</code> writes: the events, their hashes and the expected results</td>
+</tr>
+<tr>
+<td>ledger</td>
+<td>the file <code>send</code> keeps beside the bundle: what was handed to which stack</td>
+</tr>
+<tr>
+<td>canary</td>
+<td>the one event <code>send</code> sends first and reads back before the rest</td>
+</tr>
+<tr>
+<td>chain</td>
+<td>Duo denial burst, then application sign-in, then blocked AI turn, for one identity</td>
+</tr>
+<tr>
+<td>joined rule</td>
+<td><em>AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule</em>, which raises one finding per chain</td>
+</tr>
+</tbody>
+</table>
+<h2 id="what-it-does-in-four-commands">What it does, in four commands</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Reads</th>
+<th>Writes</th>
+<th>Where it runs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>export</code></td>
+<td>the facilitator's Splunk (port 8089), once</td>
+<td>a bundle file, mode 0600</td>
+<td>the facilitator's Mac</td>
+</tr>
+<tr>
+<td><code>review</code></td>
+<td>the bundle</td>
+<td>an approval stamp in the bundle</td>
+<td>the facilitator's Mac</td>
+</tr>
+<tr>
+<td><code>send</code></td>
+<td>the bundle, the stack's port 8089</td>
+<td>events to the stack's HEC, a ledger beside the bundle</td>
+<td>per stack</td>
+</tr>
+<tr>
+<td><code>verify</code></td>
+<td>the bundle, the ledger, the stack's port 8089</td>
+<td>nothing</td>
+<td>per stack</td>
+</tr>
+</tbody>
+</table>
+<p><code>export</code> is done once per scenario. <code>send</code> and <code>verify</code> read only the bundle,
+so the facilitator's Splunk can be off at room time, and every stack gets the
+same reviewed bytes.</p>
+<p>Exit codes of every command: <code>0</code> all checks passed (or nothing to do), <code>1</code> a
+check failed, <code>2</code> wrong usage or a refused input (nothing was sent), <code>3</code>
+delivery unknown (something was sent and the tool cannot prove the stack took
+it; see <a href="#delivery-unknown-exit-3">Delivery unknown</a>).</p>
+<h2 id="the-order-on-a-new-stack">The order on a new stack</h2>
+<ol>
+<li><code>show_postdeploy.py --stack &lt;url&gt; --out &lt;stack&gt;.json</code>: the index
+   <code>gen_ai_log</code>, the HEC token, the base detections. <code>--out</code> is where <code>send</code>
+   gets the HEC URL and token from.</li>
+<li><code>show_postdeploy.py --stack &lt;url&gt; --duo ...</code>: the Duo feed. It enables both
+   Duo rules <strong>before</strong> it creates the input (<code>tools/lab5-identity-runbook.md</code>,
+   <code>--duo</code>). Wait for the first poll, then run <code>--duo</code> once more and read its
+   last step (D8).</li>
+<li><code>staged_resend.py send</code>: the copy.</li>
+<li><code>staged_resend.py verify</code>: the proof, and the finding.</li>
+</ol>
+<p><code>export</code> and <code>review</code> come before all of this, once, on the facilitator's Mac.</p>
+<p><strong>Why this order.</strong> The joined rule, <em>AI Governance - Duo Denial Burst to
+Blocked AI Turn Correlation - Rule</em>, judges an event once, in the scheduled run
+after the event is indexed, however old the event is. A chain (Duo denial
+burst, application sign-in, blocked AI turn) is raised in the run that indexes
+its last missing step. So the rule must be on and running before the last
+piece arrives. Measured on the shipped rule text:</p>
+<table>
+<thead>
+<tr>
+<th>What arrives, and when</th>
+<th>Findings</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Duo events and the copy in one 5-minute slot</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Duo events first, the copy now</td>
+<td>1</td>
+</tr>
+<tr>
+<td>the copy first, Duo events now</td>
+<td>1</td>
+</tr>
+<tr>
+<td>sign-in record in an earlier slot, blocked turn now</td>
+<td>1</td>
+</tr>
+<tr>
+<td>blocked turn in an earlier slot, sign-in record now</td>
+<td>1</td>
+</tr>
+<tr>
+<td>the copy twice in one slot</td>
+<td>1, <code>blocked_turns</code> 1</td>
+</tr>
+<tr>
+<td>everything was indexed before the rule first ran</td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td>the copy only, no Duo events</td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td>the stack already had the events live, a copy arrives</td>
+<td>0</td>
+</tr>
+<tr>
+<td>only Duo's success record, or only an allowed turn, is new</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p>The rows with 0 in bold are the ones the order prevents. That is why <code>send</code>
+refuses when the joined rule is off or has not run (step R5) and when the Duo
+half of the sign-ins is not in the stack yet (step R6).</p>
+<p>Other rules and the copy:</p>
+<ul>
+<li>The Duo rule, <em>AI Governance - Duo Authentication Fraud or Denial Burst -
+  Rule</em>, reads Duo's events only. No order of sending reaches it.</li>
+<li>The prompt-injection rules judge by event time and need an event from the
+  last 5 minutes. <code>send</code> refuses a bundle whose newest event is under 15
+  minutes old, so a copy never raises them: a stack that gets the copy gets
+  the chain finding, not the facilitator's prompt-injection findings.</li>
+<li><strong>The Lab 5 rule can fire.</strong> <em>AI Governance - Compromised Identity AI Attack
+  Correlation - Rule</em> reads AI Defense blocks of the last 24 hours by event
+  time. If the copied blocked turns are under 24 hours old and Cisco Identity
+  Intelligence evidence for the same persona arrives in that time, the Lab 5
+  rule raises its own finding. That is correct behaviour, not a fault of the
+  copy; expect it on a stack that has Lab 5 enabled.</li>
+<li>Scoring does not score a copy (it reads by event time), so the scoring
+  dashboards stay empty for the copied turns.</li>
+</ul>
+<h2 id="secrets-where-each-one-comes-from">Secrets: where each one comes from</h2>
+<p>No option of <code>staged_resend.py</code> takes a secret, and no secret or part of one
+is printed, written to the bundle or written to the ledger. Output, the ledger
+and <code>--dry-run</code> show ids, hashes, times and counts only: never an event body,
+an address or a Duo transaction id.</p>
+<table>
+<thead>
+<tr>
+<th>Secret</th>
+<th>Used by</th>
+<th>Comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>password or token of the facilitator's Splunk</td>
+<td><code>export</code></td>
+<td><code>STAGED_RESEND_SOURCE_PASSWORD</code>, or <code>STAGED_RESEND_SOURCE_TOKEN</code></td>
+</tr>
+<tr>
+<td>admin password or token of the stack (port 8089)</td>
+<td><code>send</code>, <code>verify</code></td>
+<td><code>SPLUNK_ADMIN_PASSWORD</code>, or <code>SPLUNK_ADMIN_TOKEN</code></td>
+</tr>
+<tr>
+<td>the stack's HEC token</td>
+<td><code>send</code></td>
+<td>the 0600 file named by <code>--hec-file</code>, or <code>STAGED_RESEND_HEC_TOKEN</code> together with <code>--hec-url</code></td>
+</tr>
+</tbody>
+</table>
+<p>The two Splunk credentials have different names on purpose, so the
+facilitator's password can never be sent to a stack, or a stack's to the
+facilitator's Splunk.</p>
+<p>Nothing ties <code>SPLUNK_ADMIN_PASSWORD</code> (or <code>SPLUNK_ADMIN_TOKEN</code>) to one stack:
+<code>send</code> and <code>verify</code> send whatever it holds, as Basic or Bearer auth, to the
+stack named by <code>--stack</code>. It must hold the password of <strong>that</strong> stack. Read it
+at the start of each stack and unset it at the end, before the next stack, so
+one stack's admin password is never sent to another.</p>
+<p><strong>User names</strong> are not secrets and are options. A password needs one:
+<code>--source-username</code> on <code>export</code> and <code>--username</code> on <code>send</code> and <code>verify</code>, both
+<code>admin</code> unless given (the same default as <code>show_postdeploy.py --username</code>). A
+token needs no user name. If the stack's admin account is not called <code>admin</code>
+and <code>--username</code> is left out, step R3 stops with HTTP 401 before anything is
+sent.</p>
+<p><strong>The HEC file</strong> is the one <code>show_postdeploy.py --out</code> writes: mode 0600, with
+<code>hec_url</code>, <code>hec_token</code>, <code>index</code> and <code>sourcetype</code>. <code>send</code> refuses it unless it
+is 0600, holds <code>hec_url</code> and <code>hec_token</code>, names the bundle's index, and its
+HEC host belongs to the stack given by <code>--stack</code> (step R2). A file written by
+a <code>--lab5</code> run holds the Cisco Identity Intelligence backfill token; <code>send</code>
+refuses it and says that this is what it was given.</p>
+<p><strong>Known gap in <code>--out</code>.</strong> On a real Splunk Cloud stack the current
+<code>show_postdeploy.py</code> may write no file: its HEC step reads the token from a
+place where ACS does not put it. It then prints <code>No HEC token returned</code>. Until
+that step is fixed (a later change, not part of this tool), take the token of
+the HEC input <code>demobot-ai-defense</code> from the stack and use the second form:</p>
+<pre><code class="language-bash">read -rs STAGED_RESEND_HEC_TOKEN &amp;&amp; export STAGED_RESEND_HEC_TOKEN
+python3 tools/staged_resend.py send --bundle ... --stack ... \
+    --hec-url https://http-inputs-&lt;stack&gt;.splunkcloud.com/services/collector/event
+</code></pre>
+<p><code>read -rs</code> keeps the token out of the shell history and off the screen. Always
+run <code>show_postdeploy.py</code> with <code>--out</code>: without it, a token it does find is
+printed in full.</p>
+<p><strong>Certificates.</strong> Every connection is verified by default, and the override is
+named in the output whenever one is used:</p>
+<table>
+<thead>
+<tr>
+<th>Connection</th>
+<th>Verified against</th>
+<th>Override</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>the facilitator's Splunk (<code>export</code>)</td>
+<td>the system trust store, or <code>--ca-file</code></td>
+<td><code>--no-verify-source</code>; a loopback address (<code>127.0.0.1</code>, <code>localhost</code>) is not verified</td>
+</tr>
+<tr>
+<td>the stack's port 8089 (<code>send</code>, <code>verify</code>)</td>
+<td>the system trust store, or <code>--ca-file</code></td>
+<td><code>--no-verify-splunkd</code></td>
+</tr>
+<tr>
+<td>the stack's HEC (<code>send</code>)</td>
+<td>the system trust store, or <code>--ca-file</code></td>
+<td>none: the HEC token goes unverified only to a loopback address</td>
+</tr>
+</tbody>
+</table>
+<p><code>--ca-file</code> names a CA bundle that is trusted in addition to the system trust
+store. On <code>send</code> it applies to the stack's port 8089 and to its HEC alike, on
+<code>verify</code> to port 8089. <code>show_postdeploy.py</code> does not verify port 8089 outside
+its <code>--duo</code> mode, so a stack that it configured without complaint can still be
+refused here: then pass the stack's CA with <code>--ca-file</code>, or name the risk with
+<code>--no-verify-splunkd</code>.</p>
+<p>Plain <code>http://</code> is refused for every address that is not loopback. A redirect
+(any 3xx) from a Splunk server is a failed call and is never followed: a
+followed redirect would carry the password to another server.</p>
+<h2 id="export-read-the-scenario-into-a-bundle-once"><code>export</code>: read the scenario into a bundle (once)</h2>
+<pre><code>staged_resend.py export --source URL --host H --persona P --from ISO --to ISO --bundle PATH
+    [--source-username admin] [--index gen_ai_log] [--event-source demobot:hec]
+    [--exact-window] [--allow-partial-session] [--allow-unlisted-persona]
+    [--check-logs DIR] [--list-only] [--no-verify-source | --ca-file P]
+</code></pre>
+<p>Nothing is guessed: the operator names the host label, the persona and the
+window. The index <code>gen_ai_log</code> and the source <code>demobot:hec</code> are defaults, and
+the run prints them.</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--source</code></td>
+<td>the facilitator's splunkd, its <strong>management</strong> port (8089 unless changed), not Splunk Web</td>
+</tr>
+<tr>
+<td><code>--host</code></td>
+<td>the <code>host</code> label the staged events carry; repeatable</td>
+</tr>
+<tr>
+<td><code>--persona</code></td>
+<td>the persona's short name (<code>nina.osei</code>); repeatable</td>
+</tr>
+<tr>
+<td><code>--from</code>, <code>--to</code></td>
+<td>ISO-8601 with a UTC offset or <code>Z</code>, whole seconds; <code>--to</code> is exclusive; at most 7 days apart</td>
+</tr>
+<tr>
+<td><code>--bundle</code></td>
+<td>where to write the bundle; the path must not exist. Not needed with <code>--list-only</code></td>
+</tr>
+<tr>
+<td><code>--index</code></td>
+<td>the index the events are in, and will be sent to: <code>gen_ai_log</code>. Another index is for the scratch rehearsal only</td>
+</tr>
+<tr>
+<td><code>--event-source</code></td>
+<td>the <code>source</code> the assistant's HEC forwarder sets: <code>demobot:hec</code></td>
+</tr>
+<tr>
+<td><code>--check-logs DIR</code></td>
+<td>also compare every event with the assistant's own JSONL log in <code>DIR</code></td>
+</tr>
+<tr>
+<td><code>--list-only</code></td>
+<td>print the selection and the census and stop; no bundle is written</td>
+</tr>
+</tbody>
+</table>
+<p>Not sure of the window? Run it with <code>--list-only</code> first and read the census:
+it counts what lies before, in and after the window, on the selected host and
+on others, for the selected persona and for other identities, and it names
+nobody else.</p>
+<p><strong>Worked example</strong>, the scenario staged on 16 Nov 2026 by persona <code>nina.osei</code>
+on the dev copy whose events carry <code>host=l5-dev</code>:</p>
+<pre><code class="language-bash">read -rs STAGED_RESEND_SOURCE_PASSWORD &amp;&amp; export STAGED_RESEND_SOURCE_PASSWORD
+mkdir -p -m 700 ~/staged-bundles
+python3 tools/staged_resend.py export --source https://127.0.0.1:8089 \
+    --host l5-dev --persona nina.osei \
+    --from 2026-11-16T21:05:00-08:00 --to 2026-11-16T21:37:00-08:00 \
+    --check-logs &lt;assistant checkout&gt;/logs \
+    --bundle ~/staged-bundles/nina-takeover.bundle.json
+</code></pre>
+<p>What a good run reports for this set:</p>
+<ul>
+<li>the census of everything near the window: 4 eligible <code>demobot:audit</code> events
+  and 5 eligible <code>gen_ai:json</code> events of the selected persona on the selected
+  host, plus 5 <code>genai_scoring</code> events with no <code>log_type</code> and no user, which
+  are counted and never copied;</li>
+<li>9 events selected, 9 distinct ids, times <code>1794891919.556</code> to
+  <code>1794893804.201</code>, about 22 KB of event text;</li>
+<li>every event's SHA-256 as Splunk computed it equal to the one computed
+  locally, and with <code>--check-logs</code>, <code>9 of 9</code> equal to the assistant's log;</li>
+<li>the bundle id, of the form <code>rs-20261117-3f9a1c2b7d4e</code>: the UTC date of the
+  first event and the first 12 characters of the content digest. Exporting
+  the same selection again gives the same id.</li>
+</ul>
+<p><strong>What is eligible.</strong> An event is copied only if all of this holds: it carries
+the indexed field <code>log_type</code> (<code>governance</code>, <code>audit</code>, <code>escalation</code> or <code>error</code>);
+its source is the assistant's; its text starts with exactly one of the keys
+<code>audit_id</code>, <code>escalation_id</code>, <code>event_id</code>; its sourcetype is not a scoring one;
+it carries no re-send label and is not itself a copy; it is older than 15
+minutes; and its <code>_time</code> equals the <code>timestamp</code> in its body by the forwarder's
+own rule. Error records carry an <code>event_id</code> and are copied like the rest.</p>
+<p>The persona is matched in Python on the parsed body (<code>enduser_id</code>, else
+<code>user</code>, lowercased, the part before <code>@</code>), never by an SPL extraction, because
+the field can sit deep in a long event. The match is exact, so a spray actor
+whose name is a persona name followed by a sentence is never selected. A
+persona must be a lowercase dotted name such as <code>first.last</code>, must not start
+with <code>l5-</code> (participant accounts are never copied) and must be in
+<code>lookups/pseudoco_identity_personas.csv</code>, which lists seven personas.</p>
+<p><strong>The bundle</strong> is one JSON file created at mode 0600. It holds the events'
+whole text, which means <strong>prompt and answer text and the client address of
+whoever staged the scenario</strong>, plus the selection, the census, a SHA-256 per
+event, the expected results (<code>expect</code>) and counts of what is sensitive
+(<code>privacy</code>). It holds no credential. Keep it in a folder only you can read,
+outside any git work tree and any synced folder, and delete it when the last
+stack is done.</p>
+<p><strong>What <code>export</code> refuses.</strong> A refusal exits 2 and writes no bundle.</p>
+<table>
+<thead>
+<tr>
+<th>Refusal</th>
+<th>Why</th>
+<th>Override</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>the bundle path already exists, is a symbolic link, lies inside a git work tree, or its folder does not exist</td>
+<td>event text must never land in a file someone else can read, in a tracked file or in the package; checked before any text is read</td>
+<td>none: name a new path elsewhere</td>
+</tr>
+<tr>
+<td><code>--from</code> or <code>--to</code> has no offset, has a fraction of a second, <code>--to</code> is in the future, or the two are over 7 days apart</td>
+<td>a naive time is ambiguous; the two searches that read the window cut a fraction differently; a scenario is staged first and exported afterwards</td>
+<td>none</td>
+</tr>
+<tr>
+<td>the persona is not in <code>lookups/pseudoco_identity_personas.csv</code></td>
+<td>a typo would export nothing, or someone else</td>
+<td><code>--allow-unlisted-persona</code> (the name rules above still apply)</td>
+</tr>
+<tr>
+<td>no event of the persona lies in the window</td>
+<td>nothing to export</td>
+<td>none: check <code>--host</code>, <code>--persona</code> and the window with <code>--list-only</code></td>
+</tr>
+<tr>
+<td>an event of the persona in the window is not eligible (see <em>What is eligible</em> above)</td>
+<td>the scenario would be copied with a hole in it</td>
+<td>none</td>
+</tr>
+<tr>
+<td>Splunk's census and the tool's own count of eligible events disagree</td>
+<td>an event would be left out or added without anyone seeing it</td>
+<td>none</td>
+</tr>
+<tr>
+<td>an event of the same persona lies within 300 s outside the window</td>
+<td>the window cuts the scenario</td>
+<td><code>--exact-window</code></td>
+</tr>
+<tr>
+<td>an event that is not selected shares a session with one that is</td>
+<td>the copy would hold part of a session</td>
+<td><code>--allow-partial-session</code></td>
+</tr>
+<tr>
+<td>the window holds events from before 31 July 2026</td>
+<td>the forwarder of that time indexed body keys as fields, which a copy cannot carry, and many ids of 27 to 30 July 2026 are indexed two or three times on the facilitator's Splunk (a HEC copy beside a file-monitor copy); the message says which of the two it found</td>
+<td>none: such a window cannot be exported</td>
+</tr>
+<tr>
+<td>an id is held more than once on the facilitator's Splunk</td>
+<td>the source itself has a duplicate</td>
+<td>none</td>
+</tr>
+<tr>
+<td>an event is larger than 900,000 bytes</td>
+<td>it cannot be sent in one request</td>
+<td>none</td>
+</tr>
+<tr>
+<td>an event is under 15 minutes old</td>
+<td>it could still raise an event-time rule on the stack</td>
+<td>none: wait</td>
+</tr>
+<tr>
+<td>Splunk's SHA-256 of an event differs from the one computed locally</td>
+<td>the text changed on the way out of Splunk</td>
+<td>none</td>
+</tr>
+<tr>
+<td>with <code>--check-logs</code>: an event's hash differs from the assistant's log, or the id is not in the log</td>
+<td>the indexed event is not what the assistant wrote</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<p>A search that answers with an error stops the run. Splunk sometimes attaches
+a warning about its own start-up time to a correct answer; the presence
+search is then run again, up to twice more, and the run stops only if the
+warning is still there, with its text printed.</p>
+<h2 id="review-read-what-will-be-sent-then-approve-it"><code>review</code>: read what will be sent, then approve it</h2>
+<pre><code>staged_resend.py review --bundle PATH [--approve DIGEST12]
+</code></pre>
+<pre><code class="language-bash">python3 tools/staged_resend.py review --bundle ~/staged-bundles/nina-takeover.bundle.json
+</code></pre>
+<p>It prints one line per event (time in UTC, sourcetype, what kind of record
+it is, its size, the first 12 characters of its SHA-256, its id), then the
+privacy counts (how many events carry message text, how many carry a client
+address, how many distinct addresses those are and how many of them are
+public), the number of application sign-ins and how many of them name a Duo
+transaction, the selection, the census and the expected results, and last
+the digest with <code>approved as it is</code> or <code>NOT approved</code>. It never prints a
+body, an address or a Duo transaction id. Read it for three things:</p>
+<ol>
+<li>Is this the scenario, whole, and nothing else? For the 16 Nov set: two
+   application sign-ins, two session starts and five AI turns of which two
+   are blocked, all <code>nina.osei</code>, all <code>l5-dev</code>.</li>
+<li>Do you accept that the bodies, with the prompts and the stager's client
+   address, become readable by everyone who can search <code>gen_ai_log</code> on every
+   stack you send to? The Duo events of the same sign-ins carry the same
+   address into the stack anyway.</li>
+<li>The expected results: the row <code>send</code> and <code>verify</code> compare each stack with
+   (<code>events 9</code>, <code>identity_events 7</code>, <code>ai_turns 5</code>, <code>ai_blocked 2</code>,
+   <code>app_signins 2</code> for this set) and the chain id
+   <code>nina.osei:takeover:1794893749</code>.</li>
+</ol>
+<p>Then approve it with the 12 characters the review printed:</p>
+<pre><code class="language-bash">python3 tools/staged_resend.py review --bundle ~/staged-bundles/nina-takeover.bundle.json \
+    --approve 3f9a1c2b7d4e
+</code></pre>
+<p><code>send</code> refuses a bundle that is not approved, and one whose content no longer
+matches the approved digest. An approval covers the bytes, not a stack: one
+approval serves every stack.</p>
+<h2 id="send-copy-the-bundle-into-one-stack"><code>send</code>: copy the bundle into one stack</h2>
+<pre><code>staged_resend.py send --bundle PATH --stack URL (--hec-file PATH | --hec-url URL) [--dry-run]
+    [--username admin] [--allow-rule-off] [--without-duo] [--no-canary]
+    [--resend-unconfirmed] [--retention-days N] [--settle 180] [--wait-finding N]
+    [--ca-file P] [--no-verify-splunkd]
+</code></pre>
+<p>One run per stack, after <code>show_postdeploy.py --out</code> and <code>--duo</code> on that stack
+and after the first Duo poll is in. The machine that runs it must reach the
+stack's port 8089 as well as its HEC: every check before and after sending is
+a search on the stack.</p>
+<p><strong>Worked example.</strong> Always a dry run first. The password read here is the
+admin password of <code>&lt;stack&gt;</code>, the stack named by <code>--stack</code>:</p>
+<pre><code class="language-bash">read -rs SPLUNK_ADMIN_PASSWORD &amp;&amp; export SPLUNK_ADMIN_PASSWORD   # &lt;stack&gt;'s own admin password
+python3 tools/staged_resend.py send --bundle ~/staged-bundles/nina-takeover.bundle.json \
+    --stack https://&lt;stack&gt;.splunkcloud.com --hec-file &lt;stack&gt;.json --dry-run
+</code></pre>
+<p>When that stack is done, <code>unset SPLUNK_ADMIN_PASSWORD SPLUNK_ADMIN_TOKEN</code>
+before the next one.</p>
+<p>A dry run makes every read (steps R1 to R8 below) and prints, per id, what a
+real run would do: <code>send</code>, <code>skip</code> or stop. It posts nothing to HEC and prints
+no event text. When it reads right, run the same command without <code>--dry-run</code>,
+and add <code>--wait-finding 900</code> to have it wait for the finding as well.</p>
+<p>What a real run does, in order:</p>
+<ol>
+<li>Steps R1 to R8. Any failure stops the run before anything is sent.</li>
+<li><strong>The canary.</strong> One event goes first, alone: the earliest audit record that
+   is not a sign-in (for the 16 Nov set the session start at
+   <code>1794891951.147</code>), else the earliest event. The rest is sent only after the
+   stack returns the canary exactly once, with the same SHA-256, time, host,
+   source, sourcetype, index and <code>log_type</code>, and labelled with this bundle. If
+   the stack changed the event in any way, one event is wrong on that stack
+   and the rest was never sent. A stack can change one sourcetype and keep
+   another, so a second request then carries one event of each other
+   sourcetype and <code>log_type</code> in the bundle, and it too must come back
+   identical before any other event is sent. A kind of which a copy of this
+   bundle is on the stack already needs no canary.</li>
+<li>The rest, at most 50 events and 512 KiB in one request (the 16 Nov set is
+   one request).</li>
+<li>It polls every 10 s, up to <code>--settle</code> seconds (180), until every id is on
+   the stack once and identical.</li>
+<li>With <code>--wait-finding N</code>: it waits up to N seconds for the joined rule's
+   finding (see <a href="#verify-prove-the-copy-and-the-finding"><code>verify</code></a>).</li>
+</ol>
+<p>A second run on the same stack sends nothing: every id is found and skipped.</p>
+<h3 id="the-checks-before-sending-and-every-refusal">The checks before sending, and every refusal</h3>
+<p>All of them only read. A failed step stops the run before anything is sent
+(exit 1 or 2, never 0); the output names the step and, where there is one,
+the option that overrides it.</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What must hold</th>
+<th>Override</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>R1 bundle</td>
+<td>the file is 0600, is not a symbolic link and is not inside a git work tree; its digest and every event's SHA-256 still match; it is approved, for this digest</td>
+<td>none</td>
+</tr>
+<tr>
+<td>R2 HEC</td>
+<td>the <code>--hec-file</code> is 0600 and holds <code>hec_url</code> and <code>hec_token</code>; its index is the bundle's; the URL is https and ends <code>/services/collector/event</code>; its host belongs to the stack named by <code>--stack</code>. A <code>--lab5</code> file is refused and named as such</td>
+<td>none</td>
+</tr>
+<tr>
+<td>R3 stack</td>
+<td>splunkd on port 8089 answers and accepts the credential; the server is <strong>not</strong> the Splunk the bundle was exported from; TA-gen_ai_cim is 1.9.0 or later</td>
+<td>none</td>
+</tr>
+<tr>
+<td>R4 index and age</td>
+<td>the index exists and this account can search it; it is the index the stack's own macro <code>genai_identity_ai_events</code> reads (where the stack does not serve the macro: <code>gen_ai_log</code> only, marked NOT CHECKED); it keeps the oldest event at least 7 more days; the newest event is over 15 minutes old and the oldest under 180 days</td>
+<td>none, but see <code>--retention-days</code> below</td>
+</tr>
+<tr>
+<td>R5 rule</td>
+<td>the joined rule exists and is enabled, judges by index time on a slot exactly one cron period wide, with <code>realtime_schedule = 0</code>; its text parses on this stack; one of its last ticks (2 periods + 5 minutes, so 15 minutes) ran successfully</td>
+<td><code>--allow-rule-off</code></td>
+</tr>
+<tr>
+<td>R6 Duo half</td>
+<td>the Duo authentication of every sign-in in the bundle (the record's <code>details.duo_txid</code>) is in the stack's Duo events exactly once; the persona's Duo failures there are at least the bundle's</td>
+<td><code>--without-duo</code></td>
+</tr>
+<tr>
+<td>R7 presence and ledger</td>
+<td>no id is on the stack in a different form or more than once; no id of an earlier run is still unconfirmed</td>
+<td><code>--resend-unconfirmed</code>, for unconfirmed ids only</td>
+</tr>
+<tr>
+<td>R8 HEC health</td>
+<td><code>GET /services/collector/health</code> on the HEC host answers healthy</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<p>Notes on single steps:</p>
+<ul>
+<li><strong>R3, wrong account name.</strong> HTTP 401 here usually means the admin account
+  is not called <code>admin</code>: pass <code>--username</code>.</li>
+<li><strong>R4, the index.</strong> The tool asks the search tier whether the index is there
+  (<code>| eventcount summarize=false index="gen_ai_log"</code> must return a row). An
+  index this account cannot search looks empty to every later check, and
+  "empty" would mean "send": that is why this step has no override. <code>--index</code>
+  at export exists for a scratch index on a dev Splunk; on a stack whose
+  macro reads <code>gen_ai_log</code>, a bundle for any other index is refused, because
+  <em>Identity Activity</em> and the rule would never read the copy.</li>
+<li><strong>R4, a macro the stack does not serve.</strong> Where the stack does not serve
+  the definition of <code>genai_identity_ai_events</code> (<code>configs/conf-macros</code>
+  unreadable, likely on a Cloud search head), the step cannot prove which
+  index the macro reads. It then says <code>NOT CHECKED: which index ... reads</code>,
+  accepts a <code>gen_ai_log</code> bundle on the shipped definition, and refuses a
+  bundle for any other index. <code>verify</code> reads the copies through the macro,
+  so V3 and V5 show whether the stack really reads them.</li>
+<li><strong>R4, retention.</strong> It is read from the stack's <code>data/indexes</code>. Where a
+  stack does not serve that endpoint (403 or 404), the step says so and
+  stops; give the index's searchable days yourself with <code>--retention-days N</code>
+  (90 for an index <code>show_postdeploy.py</code> created). The output then says the
+  retention was stated by the operator, not read.</li>
+<li><strong>R5, what counts as a run.</strong> Runs are judged per tick. A tick the
+  scheduler first deferred (<code>continued</code>) and then ran is a successful tick,
+  reported as lag. A rule whose runs fail writes no status line at all; the
+  tool reads the scheduler's error lines too and prints the rule's error
+  message. A stack whose TA build has no joined rule fails here with "no
+  such rule": the rule arrived with the Duo work of TA 1.9.0, and a 1.9.0
+  build from before it does not have it.</li>
+<li><strong>R5, wait for a tick.</strong> Straight after <code>--duo</code> enabled the rule, it has no
+  run yet. Wait for the next 5-minute tick plus about two minutes and run
+  <code>send</code> again; do not reach for the override.</li>
+<li><strong>R6, Duo not in yet.</strong> With a cron poll schedule the first Duo poll runs at
+  the stack's next scheduled minute. Run <code>show_postdeploy.py --duo</code> again and
+  read D7 and D8, then <code>send</code> again.</li>
+</ul>
+<p><strong>What each override costs.</strong> Every override is named in the output of the
+run that used it.</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>It lets through</th>
+<th>The price</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--allow-rule-off</code></td>
+<td>a stack whose joined rule is off, absent or has not run</td>
+<td>the copy is indexed with no run to judge it, so the schedule never raises the chain ("everything indexed earlier: 0"). Use it only when the events are wanted for the dashboards alone, or when you will judge that index time by hand afterwards (README, <em>Judging history that is already indexed</em>)</td>
+</tr>
+<tr>
+<td><code>--without-duo</code></td>
+<td>a stack that does not hold the Duo half</td>
+<td>no chain can form until Duo's events arrive; if they never do (another tenant, a lookback that is too short), the copy stays without its finding. The finding's <code>signin_duo</code> reads <code>none indexed</code> when only the sign-in's own Duo record is missing</td>
+</tr>
+<tr>
+<td><code>--no-canary</code></td>
+<td>sending everything in the first request</td>
+<td>a stack that rewrites events gets all of them wrong, not one</td>
+</tr>
+<tr>
+<td><code>--resend-unconfirmed</code></td>
+<td>ids an earlier run handed to HEC, at least 3600 s ago, that the stack still does not show</td>
+<td>if the stack did take them and is only slow, each becomes a duplicate for good</td>
+</tr>
+<tr>
+<td><code>--retention-days N</code></td>
+<td>an index whose retention the stack will not report</td>
+<td>the 7-day margin rests on your number</td>
+</tr>
+<tr>
+<td><code>--no-verify-splunkd</code></td>
+<td>port 8089 with a certificate that does not verify</td>
+<td>the admin credential goes to a server that was not authenticated</td>
+</tr>
+<tr>
+<td><code>--exact-window</code>, <code>--allow-partial-session</code>, <code>--allow-unlisted-persona</code>, <code>--no-verify-source</code></td>
+<td>see <a href="#export-read-the-scenario-into-a-bundle-once"><code>export</code></a></td>
+<td>a scenario cut in two, or a persona nobody listed</td>
+</tr>
+</tbody>
+</table>
+<h3 id="sent-once-how-the-tool-decides-per-id">Sent once: how the tool decides per id</h3>
+<p>The key is the id that opens each event's text (<code>audit_id</code>, <code>escalation_id</code>
+or <code>event_id</code>). Before anything is sent, and again after, one search (over
+all time, 40 ids at a time) asks the stack what it holds for each id:</p>
+<table>
+<thead>
+<tr>
+<th>The stack holds</th>
+<th>Decision</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>nothing</td>
+<td>send</td>
+</tr>
+<tr>
+<td>one copy, identical (SHA-256, time to the millisecond, host, source, sourcetype, index, <code>log_type</code>), without a label</td>
+<td>skip: the stack got it live</td>
+</tr>
+<tr>
+<td>the same, with a label (this bundle's or another bundle's)</td>
+<td>skip: it was re-sent before</td>
+</tr>
+<tr>
+<td>one copy that differs in any of those</td>
+<td><strong>conflict</strong>: stop, nothing is sent</td>
+</tr>
+<tr>
+<td>more than one copy</td>
+<td><strong>duplicate</strong>: stop, nothing is sent</td>
+</tr>
+</tbody>
+</table>
+<p>"Identical" includes the sourcetype. A stack that received the same events
+live through a HEC destination that writes one sourcetype for everything
+holds events that differ: that is a conflict, and the copy is not for that
+stack.</p>
+<p>Only events of the assistant's own shape count as copies. Records that merely
+quote an id do not: the scoring results, and the audit record an AI Defense
+response action (<em>Suspend user</em>, <em>Revoke session</em>, <em>Tighten guardrail</em>) writes
+into <code>gen_ai_log</code> with the turn's <code>event_id</code> in it.</p>
+<p>A search that answers with an error is a failed check, never "the stack
+holds nothing". A warning Splunk attaches to a correct answer (it warns about
+its own slow start under load) makes the tool ask again, up to twice more; a
+decision is only ever taken from an answer without a warning.</p>
+<p>A conflict or a duplicate has no override, because the tool cannot repair
+either. A stack that reaches one of them keeps what it has; see
+<a href="#what-cannot-be-undone">What cannot be undone</a>.</p>
+<h3 id="what-the-tool-does-with-hecs-answer">What the tool does with HEC's answer</h3>
+<p>A request is sent again only when the answer <strong>proves</strong> the stack took
+nothing. Everything else is treated as possibly delivered.</p>
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>The answer</th>
+<th>What the tool does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>accepted</td>
+<td>HTTP 200 with HEC code 0, 24 or 25</td>
+<td>never sends those events again</td>
+</tr>
+<tr>
+<td>not sent</td>
+<td>no connection (connect, DNS or certificate failure before the request left); exactly HTTP 503 with code 9 or 23; exactly HTTP 429 with code 26 or 27</td>
+<td>sends again after 5, 15 and 45 s, then gives up</td>
+</tr>
+<tr>
+<td>refused</td>
+<td>HTTP 401 or 403; HTTP 400 with code 5, 10, 11, 14, 16, 21 or 22; HTTP 400 with code 6, 7, 12, 13 or 15 at the first event</td>
+<td>stops; nothing of that request was indexed</td>
+</tr>
+<tr>
+<td>too large</td>
+<td>HTTP 413</td>
+<td>halves the batch and sends the halves</td>
+</tr>
+<tr>
+<td>unknown</td>
+<td>a timeout or a reset after the request left; a 503 or a 429 <strong>without</strong> one of the codes above (a proxy's answer, not HEC's); any other 5xx; a 3xx, 404 or 408; a 400 past the first event; a 200 without code 0, 24 or 25</td>
+<td><strong>never sends it again</strong>; polls the stack for <code>--settle</code> seconds; if the events do not appear, exit 3</td>
+</tr>
+</tbody>
+</table>
+<p>HEC's indexer acknowledgement is not used (Splunk Cloud offers it to Firehose
+clients only). That is why the tool asks the stack by search what it holds,
+and why it needs port 8089.</p>
+<h3 id="the-ledger">The ledger</h3>
+<p><code>send</code> keeps <code>&lt;bundle&gt;.ledger.jsonl</code> beside the bundle: mode 0600, one line
+appended per step, keyed by the stack's server GUID, by a hash of its HEC
+endpoint and index and by a hash of the <code>--stack</code> address, so one bundle and
+one ledger serve every stack. Every
+line also goes to the journal, <code>journal.jsonl</code> in the state directory
+(<code>$STAGED_RESEND_STATE_DIR</code>, else <code>~/.staged-resend</code>, created 0700): what
+every bundle sent from this machine handed over. <code>send</code> reads both and
+prints the GUID it keys on. Before each request it writes the ids it is about
+to send and forces the line to disk; only then does it post. If the run dies
+at any point after that, the next run knows those ids may be on the stack.</p>
+<p>From that line on an id is <strong>unconfirmed</strong> until the stack shows it, or until
+HEC's answer proves it took nothing (not sent, refused, too large). This is
+counted per request: a refusal of a later request (after
+<code>--resend-unconfirmed</code>, say) says nothing of an earlier one whose answer was
+unknown, so the id stays unconfirmed. The stack shows it only as the copy of
+the bundle that handed it over: a live copy, or another bundle's, leaves it
+unconfirmed, and the run ends with exit 3. Every
+later <code>send</code> to the same stack waits for unconfirmed ids and does not send
+them, whatever the earlier run's last line says and also when that line is
+missing.</p>
+<p>Rules that follow from it:</p>
+<ul>
+<li>Keep the ledger with the bundle. Never delete it, never edit it, and never
+  copy a bundle to a second machine to send from there as well: the second
+  machine has no ledger, and a stack that is slow to index would get the
+  events twice.</li>
+<li>One <code>send</code> per machine at a time. The journal is locked for the whole run,
+  so a second <code>send</code>, of this bundle or any other, cannot send beside the
+  first.</li>
+<li>A re-export of the same selection, or an overlapping one (another persona,
+  a wider window), sent from the same machine and user, holds what the first
+  bundle handed over: the journal knows those ids. Never send it from
+  another user or machine, and never point <code>$STAGED_RESEND_STATE_DIR</code>
+  elsewhere between sends.</li>
+<li>Send a bundle with the same <code>--stack</code> URL every time. Another member of
+  a search head cluster behind that address answers with another GUID; the
+  hash of the <code>--stack</code> address (and, for <code>send</code>, of the HEC endpoint) still ties
+  the lines to the stack, for <code>send</code> and <code>verify</code> alike.</li>
+<li>The ledger holds ids, hashes, times, counts and HEC's code and status.
+  It holds no token, no body and no address.</li>
+<li><code>send</code> refuses a ledger that is a symbolic link, that others can read or
+  that belongs to another user, before it reads or writes a line.</li>
+</ul>
+<h3 id="delivery-unknown-exit-3">Delivery unknown (exit 3)</h3>
+<p>Exit 3 means: a request left this machine, the answer does not prove what
+happened, and the stack did not show the events within <code>--settle</code> seconds.
+Usually the stack took them and is slow to make them searchable.</p>
+<ol>
+<li>Do <strong>not</strong> change anything and do not use an override yet.</li>
+<li>Wait a few minutes and run <code>verify</code>. If it finds every id once, the
+   delivery is confirmed: a later <code>send</code> finds the ids on the stack and
+   skips them.</li>
+<li>If ids are still missing, run <code>send</code> again. While no copy of this bundle
+   shows on the stack, it sends nothing new: the unconfirmed ids print as
+   <code>HOLD</code> and the never-attempted ones as <code>WAIT</code>, unless <code>--no-canary</code> is
+   given. It waits <code>--settle</code> seconds for the unconfirmed ids, sends none of
+   them, and ends with exit 3 while any is missing.</li>
+<li>Only when an unconfirmed id is still missing <strong>an hour</strong> after it was
+   sent does <code>--resend-unconfirmed</code> let it through. Look once more by hand
+   first (the search under <a href="#checking-by-hand">Checking by hand</a>): a
+   duplicate cannot be removed.</li>
+</ol>
+<h2 id="the-label">The label</h2>
+<p>A copy is the original event with three extra <strong>indexed fields</strong>, set through
+HEC's <code>fields</code>. The event text is not touched.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>resend</code></td>
+<td><code>true</code></td>
+<td>this event is a re-sent copy</td>
+</tr>
+<tr>
+<td><code>resend_bundle</code></td>
+<td>the bundle id, such as <code>rs-20261117-3f9a1c2b7d4e</code></td>
+<td>exactly which reviewed bytes the stack holds</td>
+</tr>
+<tr>
+<td><code>resend_orig_indextime</code></td>
+<td>epoch seconds</td>
+<td>when the facilitator's Splunk indexed the original</td>
+</tr>
+</tbody>
+</table>
+<p>Host, source, sourcetype, index and <code>log_type</code> are the original's, on purpose:
+the TA's props read <code>host</code> (it becomes <code>dest</code> of the sign-in records), and its
+macros read <code>source</code> and a field called <code>backfill</code> for other things. Nothing
+in the TA's <code>default/</code>, <code>bin/</code> or <code>lookups/</code> reads the three label names.</p>
+<p>What that means in practice:</p>
+<ul>
+<li>Search the label as <code>resend::true</code>, with two colons. The TA ships no
+  <code>fields.conf</code> entry for it, so <code>resend=true</code> is not promised to work on
+  every Splunk version. <code>tstats</code> and <code>stats ... by resend_bundle</code> work.</li>
+<li>The label is on the events only. <em>Identity Activity</em>, the other dashboards
+  and the finding do not say that the application half is a copy. Whoever
+  presents the stack has to know.</li>
+<li>A copy's index time on the stack is the moment it was sent. The index time
+  of the original is kept in <code>resend_orig_indextime</code>.</li>
+</ul>
+<h2 id="verify-prove-the-copy-and-the-finding"><code>verify</code>: prove the copy and the finding</h2>
+<pre><code>staged_resend.py verify --bundle PATH --stack URL [--username admin] [--wait SECONDS]
+    [--ca-file P] [--no-verify-splunkd]
+</code></pre>
+<p><code>--wait</code> defaults to 0: <code>verify</code> looks once. Right after a <code>send</code>, pass
+<code>--wait 900</code>. (The spec's synopsis gave 900 as if it were the default; the
+built default is 0, so that a later <code>verify</code> never blocks.)</p>
+<pre><code class="language-bash">python3 tools/staged_resend.py verify --bundle ~/staged-bundles/nina-takeover.bundle.json \
+    --stack https://&lt;stack&gt;.splunkcloud.com --wait 900
+</code></pre>
+<p>It only reads: the bundle, the ledger and the stack. It needs no HEC token.
+Run it after <code>send</code>, and again whenever someone asks whether a stack is
+ready.</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What must hold</th>
+<th>Wait</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>V1</td>
+<td>every id of the bundle is on the stack exactly once, identical, labelled with this bundle or delivered live</td>
+<td>polls every 10 s, up to 180 s, for ids the ledger says were sent; any other missing id fails at once</td>
+</tr>
+<tr>
+<td>V2</td>
+<td>the events that carry this bundle's label are the ones the ledger says were sent</td>
+<td>none</td>
+</tr>
+<tr>
+<td>V3</td>
+<td>read through the TA's own macros, the stack gives the bundle's expected row</td>
+<td>none</td>
+</tr>
+<tr>
+<td>V4</td>
+<td>the Duo authentication of every sign-in is on the stack once</td>
+<td>none</td>
+</tr>
+<tr>
+<td>V5</td>
+<td>the stack's own rule text, run ad hoc over all index time (no alert action runs), returns the bundle's chain ids</td>
+<td>none</td>
+</tr>
+<tr>
+<td>V6</td>
+<td>each chain has one row in index <code>notable</code> and one in index <code>risk</code></td>
+<td>until the finding is due (<code>tick + 420 s</code>, below) or <code>--wait</code> runs out, whichever comes first; none when V1 failed</td>
+</tr>
+</tbody>
+</table>
+<p>For the 16 Nov set a good run reads: 9 of 9 ids once and identical; the row
+<code>nina.osei</code>, <code>events 9</code>, <code>copies 9</code>, <code>identity_events 7</code>, <code>ai_turns 5</code>,
+<code>ai_blocked 2</code>, <code>app_signins 2</code>; two Duo authentications found once each; one
+chain, <code>nina.osei:takeover:1794893749</code>, with <code>blocked_turns 1</code> and
+<code>duo_failures_10m 6</code>; one finding and one risk event for it. The set has two
+sign-ins and one chain: the first sign-in had no denial burst in the 30
+minutes before it.</p>
+<p><em>Identity Activity</em> then shows <code>nina.osei</code> with 2 application sign-ins, 5 AI
+turns and 2 blocked turns.</p>
+<p><strong>How long the finding takes.</strong> The joined rule runs every 5 minutes and each
+run judges what was indexed between 7 and 2 minutes before its tick. A copy
+indexed at second <code>t</code> is judged at the first tick after <code>t + 120</code>:
+<code>tick = (floor((t + 120) / 300) + 1) * 300</code>. The scheduler starts the run a
+minute or more after the tick and may skew it by up to 5 minutes, so the tool
+allows <code>tick + 420 s</code>. In wall-clock terms the finding is there between about
+3 and 14 minutes after the send; <code>--wait 900</code> covers the worst case, and the
+wait ends early once the finding is there or overdue.</p>
+<h3 id="when-a-check-after-sending-fails">When a check after sending fails</h3>
+<table>
+<thead>
+<tr>
+<th>What the output says</th>
+<th>What it means</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>V1: ids missing</td>
+<td>the stack has not made them searchable yet, or did not take them</td>
+<td>wait, run <code>verify</code> again; then <a href="#delivery-unknown-exit-3">Delivery unknown</a></td>
+</tr>
+<tr>
+<td>V1: the canary differs</td>
+<td>this stack's HEC changed the event text or the digits of its time</td>
+<td>stop. One event is wrong on this stack and stays; nothing else was sent. Do not use <code>--no-canary</code>; report it</td>
+</tr>
+<tr>
+<td>V1: an id is on the stack more than once</td>
+<td>a duplicate</td>
+<td>it stays; see <a href="#what-cannot-be-undone">What cannot be undone</a></td>
+</tr>
+<tr>
+<td>V3: the row differs</td>
+<td>the events are there, but the stack's TA reads them differently from the facilitator's</td>
+<td>compare the TA versions and look for a local override of the TA's macros or props on the stack</td>
+</tr>
+<tr>
+<td>V4 or V5: no Duo authentication, no chain</td>
+<td>the Duo half is missing or from another tenant</td>
+<td><code>show_postdeploy.py --duo</code> again, read D7 and D8</td>
+</tr>
+<tr>
+<td>V6: <code>NOT RAISED YET</code> (exit 1)</td>
+<td>the finding is not due yet: the tick that judges the copy, plus 420 s, has not passed</td>
+<td>nothing is wrong; run <code>verify --wait N</code> as printed, or <code>verify</code> again after the printed due time</td>
+</tr>
+<tr>
+<td>V6: no finding although V5 shows the chain</td>
+<td>the scheduled run that should have judged the copy did not raise it</td>
+<td>read the lines the tool prints next, below</td>
+</tr>
+</tbody>
+</table>
+<p>When the finding is late, the tool prints the scheduler's own record of the
+run that judged the copy (scheduled time, start, lag, status, result count,
+suppressed, alert actions) and any error line the scheduler wrote for the
+rule:</p>
+<ul>
+<li><strong>deferred</strong>: the scheduler is behind. The rule never skips a period; wait
+  and run <code>verify</code> again.</li>
+<li><strong>an error line</strong>: the run failed, and a failed run loses its slot: the
+  schedule will not look at that index time again. Fix what the message
+  names, then judge that index time once more by hand (README, <em>Judging
+  history that is already indexed</em>).</li>
+<li><strong>success with 0 results</strong>: the copy was not the last missing step in that
+  slot. Check V4: the Duo half was probably indexed while the rule was off.</li>
+<li><strong>suppressed</strong>: the chain was already raised in the last 24 hours; look for
+  the earlier finding.</li>
+</ul>
+<h2 id="checking-by-hand">Checking by hand</h2>
+<p>Searches for the stack's own search bar. <strong>Set the time range to All time</strong>
+(or to one that covers the scenario): a copy keeps the time of the original
+event, so "Last 15 minutes" shows nothing a minute after the send.</p>
+<p>Which copies does this stack hold?</p>
+<pre><code class="language-spl">| tstats count as events, min(_indextime) as first_indexed, max(_indextime) as last_indexed
+    where index=gen_ai_log resend=&quot;true&quot; by resend_bundle, sourcetype, log_type, host
+</code></pre>
+<p>For the 16 Nov set: <code>demobot:audit</code>, <code>audit</code>, <code>l5-dev</code>, 4 and <code>gen_ai:json</code>,
+<code>governance</code>, <code>l5-dev</code>, 5, both under one bundle id.</p>
+<p>The copied events themselves:</p>
+<pre><code class="language-spl">index=gen_ai_log resend::true
+| table _time, host, sourcetype, log_type, resend_bundle, resend_orig_indextime
+</code></pre>
+<p>How many copies of one id (the id is in the tool's output and in the ledger):</p>
+<pre><code class="language-spl">index=gen_ai_log sourcetype!=&quot;ai_cim:response:*&quot; &quot;&lt;id&gt;&quot;
+| eval rs_id=coalesce(spath(_raw, &quot;audit_id&quot;), spath(_raw, &quot;escalation_id&quot;), spath(_raw, &quot;event_id&quot;))
+| search rs_id=&quot;&lt;id&gt;&quot;
+| eval sha256=sha256(_raw), label=coalesce(mvjoin(resend_bundle, &quot;,&quot;), &quot;none&quot;)
+| stats count as copies, values(sha256) as sha256, values(label) as label,
+    values(host) as host, values(sourcetype) as sourcetype, min(_indextime) as first_indexed by rs_id
+</code></pre>
+<p><code>copies</code> must be 1. Records that only quote the id stay out of the count, as
+in the tool's own search: the <code>sourcetype!=</code> term drops the response actions'
+audit records, and a scoring result has no id of its own, so it drops out at
+<code>search rs_id=</code>.</p>
+<p>The finding and its risk event, one row each:</p>
+<pre><code class="language-spl">(index=notable OR index=risk)
+    search_name=&quot;AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule&quot;
+    chain_id=&quot;nina.osei:takeover:1794893749&quot;
+| eval event_time=coalesce(orig_time, _time)
+| stats count as rows, min(_indextime) as first_raised, values(event_time) as event_time by index, chain_id
+</code></pre>
+<p>The two rows are dated differently: the risk event at the first blocked turn
+(16 Nov for this set), the finding at the moment it was raised, with the
+event time in <code>orig_time</code>. A search over "Last 24 hours" finds the finding
+and misses the risk event.</p>
+<p>Is the rule running, tick by tick, and did a run fail?</p>
+<pre><code class="language-spl">index=_internal sourcetype=scheduler
+    savedsearch_name=&quot;AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule&quot;
+| stats count(eval(status==&quot;success&quot;)) as ok, count(eval(status==&quot;continued&quot;)) as deferred,
+    count(eval(status==&quot;skipped&quot;)) as skipped by scheduled_time
+| sort - scheduled_time | head 6
+</code></pre>
+<pre><code class="language-spl">index=_internal source=*scheduler.log* log_level=ERROR &quot;Duo Denial Burst to Blocked AI Turn Correlation&quot;
+</code></pre>
+<p>A healthy rule shows <code>ok 1</code> on its latest ticks, 300 s apart, and no error
+line. For these two the range is the last hour, not All time.</p>
+<h2 id="what-cannot-be-undone">What cannot be undone</h2>
+<ul>
+<li><strong>A sent event stays.</strong> The tool cannot delete from an index, and neither
+  can HEC. A copy, a duplicate or a canary the stack changed stays until the
+  index's retention ends or the stack is deleted.</li>
+<li><strong>A duplicate doubles the counts.</strong> <em>Identity Activity</em> counts events, so
+  an id that is on the stack twice shows one sign-in or one turn too many for
+  the life of the stack. The joined rule itself is not fooled: a chain is
+  raised once however often its events are indexed.</li>
+<li><strong>Hiding is not deleting.</strong> An admin with the <code>can_delete</code> role can hide
+  copies with <code>index=gen_ai_log resend_bundle::&lt;bundle id&gt; | delete</code>. That
+  hides every copy of that bundle, not one of two, and frees no storage. The
+  tool never does it.</li>
+<li><strong>A raised finding and its risk stay</strong> in <code>notable</code> and <code>risk</code>, and in the
+  persona's risk score.</li>
+<li><strong>An approval</strong> can be given again for a new export, but a stack that got
+  the old bytes keeps them.</li>
+</ul>
+<p>What the copy sets off on the stack, besides the finding:</p>
+<ul>
+<li>The finding's own row (risk score 80) and the findings of the Duo backfill
+  all count in Enterprise Security's "last 24 hours" of risk at the moment
+  they are raised, whatever the age of the events. Together they can trip
+  ES's 24-hour risk threshold rule for the persona.</li>
+<li>The two sign-in records enter the Authentication data model with
+  <code>dest=l5-dev</code>: the host label of the facilitator's dev copy travels to
+  every stack. Before staging a scenario that is meant to be copied, give the
+  assistant a neutral host label (<code>HEC_HOST</code>).</li>
+<li>The Lab 5 rule can fire, see <a href="#the-order-on-a-new-stack">the order</a>.</li>
+</ul>
+<h2 id="deadlines">Deadlines</h2>
+<p>Limits that hold for every bundle:</p>
+<table>
+<thead>
+<tr>
+<th>Limit</th>
+<th>Value</th>
+<th>Enforced by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>youngest event at <code>export</code> and at <code>send</code></td>
+<td>over 15 minutes old</td>
+<td><code>export</code>, R4</td>
+</tr>
+<tr>
+<td>oldest event at <code>send</code></td>
+<td>under 180 days old (the rule's context reaches 181 days)</td>
+<td>R4</td>
+</tr>
+<tr>
+<td>the index must keep the oldest event</td>
+<td>7 more days at <code>send</code></td>
+<td>R4</td>
+</tr>
+<tr>
+<td>the rule's last successful run</td>
+<td>within 15 minutes</td>
+<td>R5</td>
+</tr>
+<tr>
+<td>an unconfirmed id before <code>--resend-unconfirmed</code> may send it</td>
+<td>3600 s</td>
+<td>R7</td>
+</tr>
+<tr>
+<td>the finding after a send</td>
+<td>3 to 14 minutes</td>
+<td><code>--wait-finding</code>, <code>verify --wait</code></td>
+</tr>
+</tbody>
+</table>
+<p>Dates for the set staged on 16 Nov 2026 (first event 21:05 PST):</p>
+<table>
+<thead>
+<tr>
+<th>By</th>
+<th>What ends</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>now</td>
+<td>the assistant's own log of the set is a rotating file in one checkout, and it is what <code>--check-logs</code> compares with</td>
+<td>run <code>export</code> with <code>--check-logs</code> while that log and the facilitator's Splunk both hold the set</td>
+</tr>
+<tr>
+<td>17 Nov, 21:36 PST</td>
+<td>the copied blocked turns are under 24 hours old until then, so the Lab 5 rule can read them</td>
+<td>nothing; expect its finding where CII evidence arrives before then</td>
+</tr>
+<tr>
+<td>30 Nov</td>
+<td>the last day <em>Identity Activity</em>'s default range (14 days) shows the set</td>
+<td>after that, widen the dashboard's time range</td>
+</tr>
+<tr>
+<td>about 16 Dec</td>
+<td>Duo's first poll reads back 30 days by default (<code>--duo-lookback-hours 720</code>); a stack first polled later does not get the denial burst</td>
+<td>run <code>--duo</code> on the stack before then, or R6 refuses and no chain can form</td>
+</tr>
+<tr>
+<td>about 7 Feb 2027</td>
+<td>an index created by <code>show_postdeploy.py</code> keeps 90 days; R4 wants 7 days of margin</td>
+<td>last day to send into such a stack</td>
+</tr>
+<tr>
+<td>about 14 Feb 2027</td>
+<td>the copy ages out of a 90-day index</td>
+<td>nothing can be done on the stack</td>
+</tr>
+<tr>
+<td>15 May 2027</td>
+<td>the oldest event is 180 days old</td>
+<td>the bundle is refused from then on; stage a new scenario</td>
+</tr>
+</tbody>
+</table>
+<h2 id="before-the-first-room-stack">Before the first room stack</h2>
+<p>Nothing here has run against Splunk Cloud. Two things reduce what the first
+room stack has to prove.</p>
+<p><strong>The offline tests</strong>, from the TA checkout:</p>
+<pre><code class="language-bash">python3 -B -m unittest discover -s tools/tests -p 'test_staged_resend.py'
+/opt/splunk104/bin/splunk cmd python3.13 -B -m unittest discover -s tools/tests -p 'test_staged_resend.py'
+python3 -B tools/tests/fixtures/staged_resend_gen.py --check
+</code></pre>
+<p>Read the result line, not the exit code: it must say <code>Ran N tests</code>, with N
+at least 200, and then <code>OK</code>. Under the system <code>python3</code> nothing may be
+skipped. Under Splunk's <code>python3.13</code> exactly one test is: Python-Markdown is
+not part of that Python, so the comparison of this page with its <code>.html</code>
+does not run there. Under Python 3.9 a suite that
+found no test at all also exits 0 (<code>Ran 0 tests</code>). The suite needs the joined
+rule's stanza in <code>default/savedsearches.conf</code> of the checkout and fails, not
+skips, without it.</p>
+<p><strong>The scratch end-to-end</strong>, <code>tools/tests/staged_resend_scratch_e2e.py</code>, is
+opt-in and is the only rehearsal on a real splunkd and a real HEC; without it
+the first room stack is the test. It sends the lines of the test fixture
+(invented persona data, ids that exist in no index) into an index named
+<code>rs_scratch_*</code> on a dev Splunk on the same machine, canary first, and reads
+the copies back through searches that name the scratch index. It refuses
+anything else: a host that is not loopback, a Splunk Cloud instance, an index
+the TA's macros read, an index that holds someone else's events. It creates
+no index and deletes nothing: create <code>rs_scratch_copy</code> on the dev Splunk
+first and remove it afterwards.</p>
+<pre><code class="language-bash">export STAGED_RESEND_SCRATCH_E2E=1
+export SPLUNK_TEST_URL=https://127.0.0.1:8089 SCRATCH_HEC_URL=https://127.0.0.1:8088
+read -rs SPLUNK_TEST_PASSWORD &amp;&amp; export SPLUNK_TEST_PASSWORD
+read -rs SCRATCH_HEC_TOKEN &amp;&amp; export SCRATCH_HEC_TOKEN
+python3 tools/tests/staged_resend_scratch_e2e.py plan      # contacts nothing
+python3 tools/tests/staged_resend_scratch_e2e.py send
+python3 tools/tests/staged_resend_scratch_e2e.py verify
+</code></pre>
+<p>The HEC token there must be one that may write to <code>rs_scratch_*</code>. The
+script's own docstring is the reference for it.</p>
+<h2 id="one-stack-start-to-finish">One stack, start to finish</h2>
+<p>Once, on the facilitator's Mac:</p>
+<ol>
+<li><code>export</code> with <code>--check-logs</code>, into a private folder.</li>
+<li><code>review</code>, read it, <code>review --approve &lt;digest12&gt;</code>.</li>
+</ol>
+<p>Per stack, in this order:</p>
+<ol>
+<li><code>read -rs SPLUNK_ADMIN_PASSWORD &amp;&amp; export SPLUNK_ADMIN_PASSWORD</code>: the admin
+   password of this stack, the one named by <code>--stack</code> below. Never carry the
+   last stack's over.</li>
+<li><code>python3 tools/show_postdeploy.py --stack &lt;url&gt; --out &lt;stack&gt;.json</code>
+   If it printed <code>No HEC token returned</code>, there is no <code>&lt;stack&gt;.json</code>: use the
+   <code>--hec-url</code> form from <em>Known gap in <code>--out</code></em> in steps 4 and 5 instead of
+   <code>--hec-file</code>.</li>
+<li><code>python3 tools/show_postdeploy.py --stack &lt;url&gt; --duo --duo-poll-slot &lt;K&gt;/&lt;N&gt;</code>,
+   wait for the first poll, run it again and read D7 and D8.</li>
+<li><code>python3 tools/staged_resend.py send --bundle &lt;bundle&gt; --stack &lt;url&gt; --hec-file &lt;stack&gt;.json --dry-run</code>
+   (or, after <code>No HEC token returned</code>, <code>read -rs STAGED_RESEND_HEC_TOKEN &amp;&amp; export STAGED_RESEND_HEC_TOKEN</code>
+   and <code>--hec-url https://http-inputs-&lt;stack&gt;.splunkcloud.com/services/collector/event</code>
+   in place of <code>--hec-file &lt;stack&gt;.json</code>)</li>
+<li>The same without <code>--dry-run</code>, with <code>--wait-finding 900</code>.</li>
+<li><code>python3 tools/staged_resend.py verify --bundle &lt;bundle&gt; --stack &lt;url&gt; --wait 900</code></li>
+<li>Open <em>Identity Activity</em> on the stack, time range covering the scenario.</li>
+<li><code>unset SPLUNK_ADMIN_PASSWORD SPLUNK_ADMIN_TOKEN STAGED_RESEND_HEC_TOKEN</code>, before the next stack.</li>
+</ol>
+<p>Afterwards: unset the environment variables, keep the bundle and its ledger
+together until the last stack is done, then delete both and the <code>--out</code>
+files.</p>
+<h2 id="what-has-not-been-proven">What has not been proven</h2>
+<ul>
+<li>Anything on Splunk Cloud, ACS or a real HEC. No event was ever sent to a
+  stack by this tool.</li>
+<li>That Splunk Cloud's HEC keeps an event's text and the digits of its time
+  as Splunk 10.4.3 does. The canary is the test: it fails loudly on the
+  first event if not.</li>
+<li>That an accepted event is searchable within minutes on a stack.</li>
+<li>That the stack's admin account (<code>sc_admin</code>) may read <code>_internal</code>, the saved
+  searches and <code>data/indexes</code> on port 8089, and that a room stack's port 8089
+  is reachable from the facilitator's machine at all. Without port 8089 the
+  tool cannot run, and it must not be run blind.</li>
+<li>A scheduled run of the joined rule that raises a finding with a
+  <code>chain_id</code>: on the dev Splunk the rule has never run on a schedule, so step
+  V6 is proven in shape only, on the Duo rule's findings.</li>
+</ul>
+</main>
+</body>
+</html>

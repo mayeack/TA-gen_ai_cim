@@ -105,41 +105,82 @@ def step_cii_index(acs, rep, skip_acs):
             rep.fail(label, 'HTTP {} {}'.format(code, str(text)[:200]))
 
 
-def step_cii_hec(acs, rep, skip_acs, out):
+def hec_token_value(text):
+    """The token value in ACS's answer for ONE HEC token, or None. ACS puts it
+    beside `spec` (`{"http-event-collector": {"spec": {...}, "token": "..."}}`),
+    never inside it."""
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        return None
+    one = doc.get('http-event-collector') if isinstance(doc, dict) else None
+    if not isinstance(one, dict):
+        return None
+    return one.get('token') or (one.get('spec') or {}).get('token') or None
+
+
+def read_hec_token(acs, name):
+    """(state, token, detail) for the HEC token `name`, read by name so that a
+    stack with more tokens than one list page holds cannot hide it.
+    state: 'present' (token is its value), 'absent' (ACS says 404), 'no-value'
+    (it exists but ACS returned no value), 'unavailable' (no ACS token was
+    supplied; detail says so), 'error' (detail says what)."""
+    code, text = acs.call('/inputs/http-event-collectors/{}'.format(name), 'GET')
+    if code is None:
+        return 'unavailable', None, str(text)
+    if code == 200:
+        token = hec_token_value(text)
+        return ('present', token, '') if token else ('no-value', None, 'ACS returned no token value')
+    if code == 404:
+        return 'absent', None, ''
+    return 'error', None, 'HTTP {} {}'.format(code, str(text)[:200])
+
+
+def wait_hec_token(acs, name, sleep=time.sleep, wait_seconds=300, step=10):
+    """ACS creates a HEC token asynchronously: the create answers 202 with the
+    name only, and a GET by name answers 404 until the token exists. Polls that
+    GET; returns (token or None, last state, detail)."""
+    waited = 0
+    while True:
+        state, token, detail = read_hec_token(acs, name)
+        if state == 'present' or state == 'error' or waited >= wait_seconds:
+            return token, state, detail
+        sleep(step)
+        waited += step
+
+
+def step_cii_hec(acs, rep, skip_acs, out, sleep=time.sleep, wait_seconds=300):
     label = 'L2. HEC token {}'.format(CII_HEC_TOKEN_NAME)
     if skip_acs:
         rep.skip(label, 'ACS skipped')
         return
-    code, text = acs.call('/inputs/http-event-collectors', 'GET')
-    if code is None:
-        rep.skip(label, text)
+    state, token, detail = read_hec_token(acs, CII_HEC_TOKEN_NAME)
+    if state == 'unavailable':
+        rep.skip(label, detail)
         return
-    token = None
-    if code == 200 and CII_HEC_TOKEN_NAME in text:
-        try:
-            for item in json.loads(text).get('http-event-collectors', []):
-                spec = item.get('spec', item)
-                if spec.get('name') == CII_HEC_TOKEN_NAME:
-                    token = item.get('token') or spec.get('token')
-        except ValueError:
-            pass
+    if state == 'present':
         rep.ok(label, 'already exists ({})'.format(last4(token)))
-    else:
+    elif state == 'absent':
         code, text = acs.call('/inputs/http-event-collectors', 'POST', {
             'name': CII_HEC_TOKEN_NAME, 'defaultIndex': CII_INDEX,
             'allowedIndexes': [CII_INDEX], 'disabled': False})
         if code not in (200, 201, 202):
             rep.fail(label, 'HTTP {} {}'.format(code, str(text)[:200]))
             return
-        try:
-            body = json.loads(text)
-            token = body.get('token') or (body.get('http-event-collector') or {}).get('token')
-        except ValueError:
-            pass
+        if getattr(acs, 'dry_run', False):
+            rep.ok(label, 'would be created')
+            return
+        token, state, detail = wait_hec_token(acs, CII_HEC_TOKEN_NAME, sleep=sleep, wait_seconds=wait_seconds)
+        if not token:
+            rep.fail(label, 'created, but ACS returned no value for it within {} s ({}); run again to read it'.format(
+                wait_seconds, detail or state))
+            return
         rep.ok(label, 'created ({})'.format(last4(token)))
-    if token:
-        out['cii_hec_token'] = token
-        out['cii_index'] = CII_INDEX
+    else:
+        rep.fail(label, detail or state)
+        return
+    out['cii_hec_token'] = token
+    out['cii_index'] = CII_INDEX
 
 
 def step_security_cloud_floor(splunkd, rep):

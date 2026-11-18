@@ -1191,8 +1191,8 @@ class MenuHomeAndDocsTests(unittest.TestCase):
                    '1. The staged scenario includes a prompt-injection spray that names the persona.',
                    '2. The application\'s events for the staging are in that stack.',
                    'the application\'s HEC feed does not',
-                   'all read 0 for the staged days unless those events are sent to that stack as well (nothing in '
-                   'the TA does that)',
+                   'all read 0 for the staged days unless those events are sent to that stack as well. '
+                   '`tools/staged_resend.py` does that',
                    'the view counts events and does not drop a second copy',
                    '3. The spray, and a Duo sign-in or an application identity event of the persona, fall inside '
                    'the time range of the view',
@@ -1241,7 +1241,8 @@ class MenuHomeAndDocsTests(unittest.TestCase):
             self.assertIn('**%s' % need.split('\n')[0], re.sub(r'\s+', ' ', section))
             self.assertIn('<strong>%s' % need, re.sub(r'\s+', ' ', page))
         for text in (re.sub(r'\s+', ' ', section), re.sub(r'\s+', ' ', page)):
-            for needle in ('Nothing in the TA does that.', 'the view counts events and does not drop a second copy',
+            for needle in ('staged_resend.py', 'does that, once per event and with its original time',
+                           'the view counts events and does not drop a second copy',
                            'A name that is only claimed gets no row.',
                            '0 means the stack holds no such turn in that range: no spray named the victim, '
                            'PseudoCo Assistant\'s events never reached this stack, or the spray is outside the '
