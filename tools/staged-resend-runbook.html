@@ -313,6 +313,11 @@ an address or a Duo transaction id.</p>
 <p>The two Splunk credentials have different names on purpose, so the
 facilitator's password can never be sent to a stack, or a stack's to the
 facilitator's Splunk.</p>
+<p>Nothing ties <code>SPLUNK_ADMIN_PASSWORD</code> (or <code>SPLUNK_ADMIN_TOKEN</code>) to one stack:
+<code>send</code> and <code>verify</code> send whatever it holds, as Basic or Bearer auth, to the
+stack named by <code>--stack</code>. It must hold the password of <strong>that</strong> stack. Read it
+at the start of each stack and unset it at the end, before the next stack, so
+one stack's admin password is never sent to another.</p>
 <p><strong>User names</strong> are not secrets and are options. A password needs one:
 <code>--source-username</code> on <code>export</code> and <code>--username</code> on <code>send</code> and <code>verify</code>, both
 <code>admin</code> unless given (the same default as <code>show_postdeploy.py --username</code>). A
@@ -607,11 +612,14 @@ approval serves every stack.</p>
 and after the first Duo poll is in. The machine that runs it must reach the
 stack's port 8089 as well as its HEC: every check before and after sending is
 a search on the stack.</p>
-<p><strong>Worked example.</strong> Always a dry run first:</p>
-<pre><code class="language-bash">read -rs SPLUNK_ADMIN_PASSWORD &amp;&amp; export SPLUNK_ADMIN_PASSWORD
+<p><strong>Worked example.</strong> Always a dry run first. The password read here is the
+admin password of <code>&lt;stack&gt;</code>, the stack named by <code>--stack</code>:</p>
+<pre><code class="language-bash">read -rs SPLUNK_ADMIN_PASSWORD &amp;&amp; export SPLUNK_ADMIN_PASSWORD   # &lt;stack&gt;'s own admin password
 python3 tools/staged_resend.py send --bundle ~/staged-bundles/nina-takeover.bundle.json \
     --stack https://&lt;stack&gt;.splunkcloud.com --hec-file &lt;stack&gt;.json --dry-run
 </code></pre>
+<p>When that stack is done, <code>unset SPLUNK_ADMIN_PASSWORD SPLUNK_ADMIN_TOKEN</code>
+before the next one.</p>
 <p>A dry run makes every read (steps R1 to R8 below) and prints, per id, what a
 real run would do: <code>send</code>, <code>skip</code> or stop. It posts nothing to HEC and prints
 no event text. When it reads right, run the same command without <code>--dry-run</code>,
@@ -625,7 +633,11 @@ and add <code>--wait-finding 900</code> to have it wait for the finding as well.
    stack returns the canary exactly once, with the same SHA-256, time, host,
    source, sourcetype, index and <code>log_type</code>, and labelled with this bundle. If
    the stack changed the event in any way, one event is wrong on that stack
-   and the rest was never sent.</li>
+   and the rest was never sent. A stack can change one sourcetype and keep
+   another, so a second request then carries one event of each other
+   sourcetype and <code>log_type</code> in the bundle, and it too must come back
+   identical before any other event is sent. A kind of which a copy of this
+   bundle is on the stack already needs no canary.</li>
 <li>The rest, at most 50 events and 512 KiB in one request (the 16 Nov set is
    one request).</li>
 <li>It polls every 10 s, up to <code>--settle</code> seconds (180), until every id is on
@@ -664,7 +676,7 @@ the option that overrides it.</p>
 </tr>
 <tr>
 <td>R4 index and age</td>
-<td>the index exists and this account can search it; it is the index the stack's own macro <code>genai_identity_ai_events</code> reads; it keeps the oldest event at least 7 more days; the newest event is over 15 minutes old and the oldest under 180 days</td>
+<td>the index exists and this account can search it; it is the index the stack's own macro <code>genai_identity_ai_events</code> reads (where the stack does not serve the macro: <code>gen_ai_log</code> only, marked NOT CHECKED); it keeps the oldest event at least 7 more days; the newest event is over 15 minutes old and the oldest under 180 days</td>
 <td>none, but see <code>--retention-days</code> below</td>
 </tr>
 <tr>
@@ -700,6 +712,13 @@ the option that overrides it.</p>
   at export exists for a scratch index on a dev Splunk; on a stack whose
   macro reads <code>gen_ai_log</code>, a bundle for any other index is refused, because
   <em>Identity Activity</em> and the rule would never read the copy.</li>
+<li><strong>R4, a macro the stack does not serve.</strong> Where the stack does not serve
+  the definition of <code>genai_identity_ai_events</code> (<code>configs/conf-macros</code>
+  unreadable, likely on a Cloud search head), the step cannot prove which
+  index the macro reads. It then says <code>NOT CHECKED: which index ... reads</code>,
+  accepts a <code>gen_ai_log</code> bundle on the shipped definition, and refuses a
+  bundle for any other index. <code>verify</code> reads the copies through the macro,
+  so V3 and V5 show whether the stack really reads them.</li>
 <li><strong>R4, retention.</strong> It is read from the stack's <code>data/indexes</code>. Where a
   stack does not serve that endpoint (403 or 404), the step says so and
   stops; give the index's searchable days yourself with <code>--retention-days N</code>
@@ -860,12 +879,22 @@ clients only). That is why the tool asks the stack by search what it holds,
 and why it needs port 8089.</p>
 <h3 id="the-ledger">The ledger</h3>
 <p><code>send</code> keeps <code>&lt;bundle&gt;.ledger.jsonl</code> beside the bundle: mode 0600, one line
-appended per step, keyed by the stack's server GUID, so one bundle and one
-ledger serve every stack. Before each request it writes the ids it is about
+appended per step, keyed by the stack's server GUID, by a hash of its HEC
+endpoint and index and by a hash of the <code>--stack</code> address, so one bundle and
+one ledger serve every stack. Every
+line also goes to the journal, <code>journal.jsonl</code> in the state directory
+(<code>$STAGED_RESEND_STATE_DIR</code>, else <code>~/.staged-resend</code>, created 0700): what
+every bundle sent from this machine handed over. <code>send</code> reads both and
+prints the GUID it keys on. Before each request it writes the ids it is about
 to send and forces the line to disk; only then does it post. If the run dies
 at any point after that, the next run knows those ids may be on the stack.</p>
 <p>From that line on an id is <strong>unconfirmed</strong> until the stack shows it, or until
-HEC's answer proves it took nothing (not sent, refused, too large). Every
+HEC's answer proves it took nothing (not sent, refused, too large). This is
+counted per request: a refusal of a later request (after
+<code>--resend-unconfirmed</code>, say) says nothing of an earlier one whose answer was
+unknown, so the id stays unconfirmed. The stack shows it only as the copy of
+the bundle that handed it over: a live copy, or another bundle's, leaves it
+unconfirmed, and the run ends with exit 3. Every
 later <code>send</code> to the same stack waits for unconfirmed ids and does not send
 them, whatever the earlier run's last line says and also when that line is
 missing.</p>
@@ -875,8 +904,18 @@ missing.</p>
   copy a bundle to a second machine to send from there as well: the second
   machine has no ledger, and a stack that is slow to index would get the
   events twice.</li>
-<li>One <code>send</code> per bundle at a time. The ledger is locked for the whole run,
-  so a second <code>send</code> on the same bundle cannot send beside the first.</li>
+<li>One <code>send</code> per machine at a time. The journal is locked for the whole run,
+  so a second <code>send</code>, of this bundle or any other, cannot send beside the
+  first.</li>
+<li>A re-export of the same selection, or an overlapping one (another persona,
+  a wider window), sent from the same machine and user, holds what the first
+  bundle handed over: the journal knows those ids. Never send it from
+  another user or machine, and never point <code>$STAGED_RESEND_STATE_DIR</code>
+  elsewhere between sends.</li>
+<li>Send a bundle with the same <code>--stack</code> URL every time. Another member of
+  a search head cluster behind that address answers with another GUID; the
+  hash of the <code>--stack</code> address (and, for <code>send</code>, of the HEC endpoint) still ties
+  the lines to the stack, for <code>send</code> and <code>verify</code> alike.</li>
 <li>The ledger holds ids, hashes, times, counts and HEC's code and status.
   It holds no token, no body and no address.</li>
 <li><code>send</code> refuses a ledger that is a symbolic link, that others can read or
@@ -891,9 +930,11 @@ Usually the stack took them and is slow to make them searchable.</p>
 <li>Wait a few minutes and run <code>verify</code>. If it finds every id once, the
    delivery is confirmed: a later <code>send</code> finds the ids on the stack and
    skips them.</li>
-<li>If ids are still missing, run <code>send</code> again. It sends what was never
-   attempted, waits for the unconfirmed ids and sends none of them; it does
-   not end with exit 0 while they are missing.</li>
+<li>If ids are still missing, run <code>send</code> again. While no copy of this bundle
+   shows on the stack, it sends nothing new: the unconfirmed ids print as
+   <code>HOLD</code> and the never-attempted ones as <code>WAIT</code>, unless <code>--no-canary</code> is
+   given. It waits <code>--settle</code> seconds for the unconfirmed ids, sends none of
+   them, and ends with exit 3 while any is missing.</li>
 <li>Only when an unconfirmed id is still missing <strong>an hour</strong> after it was
    sent does <code>--resend-unconfirmed</code> let it through. Look once more by hand
    first (the search under <a href="#checking-by-hand">Checking by hand</a>): a
@@ -944,9 +985,12 @@ in the TA's <code>default/</code>, <code>bin/</code> or <code>lookups/</code> re
   of the original is kept in <code>resend_orig_indextime</code>.</li>
 </ul>
 <h2 id="verify-prove-the-copy-and-the-finding"><code>verify</code>: prove the copy and the finding</h2>
-<pre><code>staged_resend.py verify --bundle PATH --stack URL [--username admin] [--wait 900]
+<pre><code>staged_resend.py verify --bundle PATH --stack URL [--username admin] [--wait SECONDS]
     [--ca-file P] [--no-verify-splunkd]
 </code></pre>
+<p><code>--wait</code> defaults to 0: <code>verify</code> looks once. Right after a <code>send</code>, pass
+<code>--wait 900</code>. (The spec's synopsis gave 900 as if it were the default; the
+built default is 0, so that a later <code>verify</code> never blocks.)</p>
 <pre><code class="language-bash">python3 tools/staged_resend.py verify --bundle ~/staged-bundles/nina-takeover.bundle.json \
     --stack https://&lt;stack&gt;.splunkcloud.com --wait 900
 </code></pre>
@@ -965,7 +1009,7 @@ ready.</p>
 <tr>
 <td>V1</td>
 <td>every id of the bundle is on the stack exactly once, identical, labelled with this bundle or delivered live</td>
-<td>polls every 10 s, up to 180 s</td>
+<td>polls every 10 s, up to 180 s, for ids the ledger says were sent; any other missing id fails at once</td>
 </tr>
 <tr>
 <td>V2</td>
@@ -990,7 +1034,7 @@ ready.</p>
 <tr>
 <td>V6</td>
 <td>each chain has one row in index <code>notable</code> and one in index <code>risk</code></td>
-<td>up to <code>--wait</code> seconds</td>
+<td>until the finding is due (<code>tick + 420 s</code>, below) or <code>--wait</code> runs out, whichever comes first; none when V1 failed</td>
 </tr>
 </tbody>
 </table>
@@ -1009,7 +1053,8 @@ indexed at second <code>t</code> is judged at the first tick after <code>t + 120
 <code>tick = (floor((t + 120) / 300) + 1) * 300</code>. The scheduler starts the run a
 minute or more after the tick and may skew it by up to 5 minutes, so the tool
 allows <code>tick + 420 s</code>. In wall-clock terms the finding is there between about
-3 and 14 minutes after the send; <code>--wait 900</code> covers the worst case.</p>
+3 and 14 minutes after the send; <code>--wait 900</code> covers the worst case, and the
+wait ends early once the finding is there or overdue.</p>
 <h3 id="when-a-check-after-sending-fails">When a check after sending fails</h3>
 <table>
 <thead>
@@ -1044,6 +1089,11 @@ allows <code>tick + 420 s</code>. In wall-clock terms the finding is there betwe
 <td>V4 or V5: no Duo authentication, no chain</td>
 <td>the Duo half is missing or from another tenant</td>
 <td><code>show_postdeploy.py --duo</code> again, read D7 and D8</td>
+</tr>
+<tr>
+<td>V6: <code>NOT RAISED YET</code> (exit 1)</td>
+<td>the finding is not due yet: the tick that judges the copy, plus 420 s, has not passed</td>
+<td>nothing is wrong; run <code>verify --wait N</code> as printed, or <code>verify</code> again after the printed due time</td>
 </tr>
 <tr>
 <td>V6: no finding although V5 shows the chain</td>
@@ -1245,7 +1295,10 @@ room stack has to prove.</p>
 python3 -B tools/tests/fixtures/staged_resend_gen.py --check
 </code></pre>
 <p>Read the result line, not the exit code: it must say <code>Ran N tests</code>, with N
-around 70, and then <code>OK</code> with no <code>skipped</code>. Under Python 3.9 a suite that
+at least 200, and then <code>OK</code>. Under the system <code>python3</code> nothing may be
+skipped. Under Splunk's <code>python3.13</code> exactly one test is: Python-Markdown is
+not part of that Python, so the comparison of this page with its <code>.html</code>
+does not run there. Under Python 3.9 a suite that
 found no test at all also exits 0 (<code>Ran 0 tests</code>). The suite needs the joined
 rule's stanza in <code>default/savedsearches.conf</code> of the checkout and fails, not
 skips, without it.</p>
@@ -1277,13 +1330,23 @@ script's own docstring is the reference for it.</p>
 </ol>
 <p>Per stack, in this order:</p>
 <ol>
-<li><code>python3 tools/show_postdeploy.py --stack &lt;url&gt; --out &lt;stack&gt;.json</code></li>
+<li><code>read -rs SPLUNK_ADMIN_PASSWORD &amp;&amp; export SPLUNK_ADMIN_PASSWORD</code>: the admin
+   password of this stack, the one named by <code>--stack</code> below. Never carry the
+   last stack's over.</li>
+<li><code>python3 tools/show_postdeploy.py --stack &lt;url&gt; --out &lt;stack&gt;.json</code>
+   If it printed <code>No HEC token returned</code>, there is no <code>&lt;stack&gt;.json</code>: use the
+   <code>--hec-url</code> form from <em>Known gap in <code>--out</code></em> in steps 4 and 5 instead of
+   <code>--hec-file</code>.</li>
 <li><code>python3 tools/show_postdeploy.py --stack &lt;url&gt; --duo --duo-poll-slot &lt;K&gt;/&lt;N&gt;</code>,
    wait for the first poll, run it again and read D7 and D8.</li>
-<li><code>python3 tools/staged_resend.py send --bundle &lt;bundle&gt; --stack &lt;url&gt; --hec-file &lt;stack&gt;.json --dry-run</code></li>
+<li><code>python3 tools/staged_resend.py send --bundle &lt;bundle&gt; --stack &lt;url&gt; --hec-file &lt;stack&gt;.json --dry-run</code>
+   (or, after <code>No HEC token returned</code>, <code>read -rs STAGED_RESEND_HEC_TOKEN &amp;&amp; export STAGED_RESEND_HEC_TOKEN</code>
+   and <code>--hec-url https://http-inputs-&lt;stack&gt;.splunkcloud.com/services/collector/event</code>
+   in place of <code>--hec-file &lt;stack&gt;.json</code>)</li>
 <li>The same without <code>--dry-run</code>, with <code>--wait-finding 900</code>.</li>
 <li><code>python3 tools/staged_resend.py verify --bundle &lt;bundle&gt; --stack &lt;url&gt; --wait 900</code></li>
 <li>Open <em>Identity Activity</em> on the stack, time range covering the scenario.</li>
+<li><code>unset SPLUNK_ADMIN_PASSWORD SPLUNK_ADMIN_TOKEN STAGED_RESEND_HEC_TOKEN</code>, before the next stack.</li>
 </ol>
 <p>Afterwards: unset the environment variables, keep the bundle and its ledger
 together until the last stack is done, then delete both and the <code>--out</code>

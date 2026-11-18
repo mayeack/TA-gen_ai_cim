@@ -207,9 +207,12 @@ def join_key(value):
 
 def actor_of(body):
     """Whose event this is: the body's enduser_id, else its user, as a join
-    key ('' for none). The census search S1 reads the same two keys."""
+    key ('' for none). The census search S1 reads the same two keys, and as
+    spath prints a JSON null as the text "null", S1 drops that text with
+    nullif() and so does this: a JSON null and the string "null" are both
+    no name, and the user key is read next."""
     for key in ('enduser_id', 'user'):
-        if body.get(key) is not None:
+        if body.get(key) is not None and body.get(key) != 'null':
             return join_key(body[key])
     return ''
 
@@ -628,8 +631,9 @@ def select_events(rows, personas, t_from, t_to, source, now, exact_window=False,
     past either end of the window (at least EDGE_GUARD_SECONDS, so the two
     guards have something to look at).
 
-    The persona is read here, from the parsed body, never in SPL: spath stops
-    at extraction_cutoff characters and would drop an event silently.
+    The persona is read here, from the parsed body, never in SPL: the export
+    is the one record of what is sent, and the census (S1) is only a second
+    opinion that must agree with it, count for count.
 
     Refused, and the whole export with it: an event of a persona that is not
     eligible; one id twice; an event of a persona within EDGE_GUARD_SECONDS
@@ -987,6 +991,27 @@ def open_private_append(path, what):
     return os.fdopen(fd, 'a+', encoding='utf-8')
 
 
+ENV_STATE_DIR = 'STAGED_RESEND_STATE_DIR'
+DEFAULT_STATE_DIR = os.path.join(os.path.expanduser('~'), '.staged-resend')
+
+
+def state_journal(env, write):
+    """The journal of every send from this machine: journal.jsonl in the
+    state directory ($STAGED_RESEND_STATE_DIR, else ~/.staged-resend), a
+    directory of this user's that no one else can enter (created 0700)."""
+    folder = env.get(ENV_STATE_DIR) or DEFAULT_STATE_DIR
+    if not os.path.isabs(folder):
+        raise Refused('${} must be an absolute path'.format(ENV_STATE_DIR))
+    if write and not os.path.lexists(folder):
+        os.makedirs(folder, 0o700)
+    if os.path.lexists(folder):
+        info = os.lstat(folder)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise Refused('the state directory is not a directory of this user\'s that only this user can enter '
+                          '(a symlink? mode 0700 expected): nothing is sent')
+    return os.path.join(folder, 'journal.jsonl')
+
+
 def ledger_path(bundle_path):
     """<bundle>.ledger.jsonl, beside the bundle: what was handed to which stack."""
     return os.path.abspath(bundle_path) + '.ledger.jsonl'
@@ -1175,11 +1200,14 @@ def as_search(text):
     """A search text as splunkd's search/jobs wants it. Text that opens with a
     generating command ("| tstats ...") goes as it is; anything else needs a
     leading `search `. A saved rule's text can be either: 47 of the 115 shipped
-    searches open with a pipe, and `search | tstats` is a FATAL error."""
+    searches open with a pipe, and `search | tstats` is a FATAL error. A text
+    saved with its own leading `search ` (savedsearches.conf and REST allow
+    it) goes as it is too: `search search ...` reads the second word as a
+    literal term and matches nothing, with no error."""
     body = str(text or '').strip()
     if not body:
         raise Refused('an empty search text')
-    return body if body.startswith('|') else 'search ' + body
+    return body if body.startswith('|') or re.match(r'(?i)search\s', body) else 'search ' + body
 
 
 # --- splunkd: the credential, the certificate and the one REST client -------------
@@ -1281,7 +1309,7 @@ class Splunkd(seed.Splunkd):
         seed.Splunkd.__init__(self, address, session_key=secret if kind == 'token' else None,
                               username=username if kind == 'password' else None,
                               password=secret if kind == 'password' else None, verify=bool(verify), dry_run=False)
-        self.flag, self.override, self.host = flag, override, host
+        self.flag, self.override, self.host, self.port = flag, override, host, port
         if ca_file and scheme == 'https':
             try:
                 self.ctx.load_verify_locations(ca_file)
@@ -1468,14 +1496,15 @@ def spl_index_exists(index):
 def spl_census(index, hosts, personas, source, t_from, t_to):
     """S1. Splunk's own count of everything near the window (the range is the
     window padded by CENSUS_PAD_SECONDS): where, which host, whose, what kind.
-    Nobody but the selected personas is named. spath reads only the first
-    extraction_cutoff characters of an event, so a user who sits deeper shows
-    as "no user" here: the export then stops, because Python counted more."""
+    Nobody but the selected personas is named. Whenever this count and
+    Python's reading of the export disagree about an event's persona, the
+    export stops: neither side is taken on trust."""
     if not all(isinstance(bound, int) and not isinstance(bound, bool) for bound in (t_from, t_to)):
         raise Refused('a window bound that is not a whole second cannot be put into a search')
     return ('search index={index} '
             '| eval rs_ids=mvappend(spath(_raw, "audit_id"), spath(_raw, "escalation_id"), spath(_raw, "event_id")), '
-            'rs_user=lower(replace(trim(coalesce(spath(_raw, "enduser_id"), spath(_raw, "user"))), "@.*", "")) '
+            'rs_user=lower(replace(trim(coalesce(nullif(spath(_raw, "enduser_id"), "null"), '
+            'nullif(spath(_raw, "user"), "null"))), "@.*", "")) '
             '| eval rs_where=case(_time<{t_from:d}, "before the window", _time>={t_to:d}, "after the window", '
             'true(), "in the window"), '
             'rs_host=if(in(host, {hosts}), "selected host", "other host"), '
@@ -2239,8 +2268,8 @@ def read_selection(source, opts, names, now, sleep, echo):
     census = census_part(census_rows, chosen.left_out, legacy, None)
     if census['eligible'] != len(chosen.events):
         raise Refused('Splunk\'s census counts {} eligible event(s) of the persona in the window and this tool '
-                      'selected {}: an event would be left out or added unseen (a user name that sits deeper '
-                      'in an event than spath reads shows as "no user" in the census)'.format(
+                      'selected {}: an event would be left out or added unseen (Splunk and this tool read '
+                      'someone\'s user name differently)'.format(
                           census['eligible'], len(chosen.events)))
     holes = census_holes(census)
     if holes:
@@ -2517,21 +2546,67 @@ def ledger_line(text):
         return None
     if line['kind'] == 'outcome' and line.get('state') not in (ACCEPTED, NOT_SENT, REFUSED, TOO_LARGE, UNKNOWN):
         return None
+    for key in ('hec', 'mgmt'):
+        if key in line and not (isinstance(line[key], str) and LEDGER_KEY_RE.fullmatch(line[key])):
+            return None
     return line
 
 
-def read_ledger(text, guid):
+LEDGER_KEY_RE = re.compile(r'[0-9]{16}')
+
+
+def ledger_key(target, index):
+    """What ties a ledger line to the stack whatever search head answered
+    --stack: a hash of the HEC endpoint (host and port) and the index. Never
+    the address itself: the ledger holds no address."""
+    text = '{}:{}/{}'.format(target.host.lower().rstrip('.'), target.port, index)
+    return '{:016d}'.format(int(hashlib.sha256(text.encode('utf-8')).hexdigest(), 16) % 10 ** 16)   # digits: no word
+
+
+def stack_ledger_key(splunkd):
+    """What ties a ledger line to the stack for `send` and `verify` alike,
+    whatever member of a search head cluster answered: a hash of the --stack
+    management address (host and port), never the address itself. The server
+    GUID belongs to the member that answered, not to the stack."""
+    text = 'mgmt:{}:{}'.format(splunkd.host.lower().rstrip('.'), splunkd.port)
+    return '{:016d}'.format(int(hashlib.sha256(text.encode('utf-8')).hexdigest(), 16) % 10 ** 16)
+
+
+def line_is_ours(line, guid, hec=None, mgmt=None):
+    """A ledger line counts for a stack when it names its GUID, its HEC
+    endpoint (ledger_key) or its --stack address (stack_ledger_key)."""
+    return (line['stack'].upper() == guid.upper() or (hec is not None and line.get('hec') == hec)
+            or (mgmt is not None and line.get('mgmt') == mgmt))
+
+
+def read_ledger(text, guid, hec=None, what='the ledger beside the bundle', mgmt=None):
     """({id: when it was last handed to HEC} for the ids that are unconfirmed
     on the stack `guid`, whether the text ends in a torn line).
 
-    An id is unconfirmed from its intent line on, until a `confirmed` line (the
-    stack showed it) or an outcome that proves nothing of the request was
-    indexed. An accepted or unknown outcome, a missing outcome (the run died)
-    and a `released` line all leave it unconfirmed. A line this tool did not
+    Unconfirmed is counted per request, not per id: each intent line opens
+    one request for its ids, and only that request's own outcome can close it
+    by proving that nothing of it was indexed. An id stays unconfirmed while
+    any of its requests is open, until a `confirmed` line (the stack showed
+    it) closes all of them. An accepted or unknown outcome, a missing outcome
+    (the run died) and a `released` line all leave a request open. A line
+    counts for the stack when it names `guid`, or when it names the stack's
+    HEC endpoint `hec` (ledger_key) or its --stack address `mgmt`
+    (stack_ledger_key): another search head of the same stack answers with
+    another GUID. A line this tool did not
     write is refused, with one exception: a last line that was cut off (no
     line end), which a full disk or a power cut leaves behind. It says nothing:
     an intent line is complete on disk before its request is sent."""
-    pending, lines = {}, text.split('\n')
+    state = ledger_state(text, guid, hec, what, mgmt)
+    return dict((ident, when) for ident, when in state.handed_at.items() if state.open[ident] > 0), state.torn
+
+
+LedgerState = collections.namedtuple('LedgerState', 'open handed_at owner torn')
+
+
+def ledger_state(text, guid, hec=None, what='the ledger beside the bundle', mgmt=None):
+    """read_ledger's working: {id: open requests}, {id: when it was last
+    handed over}, {id: the bundle of its last intent line}, torn."""
+    opened, handed_at, owner, lines = collections.Counter(), {}, {}, text.split('\n')
     torn = lines[-1] != ''
     for number, raw in enumerate(lines[:-1] if not torn else lines):
         line = ledger_line(raw)
@@ -2539,28 +2614,32 @@ def read_ledger(text, guid):
             follower = ledger_line(lines[number + 1]) if number + 1 < len(lines) else None
             if (torn and number == len(lines) - 1) or (follower is not None and follower['kind'] == 'torn'):
                 continue
-            raise Refused('the ledger beside the bundle has a line (number {}) that this tool did not write: '
+            raise Refused('{} has a line (number {}) that this tool did not write: '
                           'nothing is sent, because what was handed to which stack is no longer known'.format(
-                              number + 1))
-        if line['stack'].upper() != guid.upper():
+                              what, number + 1))
+        if not line_is_ours(line, guid, hec, mgmt):
             continue
         if line['kind'] == 'intent':
-            pending.update((ident, line['at']) for ident in line['ids'])
-        elif line['kind'] == 'confirmed' or (line['kind'] == 'outcome' and line['state'] in PROVES_NOTHING_INDEXED):
+            opened.update(line['ids'])
+            handed_at.update((ident, line['at']) for ident in line['ids'])
+            owner.update((ident, line.get('bundle')) for ident in line['ids'])
+        elif line['kind'] == 'outcome' and line['state'] in PROVES_NOTHING_INDEXED:
+            opened.subtract(ident for ident in line['ids'] if opened[ident] > 0)
+        elif line['kind'] == 'confirmed':
             for ident in line['ids']:
-                pending.pop(ident, None)
-    return pending, torn
+                opened[ident] = 0
+    return LedgerState(opened, handed_at, owner, torn)
 
 
-def ledger_handed(text, guid, bundle_id):
-    """The ids that runs of one bundle handed to the stack `guid` and that
+def ledger_handed(text, guid, bundle_id, mgmt=None):
+    """The ids that runs of one bundle handed to the stack `guid` (or `mgmt`) and that
     may therefore be on it, sorted: every intent line of that bundle, less
     the requests whose answer proved that nothing was indexed. It is what
     `verify` holds the stack's labelled events against."""
     counts = collections.Counter()
     for raw in text.split('\n'):
         line = ledger_line(raw)
-        if line is None or line['stack'].upper() != guid.upper() or line.get('bundle') != bundle_id:
+        if line is None or not line_is_ours(line, guid, None, mgmt) or line.get('bundle') != bundle_id:
             continue
         if line['kind'] == 'intent':
             counts.update(line['ids'])
@@ -2574,90 +2653,137 @@ class Ledger(object):
     stack `guid`. A real run opens it for appending (created 0600 when
     missing) under an exclusive lock; a dry run reads an existing one under a
     shared lock and writes nothing. The lock is taken before a line is read
-    and is held until close(), so two runs never decide from the same state."""
+    and is held until close(), so two runs never decide from the same state.
 
-    def __init__(self, path, guid, bundle_id, clock, write=True):
+    With a `journal` (the one file in the state directory, STATE_DIR) every
+    line also goes there, and the journal is locked first: it is what every
+    bundle sent from this machine handed over, so a second bundle that holds
+    the same ids (a re-export, an overlapping selection) sees them as handed
+    over, and two sends never run at the same time."""
+
+    def __init__(self, path, guid, bundle_id, clock, write=True, journal=None, hec=None, mgmt=None):
         self.path, self.guid, self.bundle_id, self.clock, self.write = path, guid, bundle_id, clock, write
-        self.handle, self.pending, self.torn = None, {}, False
+        self.journal, self.hec, self.mgmt = journal, hec, mgmt
+        self.handles, self.torn = [], {}                      # [(handle, what)]; {what: torn}
+        self.pending, self.open_requests, self.owner, self.handed_at = {}, collections.Counter(), {}, {}
         self.handed = 0                                       # events this run put on record as handed to HEC
 
+    @property
+    def handle(self):
+        return self.handles[-1][0] if self.handles else None
+
     def open(self):
-        busy = Refused('another `send` holds the ledger of this bundle: one send per bundle at a time (wait for '
-                       'it to end; nothing was read or sent here)')
-        if self.write:
-            self.handle = open_private_append(self.path, 'the ledger beside the bundle')
-        elif not os.path.lexists(self.path):
-            return self                                       # a dry run creates nothing
-        else:
-            try:
-                fd = os.open(self.path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-            except OSError:
-                raise Refused('the ledger beside the bundle cannot be read (a symlink?)')
-            self.handle = os.fdopen(fd, 'r', encoding='utf-8')
         try:
-            _check_private(os.fstat(self.handle.fileno()), 'the ledger beside the bundle')
-            fcntl.flock(self.handle.fileno(), (fcntl.LOCK_EX if self.write else fcntl.LOCK_SH) | fcntl.LOCK_NB)
-        except OSError:
-            self.close()
-            raise busy
-        except Refused:
-            self.close()
-            raise
-        try:
-            self.handle.seek(0)
-            self.pending, self.torn = read_ledger(self.handle.read(), self.guid)
-        except ValueError:
-            self.close()
-            raise Refused('the ledger beside the bundle is not UTF-8 text: nothing is sent')
+            if self.journal is not None:
+                self._open_one(self.journal, 'the journal in the state directory',
+                               'another `send` on this machine is running (one send at a time, whatever the '
+                               'bundle: wait for it to end; nothing was read or sent here)')
+            self._open_one(self.path, 'the ledger beside the bundle',
+                           'another `send` holds the ledger of this bundle: one send per bundle at a time (wait '
+                           'for it to end; nothing was read or sent here)')
         except Refused:
             self.close()
             raise
         return self
 
+    def _open_one(self, path, what, busy):
+        if self.write:
+            handle = open_private_append(path, what)
+        elif not os.path.lexists(path):
+            return                                            # a dry run creates nothing
+        else:
+            try:
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            except OSError:
+                raise Refused('{} cannot be read (a symlink?)'.format(what))
+            handle = os.fdopen(fd, 'r', encoding='utf-8')
+        self.handles.append((handle, what))
+        try:
+            _check_private(os.fstat(handle.fileno()), what)
+            fcntl.flock(handle.fileno(), (fcntl.LOCK_EX if self.write else fcntl.LOCK_SH) | fcntl.LOCK_NB)
+        except OSError:
+            raise Refused(busy)
+        try:
+            handle.seek(0)
+            state = ledger_state(handle.read(), self.guid, self.hec, what, self.mgmt)
+        except ValueError:
+            raise Refused('{} is not UTF-8 text: nothing is sent'.format(what))
+        self.torn[what] = state.torn
+        for ident, when in state.handed_at.items():          # what either file says is open stays open
+            if when >= self.handed_at.get(ident, when):
+                self.owner[ident] = state.owner.get(ident)
+            self.handed_at[ident] = max(when, self.handed_at.get(ident, when))
+            self.open_requests[ident] = max(self.open_requests[ident], state.open[ident])
+        self.pending = dict((ident, when) for ident, when in self.handed_at.items() if self.open_requests[ident] > 0)
+
     def close(self):
-        if self.handle is not None:
-            self.handle.close()                               # closing the file gives the lock back
-            self.handle = None
+        for handle, _ in self.handles:
+            handle.close()                                    # closing the file gives the lock back
+        self.handles = []
 
     def _append(self, kind, ids=(), **more):
-        """One line, complete on disk before this returns."""
-        if not self.write or self.handle is None:
+        """One line, complete on disk (in the journal and beside the bundle) before this returns."""
+        if not self.write or not self.handles:
             raise Refused('a bug in this tool: a dry run tried to write the ledger')
-        line = dict(more, v=LEDGER_VERSION, kind=kind, stack=self.guid, bundle=self.bundle_id, at=int(self.clock()))
+        base = dict(v=LEDGER_VERSION, stack=self.guid, bundle=self.bundle_id, at=int(self.clock()))
+        if self.hec is not None:
+            base['hec'] = self.hec
+        if self.mgmt is not None:
+            base['mgmt'] = self.mgmt
+        line = dict(more, kind=kind, **base)
         if ids:
             line['ids'] = list(ids)
-        text = json.dumps(line, sort_keys=True, separators=(',', ':'), ensure_ascii=True) + '\n'
-        if self.torn:                                         # end the cut-off line and say that it was one
-            self.torn = False
-            self.handle.write('\n')
-            self._append('torn')
-        self.handle.write(text)
-        self.handle.flush()
-        os.fsync(self.handle.fileno())
+        text, torn = (json.dumps(item, sort_keys=True, separators=(',', ':'), ensure_ascii=True) + '\n'
+                      for item in (line, dict(base, kind='torn')))
+        for handle, what in self.handles:
+            if self.torn.get(what):                           # end the cut-off line and say that it was one
+                self.torn[what] = False
+                handle.write('\n' + torn)
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
         return line
 
     def run(self, **counts):
         self._append('run', tool=TOOL, **counts)
 
     def intent(self, ids, size, canary):
-        """BEFORE the request: these ids are about to be handed to HEC."""
+        """BEFORE the request: these ids are about to be handed to HEC. Each id gets one more open request."""
         line = self._append('intent', ids, bytes=int(size), canary=bool(canary))
         self.handed += len(ids)
+        self.open_requests.update(ids)
+        self.owner.update((ident, self.bundle_id) for ident in ids)
+        self.handed_at.update((ident, line['at']) for ident in ids)
         self.pending.update((ident, line['at']) for ident in ids)
 
     def outcome(self, ids, outcome):
+        """The answer to one request. Only an answer that proves nothing was
+        indexed closes it, and it closes that request only: an id an earlier
+        request left open stays unconfirmed."""
         self._append('outcome', ids, state=outcome.state, http=outcome.http, code=outcome.code)
         if outcome.state in PROVES_NOTHING_INDEXED:
             for ident in ids:
-                self.pending.pop(ident, None)
+                self.open_requests[ident] = max(0, self.open_requests[ident] - 1)
+                if self.open_requests[ident] == 0:
+                    self.pending.pop(ident, None)
 
     def confirmed(self, ids):
-        """The stack showed these ids: they are no longer unconfirmed."""
+        """The stack showed these ids as this run handed them over: no request for them is open any more."""
         ids = [ident for ident in ids if ident in self.pending]
         if ids and self.write:
             self._append('confirmed', ids)
         for ident in ids:
+            self.open_requests[ident] = 0
             self.pending.pop(ident, None)
+
+    def confirm_shown(self, decisions):
+        """confirmed() for the unconfirmed ids the stack shows as the bundle
+        that handed them over: this bundle's label, or another bundle's when
+        another bundle's intent line was the last for the id. A live copy, or
+        another bundle's copy of an id this bundle handed over, is not this
+        request's copy: it may still land, so the id stays unconfirmed."""
+        self.confirmed([ident for ident, decision in decisions.items() if decision.verdict == THIS_BUNDLE or (
+            decision.verdict == OTHER_BUNDLE and self.owner.get(ident) not in (None, self.bundle_id))])
 
     def released(self, ids):
         """--resend-unconfirmed let these through. It changes nothing by
@@ -2982,6 +3108,24 @@ def canary_of(events):
     return (plain or ordered(events))[0]
 
 
+def kind_of(event):
+    """What a stack's own index-time settings can tell apart: the sourcetype and the log type."""
+    return event['sourcetype'], event['log_type']
+
+
+def canaries_of(events, proven=()):
+    """One canary per kind of event (kind_of) that is not in `proven`, each
+    canary_of its kind, and canary_of(events) first: a stack can change one
+    sourcetype and keep another as it is sent, so one kind proves nothing of
+    the next."""
+    groups = collections.OrderedDict()
+    for event in ordered(events):
+        groups.setdefault(kind_of(event), []).append(event)
+    main = canary_of(events)
+    picks = [canary_of(group) for kind, group in groups.items() if kind not in proven]
+    return sorted(picks, key=lambda event: event['id'] != main['id'])
+
+
 def poll_presence(stack, index, events, bundle_id, seconds, clock, sleep, what):
     """{id: Decision} from the presence search, asked again every
     POLL_SECONDS until the stack holds every one of these events (no `send`
@@ -3050,7 +3194,7 @@ def show_plan(events, plan, pending, now, first, echo):
                                           ': ' + ', '.join(decision.differs) if decision.differs else '')
         elif action is None:
             action = 'skip (on the stack, identical: {})'.format(decision.verdict)
-        if first is not None and event['id'] == first['id']:
+        if event['id'] in set(canary['id'] for canary in first or ()):
             action += ', first and alone (the canary)'
         echo('    {}  {:<10} {:<20} {}'.format(event['id'], event['log_type'], event['sourcetype'], action))
 
@@ -3128,7 +3272,8 @@ class Sender(object):
             self.echo('  {} event(s) accepted by HEC ({})'.format(count, outcome.detail))
             if canary:
                 self.judge(batch.events, self.look(batch.events, 'P1, the canary'), 'the canary')
-                self.echo('  the canary is on the stack once, identical and labelled {}'.format(self.bundle_id))
+                self.echo('  the canary is on the stack once, identical and labelled {}{}'.format(
+                    self.bundle_id, '' if count == 1 else ' ({} events, one of each kind)'.format(count)))
         self.sent.extend(ids)
 
 
@@ -3141,14 +3286,14 @@ def check_presence(stack, rep, opts, bundle, ledger, settle, quiet, clock, sleep
     label, events, bundle_id = 'R7. what the stack holds', bundle['events'], bundle['bundle_id']
     index = events[0]['index']
     decisions = presence(stack, index, events, bundle_id, 'R7, the presence search', sleep)
-    ledger.confirmed([ident for ident, decision in decisions.items() if decision.verdict in SKIP_VERDICTS])
+    ledger.confirm_shown(decisions)
     plan = make_plan(events, decisions, ledger.pending, clock(), opts.resend_unconfirmed, opts.no_canary)
     if plan.held and not plan.stop and not quiet:
         echo('  {} id(s) were handed to HEC before and are not on the stack: waiting up to {} s for them (they '
              'are not sent again)'.format(len(plan.held), settle))
         decisions.update(poll_presence(stack, index, plan.held, bundle_id, settle, clock, sleep,
                                        'R7, waiting for unconfirmed ids'))
-        ledger.confirmed([ident for ident, decision in decisions.items() if decision.verdict in SKIP_VERDICTS])
+        ledger.confirm_shown(decisions)
         plan = make_plan(events, decisions, ledger.pending, clock(), opts.resend_unconfirmed, opts.no_canary)
     counts = plan_counts(decisions)
     if plan.stop:
@@ -3185,25 +3330,36 @@ def send_plan(sender, plan, opts, echo):
     if plan.released:
         ledger.released([event['id'] for event in plan.released])
     ledger.run(send=len(going), held=len(plan.held))
-    first = first_of(plan, opts)
+    firsts = first_of(plan, opts, sender.bundle['events'])
     if opts.no_canary:
         echo('  --no-canary: no event goes first and alone. A stack that changes what it indexes gets every event '
              'wrong, not one')
-    if first is not None:
-        echo('  the canary: one event first, alone ({})'.format(first['id']))
-        sender.deliver(make_batch([first], bundle_id), canary=True)
-        going = [event for event in going if event['id'] != first['id']]
+    if firsts:
+        echo('  the canary: one event first, alone ({})'.format(firsts[0]['id']))
+        sender.deliver(make_batch([firsts[0]], bundle_id), canary=True)
+    if firsts[1:]:                                        # then one event of each other kind, before any bulk
+        echo('  then one canary for each other sourcetype and log type, in one request: {}'.format(', '.join(
+            '{} ({} {})'.format(event['id'], event['sourcetype'], event['log_type']) for event in firsts[1:])))
+        sender.deliver(make_batch(firsts[1:], bundle_id), canary=True)
+    going = [event for event in going if event['id'] not in set(first['id'] for first in firsts)]
     for batch in batches(going, bundle_id):
         sender.deliver(batch)
 
 
-def first_of(plan, opts):
-    """The canary of this run, or None: with --no-canary, with nothing to
-    send, or when a copy of this bundle is on the stack already (an earlier
-    run's canary proved that this stack keeps an event as it is sent)."""
+def first_of(plan, opts, events=None):
+    """The canaries of this run, first first, or []: with --no-canary, with
+    nothing to send, and for each kind of event (kind_of) of which a copy of
+    this bundle is on the stack already (an earlier run's canary proved that
+    this stack keeps that kind as it is sent). Without `events` any copy of
+    this bundle counts as that proof for every kind."""
     going = plan.send + plan.released
-    proven = any(decision.verdict == THIS_BUNDLE for decision in plan.decisions.values())
-    return None if (opts.no_canary or proven or not going) else canary_of(going)
+    if opts.no_canary or not going:
+        return []
+    if events is None:
+        shown = any(decision.verdict == THIS_BUNDLE for decision in plan.decisions.values())
+        return [] if shown else canaries_of(going)
+    return canaries_of(going, set(kind_of(event) for event in events
+                                  if plan.decisions[event['id']].verdict == THIS_BUNDLE))
 
 
 def finish_send(sender, plan, opts, echo):
@@ -3219,7 +3375,7 @@ def finish_send(sender, plan, opts, echo):
         raise Halt(EXIT_FAILED, 'after sending, the stack holds {} id(s) twice or in another form: {}. That cannot '
                                 'be removed'.format(len(stopped), ', '.join(stopped[:5])))
     sender.judge([event for event in events if event['id'] in sender.sent], decisions, 'after the last request')
-    ledger.confirmed([ident for ident, decision in decisions.items() if decision.verdict in SKIP_VERDICTS])
+    ledger.confirm_shown(decisions)
     absent = [event['id'] for event in events if decisions[event['id']].verdict == SEND]
     if absent:
         waiting = [ident for ident in absent if ident not in ledger.pending]
@@ -3230,6 +3386,11 @@ def finish_send(sender, plan, opts, echo):
                                      ', '.join([ident for ident in absent if ident in ledger.pending][:5]),
                                      ' {} more id(s) were not sent in this run.'.format(len(waiting)) if waiting
                                      else '', RESEND_UNCONFIRMED_AFTER))
+    elsewhere = [event['id'] for event in events if event['id'] in ledger.pending]
+    if elsewhere:                                         # shown, but only as a copy that is not the one handed over
+        raise Halt(EXIT_UNKNOWN, '{} id(s) that were handed to HEC before show only a copy that is not theirs (live, '
+                                 'or another bundle\'s): {}. The copy handed over may still be indexed and become '
+                                 'a duplicate; run `verify` later'.format(len(elsewhere), ', '.join(elsewhere[:5])))
     echo('')
     echo('SENT: the stack holds each of the {} id(s) once, identical. This run sent {}; {} were there '
          'already.'.format(len(events), len(sender.sent), len(events) - len(sender.sent)))
@@ -3253,7 +3414,7 @@ def run_send(opts, stack, hec, ledger, bundle, settle, clock, sleep, echo):
     if plan is not None:
         echo('')
         echo('  Per id ({} event(s)):'.format(len(bundle['events'])))
-        show_plan(bundle['events'], plan, ledger.pending, clock(), first_of(plan, opts), echo)
+        show_plan(bundle['events'], plan, ledger.pending, clock(), first_of(plan, opts, bundle['events']), echo)
     echo('')
     if rep.failures():
         echo('NOT SENT: {} step(s) failed. Nothing was sent to HEC.'.format(rep.failures()))
@@ -3301,8 +3462,11 @@ def cmd_send(opts, env, clock, sleep, echo):
     found = check_stack(stack, bundle, clock())                                # R3
     echo('  [  OK] R3. stack - Splunk {}, {} {}, not the Splunk the bundle came from'.format(
         found['splunk_version'], APP, found['ta_version']))
+    echo('  the ledger: stack GUID {} and its HEC endpoint (send this bundle with the same --stack URL every '
+         'time)'.format(found['guid']))
     ledger = Ledger(ledger_path(opts.bundle), found['guid'], bundle['bundle_id'], clock,
-                    write=not opts.dry_run).open()
+                    write=not opts.dry_run, journal=state_journal(env, not opts.dry_run),
+                    hec=ledger_key(target, events[0]['index']), mgmt=stack_ledger_key(stack)).open()
     try:
         code = run_send(opts, stack, hec, ledger, bundle, settle, clock, sleep, echo)
     except Halt as halt:
@@ -3763,8 +3927,9 @@ def run_verify(stack, bundle, guid, bundle_path, wait, clock, sleep, echo):
     this stack) and the stack. The ledger is read once, before the stack."""
     rep, index = seed.Reporter(echo), bundle['events'][0]['index']
     text = ledger_text(bundle_path)
-    read_ledger(text, guid)                      # a line this tool did not write is refused, as `send` refuses it
-    handed = ledger_handed(text, guid, bundle['bundle_id'])
+    mgmt = stack_ledger_key(stack)               # another member of the stack answers with another GUID
+    read_ledger(text, guid, mgmt=mgmt)           # a line this tool did not write is refused, as `send` refuses it
+    handed = ledger_handed(text, guid, bundle['bundle_id'], mgmt)
     if not run_search(stack, spl_index_exists(index), '0', 'now', 'V1, looking for the index', (), sleep):
         rep.fail('V1. the copies', 'this account can search no index {} on the stack (it is missing, or hidden '
                                    'from the account\'s role): every search would answer "nothing there", so '

@@ -138,6 +138,12 @@ The two Splunk credentials have different names on purpose, so the
 facilitator's password can never be sent to a stack, or a stack's to the
 facilitator's Splunk.
 
+Nothing ties `SPLUNK_ADMIN_PASSWORD` (or `SPLUNK_ADMIN_TOKEN`) to one stack:
+`send` and `verify` send whatever it holds, as Basic or Bearer auth, to the
+stack named by `--stack`. It must hold the password of **that** stack. Read it
+at the start of each stack and unset it at the end, before the next stack, so
+one stack's admin password is never sent to another.
+
 **User names** are not secrets and are options. A password needs one:
 `--source-username` on `export` and `--username` on `send` and `verify`, both
 `admin` unless given (the same default as `show_postdeploy.py --username`). A
@@ -349,13 +355,17 @@ and after the first Duo poll is in. The machine that runs it must reach the
 stack's port 8089 as well as its HEC: every check before and after sending is
 a search on the stack.
 
-**Worked example.** Always a dry run first:
+**Worked example.** Always a dry run first. The password read here is the
+admin password of `<stack>`, the stack named by `--stack`:
 
 ```bash
-read -rs SPLUNK_ADMIN_PASSWORD && export SPLUNK_ADMIN_PASSWORD
+read -rs SPLUNK_ADMIN_PASSWORD && export SPLUNK_ADMIN_PASSWORD   # <stack>'s own admin password
 python3 tools/staged_resend.py send --bundle ~/staged-bundles/nina-takeover.bundle.json \
     --stack https://<stack>.splunkcloud.com --hec-file <stack>.json --dry-run
 ```
+
+When that stack is done, `unset SPLUNK_ADMIN_PASSWORD SPLUNK_ADMIN_TOKEN`
+before the next one.
 
 A dry run makes every read (steps R1 to R8 below) and prints, per id, what a
 real run would do: `send`, `skip` or stop. It posts nothing to HEC and prints
@@ -371,7 +381,11 @@ What a real run does, in order:
    stack returns the canary exactly once, with the same SHA-256, time, host,
    source, sourcetype, index and `log_type`, and labelled with this bundle. If
    the stack changed the event in any way, one event is wrong on that stack
-   and the rest was never sent.
+   and the rest was never sent. A stack can change one sourcetype and keep
+   another, so a second request then carries one event of each other
+   sourcetype and `log_type` in the bundle, and it too must come back
+   identical before any other event is sent. A kind of which a copy of this
+   bundle is on the stack already needs no canary.
 3. The rest, at most 50 events and 512 KiB in one request (the 16 Nov set is
    one request).
 4. It polls every 10 s, up to `--settle` seconds (180), until every id is on
@@ -392,7 +406,7 @@ the option that overrides it.
 | R1 bundle | the file is 0600, is not a symbolic link and is not inside a git work tree; its digest and every event's SHA-256 still match; it is approved, for this digest | none |
 | R2 HEC | the `--hec-file` is 0600 and holds `hec_url` and `hec_token`; its index is the bundle's; the URL is https and ends `/services/collector/event`; its host belongs to the stack named by `--stack`. A `--lab5` file is refused and named as such | none |
 | R3 stack | splunkd on port 8089 answers and accepts the credential; the server is **not** the Splunk the bundle was exported from; TA-gen_ai_cim is 1.9.0 or later | none |
-| R4 index and age | the index exists and this account can search it; it is the index the stack's own macro `genai_identity_ai_events` reads; it keeps the oldest event at least 7 more days; the newest event is over 15 minutes old and the oldest under 180 days | none, but see `--retention-days` below |
+| R4 index and age | the index exists and this account can search it; it is the index the stack's own macro `genai_identity_ai_events` reads (where the stack does not serve the macro: `gen_ai_log` only, marked NOT CHECKED); it keeps the oldest event at least 7 more days; the newest event is over 15 minutes old and the oldest under 180 days | none, but see `--retention-days` below |
 | R5 rule | the joined rule exists and is enabled, judges by index time on a slot exactly one cron period wide, with `realtime_schedule = 0`; its text parses on this stack; one of its last ticks (2 periods + 5 minutes, so 15 minutes) ran successfully | `--allow-rule-off` |
 | R6 Duo half | the Duo authentication of every sign-in in the bundle (the record's `details.duo_txid`) is in the stack's Duo events exactly once; the persona's Duo failures there are at least the bundle's | `--without-duo` |
 | R7 presence and ledger | no id is on the stack in a different form or more than once; no id of an earlier run is still unconfirmed | `--resend-unconfirmed`, for unconfirmed ids only |
@@ -409,6 +423,13 @@ Notes on single steps:
   at export exists for a scratch index on a dev Splunk; on a stack whose
   macro reads `gen_ai_log`, a bundle for any other index is refused, because
   *Identity Activity* and the rule would never read the copy.
+- **R4, a macro the stack does not serve.** Where the stack does not serve
+  the definition of `genai_identity_ai_events` (`configs/conf-macros`
+  unreadable, likely on a Cloud search head), the step cannot prove which
+  index the macro reads. It then says `NOT CHECKED: which index ... reads`,
+  accepts a `gen_ai_log` bundle on the shipped definition, and refuses a
+  bundle for any other index. `verify` reads the copies through the macro,
+  so V3 and V5 show whether the stack really reads them.
 - **R4, retention.** It is read from the stack's `data/indexes`. Where a
   stack does not serve that endpoint (403 or 404), the step says so and
   stops; give the index's searchable days yourself with `--retention-days N`
@@ -494,13 +515,23 @@ and why it needs port 8089.
 ### The ledger
 
 `send` keeps `<bundle>.ledger.jsonl` beside the bundle: mode 0600, one line
-appended per step, keyed by the stack's server GUID, so one bundle and one
-ledger serve every stack. Before each request it writes the ids it is about
+appended per step, keyed by the stack's server GUID, by a hash of its HEC
+endpoint and index and by a hash of the `--stack` address, so one bundle and
+one ledger serve every stack. Every
+line also goes to the journal, `journal.jsonl` in the state directory
+(`$STAGED_RESEND_STATE_DIR`, else `~/.staged-resend`, created 0700): what
+every bundle sent from this machine handed over. `send` reads both and
+prints the GUID it keys on. Before each request it writes the ids it is about
 to send and forces the line to disk; only then does it post. If the run dies
 at any point after that, the next run knows those ids may be on the stack.
 
 From that line on an id is **unconfirmed** until the stack shows it, or until
-HEC's answer proves it took nothing (not sent, refused, too large). Every
+HEC's answer proves it took nothing (not sent, refused, too large). This is
+counted per request: a refusal of a later request (after
+`--resend-unconfirmed`, say) says nothing of an earlier one whose answer was
+unknown, so the id stays unconfirmed. The stack shows it only as the copy of
+the bundle that handed it over: a live copy, or another bundle's, leaves it
+unconfirmed, and the run ends with exit 3. Every
 later `send` to the same stack waits for unconfirmed ids and does not send
 them, whatever the earlier run's last line says and also when that line is
 missing.
@@ -511,8 +542,18 @@ Rules that follow from it:
   copy a bundle to a second machine to send from there as well: the second
   machine has no ledger, and a stack that is slow to index would get the
   events twice.
-- One `send` per bundle at a time. The ledger is locked for the whole run,
-  so a second `send` on the same bundle cannot send beside the first.
+- One `send` per machine at a time. The journal is locked for the whole run,
+  so a second `send`, of this bundle or any other, cannot send beside the
+  first.
+- A re-export of the same selection, or an overlapping one (another persona,
+  a wider window), sent from the same machine and user, holds what the first
+  bundle handed over: the journal knows those ids. Never send it from
+  another user or machine, and never point `$STAGED_RESEND_STATE_DIR`
+  elsewhere between sends.
+- Send a bundle with the same `--stack` URL every time. Another member of
+  a search head cluster behind that address answers with another GUID; the
+  hash of the `--stack` address (and, for `send`, of the HEC endpoint) still ties
+  the lines to the stack, for `send` and `verify` alike.
 - The ledger holds ids, hashes, times, counts and HEC's code and status.
   It holds no token, no body and no address.
 - `send` refuses a ledger that is a symbolic link, that others can read or
@@ -528,9 +569,11 @@ Usually the stack took them and is slow to make them searchable.
 2. Wait a few minutes and run `verify`. If it finds every id once, the
    delivery is confirmed: a later `send` finds the ids on the stack and
    skips them.
-3. If ids are still missing, run `send` again. It sends what was never
-   attempted, waits for the unconfirmed ids and sends none of them; it does
-   not end with exit 0 while they are missing.
+3. If ids are still missing, run `send` again. While no copy of this bundle
+   shows on the stack, it sends nothing new: the unconfirmed ids print as
+   `HOLD` and the never-attempted ones as `WAIT`, unless `--no-canary` is
+   given. It waits `--settle` seconds for the unconfirmed ids, sends none of
+   them, and ends with exit 3 while any is missing.
 4. Only when an unconfirmed id is still missing **an hour** after it was
    sent does `--resend-unconfirmed` let it through. Look once more by hand
    first (the search under [Checking by hand](#checking-by-hand)): a
@@ -566,9 +609,13 @@ What that means in practice:
 ## `verify`: prove the copy and the finding
 
 ```
-staged_resend.py verify --bundle PATH --stack URL [--username admin] [--wait 900]
+staged_resend.py verify --bundle PATH --stack URL [--username admin] [--wait SECONDS]
     [--ca-file P] [--no-verify-splunkd]
 ```
+
+`--wait` defaults to 0: `verify` looks once. Right after a `send`, pass
+`--wait 900`. (The spec's synopsis gave 900 as if it were the default; the
+built default is 0, so that a later `verify` never blocks.)
 
 ```bash
 python3 tools/staged_resend.py verify --bundle ~/staged-bundles/nina-takeover.bundle.json \
@@ -581,12 +628,12 @@ ready.
 
 | Step | What must hold | Wait |
 |---|---|---|
-| V1 | every id of the bundle is on the stack exactly once, identical, labelled with this bundle or delivered live | polls every 10 s, up to 180 s |
+| V1 | every id of the bundle is on the stack exactly once, identical, labelled with this bundle or delivered live | polls every 10 s, up to 180 s, for ids the ledger says were sent; any other missing id fails at once |
 | V2 | the events that carry this bundle's label are the ones the ledger says were sent | none |
 | V3 | read through the TA's own macros, the stack gives the bundle's expected row | none |
 | V4 | the Duo authentication of every sign-in is on the stack once | none |
 | V5 | the stack's own rule text, run ad hoc over all index time (no alert action runs), returns the bundle's chain ids | none |
-| V6 | each chain has one row in index `notable` and one in index `risk` | up to `--wait` seconds |
+| V6 | each chain has one row in index `notable` and one in index `risk` | until the finding is due (`tick + 420 s`, below) or `--wait` runs out, whichever comes first; none when V1 failed |
 
 For the 16 Nov set a good run reads: 9 of 9 ids once and identical; the row
 `nina.osei`, `events 9`, `copies 9`, `identity_events 7`, `ai_turns 5`,
@@ -605,7 +652,8 @@ indexed at second `t` is judged at the first tick after `t + 120`:
 `tick = (floor((t + 120) / 300) + 1) * 300`. The scheduler starts the run a
 minute or more after the tick and may skew it by up to 5 minutes, so the tool
 allows `tick + 420 s`. In wall-clock terms the finding is there between about
-3 and 14 minutes after the send; `--wait 900` covers the worst case.
+3 and 14 minutes after the send; `--wait 900` covers the worst case, and the
+wait ends early once the finding is there or overdue.
 
 ### When a check after sending fails
 
@@ -616,6 +664,7 @@ allows `tick + 420 s`. In wall-clock terms the finding is there between about
 | V1: an id is on the stack more than once | a duplicate | it stays; see [What cannot be undone](#what-cannot-be-undone) |
 | V3: the row differs | the events are there, but the stack's TA reads them differently from the facilitator's | compare the TA versions and look for a local override of the TA's macros or props on the stack |
 | V4 or V5: no Duo authentication, no chain | the Duo half is missing or from another tenant | `show_postdeploy.py --duo` again, read D7 and D8 |
+| V6: `NOT RAISED YET` (exit 1) | the finding is not due yet: the tick that judges the copy, plus 420 s, has not passed | nothing is wrong; run `verify --wait N` as printed, or `verify` again after the printed due time |
 | V6: no finding although V5 shows the chain | the scheduled run that should have judged the copy did not raise it | read the lines the tool prints next, below |
 
 When the finding is late, the tool prints the scheduler's own record of the
@@ -774,7 +823,10 @@ python3 -B tools/tests/fixtures/staged_resend_gen.py --check
 ```
 
 Read the result line, not the exit code: it must say `Ran N tests`, with N
-around 70, and then `OK` with no `skipped`. Under Python 3.9 a suite that
+at least 200, and then `OK`. Under the system `python3` nothing may be
+skipped. Under Splunk's `python3.13` exactly one test is: Python-Markdown is
+not part of that Python, so the comparison of this page with its `.html`
+does not run there. Under Python 3.9 a suite that
 found no test at all also exits 0 (`Ran 0 tests`). The suite needs the joined
 rule's stanza in `default/savedsearches.conf` of the checkout and fails, not
 skips, without it.
@@ -812,13 +864,23 @@ Once, on the facilitator's Mac:
 
 Per stack, in this order:
 
-1. `python3 tools/show_postdeploy.py --stack <url> --out <stack>.json`
-2. `python3 tools/show_postdeploy.py --stack <url> --duo --duo-poll-slot <K>/<N>`,
+1. `read -rs SPLUNK_ADMIN_PASSWORD && export SPLUNK_ADMIN_PASSWORD`: the admin
+   password of this stack, the one named by `--stack` below. Never carry the
+   last stack's over.
+2. `python3 tools/show_postdeploy.py --stack <url> --out <stack>.json`
+   If it printed `No HEC token returned`, there is no `<stack>.json`: use the
+   `--hec-url` form from *Known gap in `--out`* in steps 4 and 5 instead of
+   `--hec-file`.
+3. `python3 tools/show_postdeploy.py --stack <url> --duo --duo-poll-slot <K>/<N>`,
    wait for the first poll, run it again and read D7 and D8.
-3. `python3 tools/staged_resend.py send --bundle <bundle> --stack <url> --hec-file <stack>.json --dry-run`
-4. The same without `--dry-run`, with `--wait-finding 900`.
-5. `python3 tools/staged_resend.py verify --bundle <bundle> --stack <url> --wait 900`
-6. Open *Identity Activity* on the stack, time range covering the scenario.
+4. `python3 tools/staged_resend.py send --bundle <bundle> --stack <url> --hec-file <stack>.json --dry-run`
+   (or, after `No HEC token returned`, `read -rs STAGED_RESEND_HEC_TOKEN && export STAGED_RESEND_HEC_TOKEN`
+   and `--hec-url https://http-inputs-<stack>.splunkcloud.com/services/collector/event`
+   in place of `--hec-file <stack>.json`)
+5. The same without `--dry-run`, with `--wait-finding 900`.
+6. `python3 tools/staged_resend.py verify --bundle <bundle> --stack <url> --wait 900`
+7. Open *Identity Activity* on the stack, time range covering the scenario.
+8. `unset SPLUNK_ADMIN_PASSWORD SPLUNK_ADMIN_TOKEN STAGED_RESEND_HEC_TOKEN`, before the next stack.
 
 Afterwards: unset the environment variables, keep the bundle and its ledger
 together until the last stack is done, then delete both and the `--out`

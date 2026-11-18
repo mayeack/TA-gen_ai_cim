@@ -22,8 +22,11 @@ It is strict on purpose, so that a wrong tool fails a test:
     string, several values are a list, an absent value is no key at all;
     `stats` without BY over nothing is one row that holds the count alone and
     with BY it is no row; tstats cuts a time bound to the whole second and
-    search does not; spath reads only the first `spath_cutoff` characters of
-    an event and returns the text "null" for a JSON null;
+    search does not; eval spath() reads a key however deep it sits in the
+    event (seen live: 364 KB in, [spath] extraction_cutoff notwithstanding)
+    and returns the text "null" for a JSON null. `spath_cutoff` is an opt-in
+    knob for an odd stack whose spath stops early; it is None (no cut) by
+    default;
   * every request is recorded, with its headers, and nothing is answered
     without the credential;
   * it can fail in the ways that matter here: a WARN on a search (once or
@@ -118,7 +121,8 @@ TEXTS = collections.OrderedDict((
     ('census', text_pattern(
         'search index={index} '
         '| eval rs_ids=mvappend(spath(_raw, "audit_id"), spath(_raw, "escalation_id"), spath(_raw, "event_id")), '
-        'rs_user=lower(replace(trim(coalesce(spath(_raw, "enduser_id"), spath(_raw, "user"))), "@.*", "")) '
+        'rs_user=lower(replace(trim(coalesce(nullif(spath(_raw, "enduser_id"), "null"), '
+        'nullif(spath(_raw, "user"), "null"))), "@.*", "")) '
         '| eval rs_where=case(_time<{t_from}, "before the window", _time>={t_to}, "after the window", true(), '
         '"in the window"), rs_host=if(in(host, {hosts}), "selected host", "other host"), '
         'rs_who=case(in(rs_user, {personas}), "selected persona", isnull(rs_user) OR rs_user=="", "no user", '
@@ -310,13 +314,14 @@ class FakeSplunk(object):
         self.macro_index = {'genai_identity_ai_events': 'gen_ai_log', 'genai_duo_index': 'duo'}
         self.saved = {JOINED_RULE: shipped_rule()}
         self.events = []
-        self.spath_cutoff = 5000
+        self.spath_cutoff = None                         # an int: an odd stack whose spath stops there
         self.warn_runs, self.warn_text = 0, SLOW_START   # the next N search answers carry a WARN; -1: every one
         self.fail_search = {}                            # {kind: message}: that search answers with an ERROR
         self.odd_answer = {}                             # {kind: text}: that search answers 200 with this body
         self.alter_raw = None                            # f(raw) applied to _raw on the way out of the export search
         self.rewrite_present = None                      # f(row) -> row or None, on each row of the presence search
         self.redirect_to = None                          # every request answers 302 to this address
+        self.member_guids, self.info_answers = (), 0     # set: a search head cluster, each answer another member's
         self.requests, self.searches, self.server = [], [], None
         # -- the stack's side (send, verify) --
         self.retention_seconds, self.index_disabled = 90 * 86400, False
@@ -389,11 +394,11 @@ class FakeSplunk(object):
 
     def spath(self, found, key):
         """spath(_raw, "<key>") on a top-level key: its text, the text "null"
-        for a JSON null, and nothing for a key that is absent or whose value
-        ends beyond the extraction cutoff."""
+        for a JSON null, and nothing for a key that is absent (or, only when
+        spath_cutoff is set, whose value ends beyond it)."""
         for name, value, end in found:
             if name == key:
-                if end > self.spath_cutoff:
+                if self.spath_cutoff is not None and end > self.spath_cutoff:
                     return None
                 return 'null' if value is None else value if isinstance(value, str) else json.dumps(value)
         return None
@@ -412,7 +417,7 @@ class FakeSplunk(object):
         else None."""
         for name, content in self.saved.items():
             text = content['search'].strip()
-            if spl == (text if text.startswith('|') else 'search ' + text) + tail:
+            if spl == (text if text.startswith('|') or re.match(r'(?i)search\s', text) else 'search ' + text) + tail:
                 return name
         return None
 
@@ -475,8 +480,9 @@ class FakeSplunk(object):
         for event in self.seen(quoted_values(index)[0], earliest, latest):
             found = members(event['raw'])
             ids = [value for value in (self.spath(found, key) for key in ID_KEYS) if value is not None]
-            user = self.spath(found, 'enduser_id')
-            user = join_key(user if user is not None else self.spath(found, 'user'))
+            user = next((value for value in (self.spath(found, 'enduser_id'), self.spath(found, 'user'))
+                         if value not in (None, 'null')), None)    # coalesce(nullif(..., "null"), ...)
+            user = join_key(user)
             log_type = self.listed(event['fields'].get('log_type'))
             where = ('before the window' if event['time'] < int(t_from) else
                      'after the window' if event['time'] >= int(t_to) else 'in the window')
@@ -830,6 +836,9 @@ class FakeSplunk(object):
 
         saved = '/servicesNS/nobody/{}/saved/searches/'.format(APP)
         if method == 'GET' and path == '/services/server/info':
+            if self.member_guids:                    # a load-balanced :8089: whichever member answers names itself
+                self.guid = self.member_guids[self.info_answers % len(self.member_guids)]
+                self.info_answers += 1
             return entry('server-info', {'guid': self.guid, 'version': self.version, 'serverName': 'fake-splunk'})
         if method == 'GET' and path == '/services/apps/local/' + APP and self.ta_version is not None:
             return entry(APP, {'version': self.ta_version})

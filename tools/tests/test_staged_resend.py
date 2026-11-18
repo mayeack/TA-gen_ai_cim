@@ -222,6 +222,10 @@ class ToolCase(unittest.TestCase):
         self.out = []
         self.folder = tempfile.mkdtemp(prefix='staged-resend-test-')
         self.addCleanup(shutil.rmtree, self.folder, True)
+        self.state_dir = tempfile.mkdtemp(prefix='staged-resend-state-')     # never the real ~/.staged-resend
+        self.addCleanup(shutil.rmtree, self.state_dir, True)
+        self.addCleanup(setattr, tool, 'DEFAULT_STATE_DIR', tool.DEFAULT_STATE_DIR)
+        tool.DEFAULT_STATE_DIR = self.state_dir
 
     def tearDown(self):
         text = '\n'.join(self.out)
@@ -553,6 +557,8 @@ class EligibilityTests(ToolCase):
                 self.assertEqual(tool.join_key(value), key)
         self.assertEqual(tool.actor_of({'enduser_id': 'Grace.Lin@corp.test', 'user': 'nina.osei'}), 'grace.lin')
         self.assertEqual(tool.actor_of({'enduser_id': None, 'user': 'nina.osei'}), 'nina.osei')
+        self.assertEqual(tool.actor_of({'enduser_id': 'null', 'user': 'nina.osei'}), 'nina.osei')  # as nullif()
+        self.assertEqual(tool.actor_of({'enduser_id': None, 'user': None}), '')
         self.assertEqual(tool.actor_of({'enduser_id': '', 'user': 'nina.osei'}), '')
         self.assertEqual(tool.actor_of({'details': {'user': 'nina.osei'}}), '')
 
@@ -1340,8 +1346,10 @@ class CommandLineTests(ToolCase):
         self.assertEqual(tool.as_search('| tstats count where index=x'), '| tstats count where index=x')
         self.assertEqual(tool.as_search('\n  | multisearch [search a] [search b]\n'),
                          '| multisearch [search a] [search b]')
-        # As the scheduler reads a saved search: its text is never written with a leading "search".
-        self.assertEqual(tool.as_search('search index=x'), 'search search index=x')
+        # A text saved with its own leading "search" keeps it: "search search" would match nothing.
+        for saved in ('search index=x', 'SEARCH index=x', 'search\tindex=x | stats count'):
+            self.assertEqual(tool.as_search(saved), saved)
+        self.assertEqual(tool.as_search('searchable=1'), 'search searchable=1')
         for empty in ('', '   ', None):
             self.refused(tool.as_search, empty)
 
@@ -1487,11 +1495,12 @@ class ShippedConfTests(unittest.TestCase):
         skip, decorate = 'skip' + 'Test(', '@unittest' + '.'          # put together here: this test names no skip
         for word in (skip, 'skip' + 'If', 'skip' + 'Unless', 'Skip' + 'Test'):
             self.assertNotIn(word, body, 'a shipped-conf test must fail, never skip')
-        # The only skips of the whole suite: a Python or an openssl that cannot serve a throwaway TLS certificate.
+        # The only skips of the whole suite: a Python or an openssl that cannot serve a throwaway TLS certificate,
+        # and the runbook's byte comparison where Python-Markdown is missing (as in the repo's DocsTests).
         skips = [line.strip() for line in source.split('\n') if skip in line]
-        self.assertEqual(len(skips), 6, skips)
+        self.assertEqual(len(skips), 7, skips)
         for line in skips:
-            self.assertTrue('openssl' in line or 'TLS' in line, line)
+            self.assertTrue('openssl' in line or 'TLS' in line or 'Python-Markdown' in line, line)
         self.assertNotIn(decorate + 'skip', source)
         self.assertNotIn(decorate + 'expectedFailure', source)
         # Without the rule's stanza the readers raise, which unittest reports as an error.
@@ -1541,6 +1550,28 @@ NEW_FILES = ('tools/staged_resend.py', 'tools/tests/fake_resend_stack.py', 'tool
              'tools/staged-resend-runbook.html')              # the eight files of this change, and no other
 
 
+def render_runbook_html():
+    """tools/staged-resend-runbook.html as it must read: the .md through
+    Python-Markdown (tables, fenced_code, toc) inside the fixed head of
+    tools/lab5-identity-runbook.html, titled with the .md's first line.
+    Regenerate after any edit to the .md with
+    `python3 -B tools/tests/test_staged_resend.py --write-runbook-html`
+    (needs Python-Markdown; review finding spec-05)."""
+    import html as html_lib
+    import markdown
+    with io.open(os.path.join(REPO, 'tools', 'staged-resend-runbook.md'), encoding='utf-8') as handle:
+        md = handle.read()
+    with io.open(os.path.join(REPO, 'tools', 'lab5-identity-runbook.html'), encoding='utf-8') as handle:
+        ref = handle.read()
+    head = ref[:ref.index('<main>') + len('<main>')]
+    title = md.splitlines()[0]
+    assert title.startswith('# '), title
+    start, end = head.index('<title>') + len('<title>'), head.index('</title>')
+    head = head[:start] + html_lib.escape(title[2:], quote=False) + head[end:]
+    body = markdown.markdown(md, extensions=['tables', 'fenced_code', 'toc'])
+    return head + '\n' + body.strip() + '\n</main>\n</body>\n</html>\n'
+
+
 class NewFilesTests(unittest.TestCase):
     """The eight files this change adds exist, and none of them carries a
     value from a real system: the live data behind this tool holds a real
@@ -1558,6 +1589,143 @@ class NewFilesTests(unittest.TestCase):
             mode = stat.S_IMODE(os.stat(path).st_mode)
             self.assertEqual(mode, 0o755 if name.endswith('.py') else 0o644, '{}: mode {:o}'.format(name, mode))
             self.assertGreater(len(self.read(name)), 1000, name)
+
+    def test_the_runbook_reads_the_stack_password_per_stack_and_unsets_it_before_the_next(self):
+        """Nothing in the tool ties SPLUNK_ADMIN_PASSWORD to the --stack host,
+        so the per-stack steps start by reading it and end by unsetting it,
+        in both runbook files (review finding secrets-02)."""
+        for name, amp in (('tools/staged-resend-runbook.md', '&&'), ('tools/staged-resend-runbook.html', '&amp;&amp;')):
+            text = self.read(name)
+            steps = text[text.index('Per stack, in this order:'):text.index('Afterwards: unset')]
+            self.assertIn('read -rs SPLUNK_ADMIN_PASSWORD {} export SPLUNK_ADMIN_PASSWORD'.format(amp), steps, name)
+            self.assertLess(steps.index('read -rs SPLUNK_ADMIN_PASSWORD'), steps.index('show_postdeploy.py'), name)
+            self.assertGreater(steps.rindex('unset SPLUNK_ADMIN_PASSWORD SPLUNK_ADMIN_TOKEN'),
+                               steps.rindex('Identity Activity'), name)
+            self.assertIn('It must hold the password of', text, name)
+
+    def runbooks(self):
+        """Both runbook files as plain text: the .html with its tags dropped."""
+        for name in ('tools/staged-resend-runbook.md', 'tools/staged-resend-runbook.html'):
+            text = self.read(name)
+            if name.endswith('.html'):
+                text = re.sub(r'</t[dh]>', ' |', text.replace('<tr>', '| '))
+                text = re.sub(r'<[^>]+>', '', text).replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+            yield name, re.sub(r'\s+', ' ', text.replace('`', ''))
+
+    def test_the_runbook_says_a_rerun_after_exit_3_sends_nothing_new_until_a_copy_shows(self):
+        """make_plan holds the never-attempted events too while held ids exist and
+        no copy of this bundle is on the stack (review finding spec-01)."""
+        source = self.read('tools/staged_resend.py')
+        self.assertIn('if held and not proven and not no_canary:\n        send, later = [], send', source)
+        for name, text in self.runbooks():
+            step = text[text.index('If ids are still missing, run send again'):text.index('Only when an unconfirmed id')]
+            self.assertNotIn('sends what was never attempted', step, name)
+            for needle in ('sends nothing new', 'WAIT', 'HOLD', 'unless --no-canary', '--settle', 'exit 3'):
+                self.assertIn(needle, step, name)
+
+    def test_the_runbook_verify_table_says_what_v1_polls_for_when_v6_stops_and_lists_not_raised_yet(self):
+        """Review finding spec-02: V1 polls only for ids the ledger sent, V6 stops at
+        tick + FINDING_GRACE_SECONDS or --wait, and NOT RAISED YET has a row."""
+        self.assertEqual(tool.FINDING_GRACE_SECONDS, 420)
+        for name, text in self.runbooks():
+            start = text.index('| Step | What must hold | Wait |')
+            table = text[start:text.index('For the 16 Nov set', start)]
+            v1 = table[table.index('| V1 |'):table.index('| V2 |')]
+            v6 = table[table.index('| V6 |'):]
+            self.assertIn('for ids the ledger says were sent; any other missing id fails at once', v1, name)
+            self.assertIn('tick + 420 s', v6, name)
+            self.assertIn('whichever comes first', v6, name)
+            self.assertIn('none when V1 failed', v6, name)
+            failures = text[text.index('When a check after sending fails'):]
+            self.assertIn('V6: NOT RAISED YET (exit 1)', failures, name)
+
+    def test_the_runbook_test_gate_names_a_floor_the_suite_meets_and_both_interpreters(self):
+        """Review finding spec-03: the gate's N is a floor the real suite meets."""
+        count = unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__]).countTestCases()
+        for name, text in self.runbooks():
+            floor = re.search(r'Ran N tests, with N at least (\d+), and then OK\. Under the system python3 nothing '
+                              r'may be skipped\. Under Splunk\'s python3\.13 exactly one test is', text)
+            self.assertTrue(floor, name)
+            self.assertLessEqual(int(floor.group(1)), count, name)
+            self.assertGreaterEqual(int(floor.group(1)), 200, name)
+            self.assertNotIn('around 70', text, name)
+
+    def test_every_number_in_a_runbook_synopsis_is_that_options_default(self):
+        """Review finding spec-04: `[--wait 900]` read as a default of 900 while
+        the built default is 0. A number in a synopsis must be the default."""
+        actions = [a for a in tool.build_parser()._actions if getattr(a, 'choices', None)]
+        commands = actions[0].choices
+        for name, text in self.runbooks():
+            checked = 0
+            for command, parser in commands.items():
+                start = text.index('staged_resend.py {} --bundle PATH'.format(command)
+                                   if command != 'export' else 'staged_resend.py export --source URL')
+                synopsis = text[start:text.index('[--', start) + 600].split(' staged_resend.py ')[0]
+                defaults = {o: a.default for a in parser._actions for o in a.option_strings}
+                for option, value in re.findall(r'\[(--[a-z-]+) (\d+)\]', synopsis):
+                    self.assertEqual(str(defaults[option]), value, '{} {} {}'.format(name, command, option))
+                    checked += 1
+            self.assertGreaterEqual(checked, 1, name)                     # send's [--settle 180] at least
+            verify = text[text.index('staged_resend.py verify --bundle'):]
+            self.assertIn('[--wait SECONDS]', verify[:200], name)
+            self.assertIn('--wait defaults to 0', verify, name)
+        self.assertEqual(commands['verify'].get_default('wait'), '0')
+
+    def test_the_runbook_html_is_the_rendered_md(self):
+        """Review finding spec-05. Without Python-Markdown the comparison is
+        SKIPPED, which is not a pass: run it once under a Python that has it."""
+        md, page = self.read('tools/staged-resend-runbook.md'), self.read('tools/staged-resend-runbook.html')
+        self.assertEqual(page.count('<h2 '), len(re.findall(r'^## ', md, flags=re.M)))
+        try:
+            import markdown  # noqa: F401
+        except ImportError:
+            self.skipTest('Python-Markdown is not installed here: the byte comparison did not run')
+        self.assertEqual(render_runbook_html(), page, 'regenerate: python3 -B tools/tests/test_staged_resend.py '
+                                                       '--write-runbook-html')
+
+    def test_every_option_in_the_runbook_is_one_the_tools_parse_and_every_tool_option_is_in_it(self):
+        """Review finding spec-05: an option the runbook names is the tool's,
+        or show_postdeploy.py's, or the golden generator's --check; and each
+        option of staged_resend.py is documented."""
+        parser = tool.build_parser()
+        commands = [a for a in parser._actions if getattr(a, 'choices', None)][0].choices
+        ours = {o for p in [parser] + list(commands.values()) for a in p._actions for o in a.option_strings}
+        ours -= {'-h', '--help'}
+        theirs = set(re.findall(r"add_argument\(\s*'(--[a-z0-9-]+)'", self.read('tools/show_postdeploy.py')))
+        self.assertLessEqual({'--out', '--duo', '--duo-poll-slot', '--lab5'}, theirs)
+        for name, text in self.runbooks():
+            text = text[text.index('Staged events re-send runbook', text.index('Staged events re-send runbook') + 1)
+                        if name.endswith('.html') else 0:]                # the page, not the CSS custom properties
+            named = set(re.findall(r'(?<![\w-])--[a-z][a-z0-9-]*', text))
+            self.assertEqual(sorted(named - ours - theirs - {'--check'}), [], name)
+            self.assertEqual(sorted(ours - named), [], name)
+
+    def test_the_runbook_says_r4_passes_gen_ai_log_as_not_checked_when_the_macro_is_unreadable(self):
+        """Review finding spec-07: where configs/conf-macros cannot be read,
+        R4 accepts gen_ai_log on the shipped definition and refuses any other index."""
+        source = self.read('tools/staged_resend.py')
+        self.assertIn("if reads is None and index != DEFAULT_INDEX:", source)
+        self.assertIn("'NOT CHECKED: which index {} reads ({}); the shipped definition reads {}", source)
+        for name, text in self.runbooks():
+            note = text[text.index('R4, a macro the stack does not serve.'):text.index('R4, retention.')]
+            for needle in ('conf-macros', 'NOT CHECKED: which index', 'accepts a gen_ai_log bundle on the shipped '
+                           'definition', 'refuses a bundle for any other index'):
+                self.assertIn(needle, note, name)
+            self.assertIn('marked NOT CHECKED', text[text.index('| R4 index and age |'):], name)
+
+    def test_the_start_to_finish_steps_fall_back_to_hec_url_when_out_writes_no_file(self):
+        """Review finding spec-08: on a real stack --out may write nothing and
+        print `No HEC token returned`; the checklist then uses --hec-url."""
+        for name, text in self.runbooks():
+            steps = text[text.index('Per stack, in this order:'):text.index('Afterwards: unset')]
+            gap = steps.index('No HEC token returned')
+            self.assertLess(steps.index('--out <stack>.json'), gap, name)
+            self.assertLess(gap, steps.index('--hec-file <stack>.json --dry-run'), name)
+            send = steps[steps.index('--hec-file <stack>.json --dry-run'):steps.index('The same without --dry-run')]
+            for needle in ('read -rs STAGED_RESEND_HEC_TOKEN', '--hec-url https://http-inputs-<stack>.splunkcloud.com'
+                           '/services/collector/event'):
+                self.assertIn(needle, send, name)
+            self.assertIn('unset SPLUNK_ADMIN_PASSWORD SPLUNK_ADMIN_TOKEN STAGED_RESEND_HEC_TOKEN', steps, name)
 
     def test_every_test_that_runs_the_tool_ends_with_the_secrets_and_privacy_checks(self):
         module = sys.modules[self.__class__.__module__]
@@ -1724,10 +1892,11 @@ class ExportTests(SourceCase):
         self.assertIn({'where': 'in the window', 'host': 'selected host', 'who': 'selected persona',
                        'kind': 'eligible', 'sourcetype': 'demobot:audit', 'log_type': 'audit', 'events': 2},
                       census['rows'])
-        # spath prints a JSON null as the text "null": the anonymous event is "other identity" for Splunk.
-        self.assertIn({'where': 'in the window', 'host': 'selected host', 'who': 'other identity',
-                       'kind': 'eligible', 'sourcetype': 'gen_ai:json', 'log_type': 'governance', 'events': 2},
-                      census['rows'])
+        # spath prints a JSON null as the text "null" and S1 drops it with nullif(): the anonymous event is
+        # "no user" for Splunk, as it is for this tool, and grace.lin's is the one other identity.
+        for who in ('no user', 'other identity'):
+            self.assertIn({'where': 'in the window', 'host': 'selected host', 'who': who, 'kind': 'eligible',
+                           'sourcetype': 'gen_ai:json', 'log_type': 'governance', 'events': 1}, census['rows'])
         expect = bundle['expect']
         self.assertEqual(expect['identity'], [{'identity_key': 'nina.osei', 'events': 6, 'copies': 6,
                                                'identity_events': 3, 'ai_turns': 2, 'ai_blocked': 1,
@@ -1914,12 +2083,36 @@ class ExportTests(SourceCase):
         self.assertIn('overrides used: --exact-window, --allow-partial-session', text)
         self.assertIn('--exact-window: 2 event(s)', text)
 
+    def test_splunk_and_the_tool_agree_on_a_null_enduser_id_and_on_a_user_deep_in_an_event(self):
+        # A JSON null enduser_id with the persona as user: S1's nullif() and actor_of both read user.
+        nulled = changed(changed(changed(ERROR, '0000000000b3', '0000000000b4'), '04:41:50.5', '04:41:52.5'),
+                         '"enduser_id":"nina.osei"', '"enduser_id":null')
+        # enduser_id 6,000 characters into the event: eval spath() on 10.4.3 reads it however deep it sits.
+        deep = changed(changed(changed(ERROR, '0000000000b3', '0000000000b5'), '04:41:50.5', '04:41:54.5'),
+                       '"session_id":"sess-1",', '"session_id":"sess-1","pad":"' + 'x' * 6000 + '",')
+        self.assertGreater(deep.index('"enduser_id"'), 6000)
+        self.fake.add(nulled, '1794890512.5', 'demobot:error', 'error', host=HOST)
+        self.fake.add(deep, '1794890514.5', 'demobot:error', 'error', host=HOST)
+        code, text = self.export()
+        self.assertEqual(code, 0, text)
+        self.assertEqual(self.written()['census']['eligible'], 8)
+        self.assertEqual(len(self.written()['events']), 8)
+
+    def test_a_rule_saved_with_its_own_leading_search_is_dispatched_once_prefixed(self):
+        rule = self.fake.saved[tool.JOINED_RULE]
+        rule['search'] = 'search ' + rule['search'].strip()          # savedsearches.conf and REST allow it
+        code, text = self.export()
+        self.assertEqual(code, 0, text)
+        self.assertEqual(self.written()['expect']['chains'], ['nina.osei:takeover:1794890419'])
+        self.assertEqual(self.written()['expect']['rule']['rows'], 1)
+        self.assertFalse(any(search['search'].startswith('search search') for search in self.fake.searches))
+
     def test_what_stops_an_export_after_the_source_was_read(self):
         def legacy(fake):
             fake.events[2]['fields']['session_id'] = 'sess-1'         # the forwarder of before 31 July indexed it
 
         def deep_user(fake):
-            fake.spath_cutoff = 100                                   # enduser_id sits deeper than spath reads
+            fake.spath_cutoff = 100                                   # an odd stack: the census misreads the user
 
         def altered(fake):
             fake.alter_raw = lambda raw: raw.replace('"actor":"user"', '"actor": "user"')
@@ -2374,7 +2567,8 @@ class SearchTextTests(ToolCase):
         self.assertEqual(tool.spl_census('gen_ai_log', hosts, personas, 'demobot:hec', T_FROM, T_TO), (
             'search index="gen_ai_log" '
             '| eval rs_ids=mvappend(spath(_raw, "audit_id"), spath(_raw, "escalation_id"), spath(_raw, "event_id")), '
-            'rs_user=lower(replace(trim(coalesce(spath(_raw, "enduser_id"), spath(_raw, "user"))), "@.*", "")) '
+            'rs_user=lower(replace(trim(coalesce(nullif(spath(_raw, "enduser_id"), "null"), '
+            'nullif(spath(_raw, "user"), "null"))), "@.*", "")) '
             '| eval rs_where=case(_time<1794890400, "before the window", _time>=1794890700, "after the window", '
             'true(), "in the window"), rs_host=if(in(host, "second-host", "stage-host"), "selected host", '
             '"other host"), rs_who=case(in(rs_user, "grace.lin", "nina.osei"), "selected persona", '
@@ -2975,6 +3169,7 @@ STACK_ENDPOINTS = re.compile(ENDPOINTS.pattern + r'|GET /services/data/indexes/[
                              r'GET /servicesNS/nobody/TA-gen_ai_cim/configs/conf-macros/genai_identity_ai_events')
 STAGED_IDS = [re.match(r'\{"\w+":"([0-9a-f-]{36})"', item[0]).group(1) for item in STAGED]
 CANARY = STAGED_IDS[1]                                     # the session start: the earliest audit record, no sign-in
+KIND_CANARIES = [STAGED_IDS[2], STAGED_IDS[4], STAGED_IDS[5]]  # then one of each other sourcetype and log type
 
 
 def text_of(path):
@@ -3125,7 +3320,7 @@ class SendTests(StackCase):
         self.assertEqual(code, 0, text)
         self.assertEqual(self.copies(), dict((ident, 1) for ident in STAGED_IDS))
         posts = self.posts()
-        self.assertEqual([post['body'].count(b'"resend":"true"') for post in posts], [1, 5])     # the canary, the rest
+        self.assertEqual([post['body'].count(b'"resend":"true"') for post in posts], [1, 3, 2])  # canary, kinds, rest
         self.assertIn(CANARY.encode('ascii'), posts[0]['body'])
         self.assertIn('the canary is on the stack once, identical and labelled', text)
         self.assertIn('SENT: the stack holds each of the 6 id(s) once, identical. This run sent 6; 0 were there', text)
@@ -3134,14 +3329,14 @@ class SendTests(StackCase):
         self.assertEqual(self.naps, [])                                   # nothing to wait for: no sleep at all
         # Each request is on record before it is made, and its events are confirmed from the stack.
         self.assertEqual([line['kind'] for line in self.ledger()],
-                         ['run', 'intent', 'outcome', 'confirmed', 'intent', 'outcome', 'confirmed'])
+                         ['run'] + ['intent', 'outcome', 'confirmed'] * 3)
         self.assertEqual(stat.S_IMODE(os.stat(self.ledger_file).st_mode), 0o600)
         self.assertEqual({line['stack'] for line in self.ledger()}, {STACK_GUID})
         self.assertEqual(tool.ledger_handed(text_of(self.ledger_file), STACK_GUID, self.written()['bundle_id']),
                          sorted(STAGED_IDS))
         code, text = self.send()
         self.assertEqual(code, 0, text)
-        self.assertEqual(len(self.posts()), 2, 'a second run sent something')
+        self.assertEqual(len(self.posts()), 3, 'a second run sent something')
         self.assertIn('to send 0; on the stack, identical: 6 (live 0, this bundle 6, another bundle 0)', text)
         self.assertIn('nothing to send', text)
         self.assertEqual(self.copies(), dict((ident, 1) for ident in STAGED_IDS))
@@ -3149,12 +3344,15 @@ class SendTests(StackCase):
     def test_the_request_is_the_assistants_own_plus_the_label_and_the_stack_holds_the_same_bytes(self):
         self.assertEqual(self.send()[0], 0)
         events = self.written()['events']
-        rest = [event for event in events if event['id'] != CANARY]
+        kinds = [event for event in events if event['id'] in KIND_CANARIES]
+        rest = [event for event in events if event['id'] != CANARY and event['id'] not in KIND_CANARIES]
         bundle_id = self.written()['bundle_id']
-        canary, others = self.posts()
+        canary, one_of_each, others = self.posts()
         self.assertEqual(others['body'], '\n'.join(tool.event_line(event, bundle_id) for event in rest).encode('utf-8'))
+        self.assertEqual(one_of_each['body'],
+                         '\n'.join(tool.event_line(event, bundle_id) for event in kinds).encode('utf-8'))
         self.assertEqual(canary['body'], tool.event_line(events[1], bundle_id).encode('utf-8'))
-        for post in (canary, others):
+        for post in (canary, one_of_each, others):
             headers = dict((name.lower(), value) for name, value in post['headers'].items())
             self.assertEqual(headers['content-type'], 'application/json; charset=utf-8')
             self.assertEqual(headers['connection'], 'close')
@@ -3231,16 +3429,30 @@ class SendTests(StackCase):
         self.assertEqual((code, len(self.posts())), (1, 1))
         self.assertIn('{} (live)'.format(CANARY), text)
 
+    def test_a_stack_that_rewrites_only_one_sourcetype_gets_one_event_of_it_and_no_bulk(self):
+        def only_turns(event):                                   # an ingest action on gen_ai:json, nothing else
+            if event['sourcetype'] == 'gen_ai:json':
+                event.update(host='rewritten-host')
+        self.stack.hec_rewrite = only_turns
+        code, text = self.send()
+        self.assertEqual(code, 1, text)
+        self.assertEqual([post['body'].count(b'"resend":"true"') for post in self.posts()], [1, 3])   # no bulk
+        sent = [event for event in self.stack.events if event['fields'].get('resend') == 'true']
+        self.assertEqual(sorted(event['sourcetype'] for event in sent if event['sourcetype'] == 'gen_ai:json'),
+                         ['gen_ai:json'])                        # one turn, never all of them
+        self.assertIn('STOPPED: the canary: the stack does not hold 1 of 3 event(s) as they were sent: {}'.format(
+            KIND_CANARIES[0]), text)
+
     def test_a_lost_reply_is_never_followed_by_a_second_request(self):
         self.stack.hec_script = ['lost']                         # the stack takes the canary; its answer never arrives
         code, text = self.send()
         self.assertEqual(code, 0, text)
         self.assertEqual(self.copies(), dict((ident, 1) for ident in STAGED_IDS))
-        self.assertEqual([post['step'] for post in self.posts()], ['lost', 'ok'])
+        self.assertEqual([post['step'] for post in self.posts()], ['lost', 'ok', 'ok'])
         self.assertIn('the answer for 1 event(s) does not say whether they were indexed (the request left and no '
                       'answer came back', text)
         self.assertIn('They are NOT sent again', text)
-        self.assertEqual([line['state'] for line in self.ledger('outcome')], ['unknown', 'accepted'])
+        self.assertEqual([line['state'] for line in self.ledger('outcome')], ['unknown', 'accepted', 'accepted'])
 
     def test_a_lost_reply_and_a_slow_index_never_make_a_second_copy_in_this_run_or_a_later_one(self):
         self.stack.hec_script, self.stack.index_lag = ['lost'], 600
@@ -3266,12 +3478,63 @@ class SendTests(StackCase):
         self.assertEqual(self.copies(), dict((ident, 1) for ident in STAGED_IDS))
         self.assertEqual(sorted(self.ledger('confirmed')[-1]['ids']), sorted(STAGED_IDS))
 
+    def test_a_released_id_whose_new_request_is_refused_is_still_held_by_the_next_run(self):
+        self.stack.hec_script, self.stack.index_lag = ['lost'], 10 ** 6   # taken, and not searchable for days
+        self.assertEqual(self.send('--no-canary', '--settle', '10')[0], 3)
+        self.now = NOW + 3700
+        self.stack.tick(int(self.now) - 300)
+        self.stack.hec_script = [('answer', 403, {'text': 'Invalid token', 'code': 4}, False)]   # an expired token
+        code, text = self.send('--no-canary', '--settle', '10', '--resend-unconfirmed')
+        self.assertEqual((code, len(self.posts())), (1, 2), text)
+        self.assertEqual(self.ledger('outcome')[-1]['state'], 'refused')
+        code, text = self.send('--no-canary', '--settle', '10')       # no override: the first request is still open
+        self.assertEqual((code, len(self.posts())), (3, 2), text)
+        self.assertIn('HELD 6: handed to HEC before, not on the stack, NOT sent again', text)
+
+    def test_a_second_file_of_the_same_bundle_holds_what_the_first_handed_over(self):
+        self.stack.hec_script, self.stack.index_lag = ['lost'], 10 ** 6
+        self.assertEqual(self.send('--no-canary', '--settle', '10')[0], 3)
+        copy = self.path('again.json')                         # a re-export: same id, a new path, no ledger beside it
+        shutil.copyfile(self.bundle, copy)
+        os.chmod(copy, 0o600)
+        code, text = self.send('--no-canary', '--settle', '10', bundle=copy)
+        self.assertEqual((code, len(self.posts())), (3, 1), 'the second file sent again:\n' + text)
+        self.assertIn('HELD 6: handed to HEC before, not on the stack, NOT sent again', text)
+        self.assertFalse(os.path.exists(copy + '.ledger.jsonl') and tool.read_ledger(
+            text_of(copy + '.ledger.jsonl'), STACK_GUID)[0])           # it put nothing new on record as handed
+        journal = os.path.join(self.state_dir, 'journal.jsonl')
+        self.assertEqual(stat.S_IMODE(os.stat(journal).st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(os.stat(self.state_dir).st_mode) & 0o077, 0)
+
+    def test_another_search_head_of_the_same_stack_still_holds_what_was_handed_over(self):
+        self.stack.hec_script, self.stack.index_lag = ['lost'], 10 ** 6
+        code, text = self.send('--no-canary', '--settle', '10')
+        self.assertEqual(code, 3, text)
+        self.assertIn('the ledger: stack GUID {} and its HEC endpoint'.format(STACK_GUID), text)
+        self.stack.guid = '5CA1AB1E-0000-4000-8000-00000000F0AA'          # --stack reaches another search head
+        code, text = self.send('--no-canary', '--settle', '10')
+        self.assertEqual((code, len(self.posts())), (3, 1), 'sent again through another search head:\n' + text)
+        self.assertIn('HELD 6: handed to HEC before, not on the stack, NOT sent again', text)
+        self.assertEqual({line['hec'] for line in self.ledger()}, {tool.ledger_key(
+            tool.HecTarget('http', '127.0.0.1', int(self.hec_url.split(':')[2].split('/')[0]), '', ''),
+            'gen_ai_log')})
+
+    def test_a_live_copy_never_confirms_what_this_bundle_handed_over(self):
+        self.stack.hec_script, self.stack.index_lag = ['lost'], 10 ** 6
+        self.assertEqual(self.send('--no-canary', '--settle', '10')[0], 3)
+        for raw, time_text, sourcetype, log_type in STAGED:      # the same events arrive live meanwhile
+            self.stack.add(raw, time_text, sourcetype, log_type, host=HOST)
+        code, text = self.send('--no-canary', '--settle', '10')
+        self.assertEqual((code, len(self.posts())), (3, 1), text)
+        self.assertIn('6 id(s) that were handed to HEC before show only a copy that is not theirs', text)
+        self.assertEqual(self.ledger('confirmed'), [])
+
     def test_a_slow_index_is_waited_for_and_past_settle_it_is_exit_3_without_a_second_request(self):
         self.stack.index_lag = 25
         code, text = self.send('--settle', '60')
         self.assertEqual(code, 0, text)
-        self.assertEqual(self.naps, [10, 10, 10, 10, 10, 10])    # three looks for the canary, three for the rest
-        self.assertEqual((len(self.posts()), self.copies()), (2, dict((ident, 1) for ident in STAGED_IDS)))
+        self.assertEqual(self.naps, [10] * 9)                    # three looks for each canary request and the rest
+        self.assertEqual((len(self.posts()), self.copies()), (3, dict((ident, 1) for ident in STAGED_IDS)))
         self.restart()
         self.stack.index_lag = 500
         code, text = self.send('--settle', '20')
@@ -3285,10 +3548,10 @@ class SendTests(StackCase):
         self.assertIn('5 more id(s) were not sent in this run.', text)
         self.now += 500
         self.stack.index_lag = 0
-        code, text = self.send('--settle', '20')                 # the canary is there now: the rest goes, no new canary
+        code, text = self.send('--settle', '20')                 # the canary is there now: it proves its own kind only
         self.assertEqual((code, self.copies()), (0, dict((ident, 1) for ident in STAGED_IDS)), text)
-        self.assertEqual([post['body'].count(b'"resend":"true"') for post in self.posts()], [1, 5])
-        self.assertNotIn('the canary: one event first', text)
+        self.assertEqual([post['body'].count(b'"resend":"true"') for post in self.posts()], [1, 1, 2, 2])
+        self.assertIn('the canary: one event first, alone ({})'.format(KIND_CANARIES[0]), text)
 
     def hec_goes_away(self, back_after):
         """echo and sleep for a run during which HEC stops listening after the
@@ -3334,7 +3597,7 @@ class SendTests(StackCase):
         self.stack.hec_script = steps[:3] + ['ok', steps[3], 'ok']
         code, text = self.send()
         self.assertEqual(code, 0, text)
-        self.assertEqual((self.naps, len(self.posts())), ([5, 15, 45, 5], 6))
+        self.assertEqual((self.naps, len(self.posts())), ([5, 15, 45, 5], 7))     # 4 + 2 tries, then the rest
         self.assertEqual(self.copies(), dict((ident, 1) for ident in STAGED_IDS))
         self.assertIn('(HTTP 503, HEC code 9 (Server is busy)): again in 5 s', text)
         self.assertIn('(HTTP 429, HEC code 26 (Queue is at capacity)): again in 15 s', text)
@@ -3363,19 +3626,19 @@ class SendTests(StackCase):
                              (408, ''), (201, {'text': 'Success', 'code': 0})):
             with self.subTest(status=status, body=str(body)[:20]):
                 self.restart()
-                self.stack.hec_script = [('answer', status, body, True)] * 2
+                self.stack.hec_script = [('answer', status, body, True)] * 3
                 code, text = self.send()
-                self.assertEqual((code, len(self.posts())), (0, 2), text)       # the stack showed them: confirmed
+                self.assertEqual((code, len(self.posts())), (0, 3), text)       # the stack showed them: confirmed
                 self.assertEqual(self.copies(), dict((ident, 1) for ident in STAGED_IDS))
-                self.assertEqual([line['state'] for line in self.ledger('outcome')], ['unknown', 'unknown'])
-                self.assertEqual(len(self.ledger('confirmed')), 2)
+                self.assertEqual([line['state'] for line in self.ledger('outcome')], ['unknown'] * 3)
+                self.assertEqual(len(self.ledger('confirmed')), 3)
 
     def test_200_with_code_24_or_25_is_accepted(self):
         self.stack.hec_script = [('answer', 200, {'text': 'Queue is approaching capacity', 'code': 24}, True),
                                  ('answer', 200, {'text': 'ACK is approaching capacity', 'code': 25}, True)]
         code, text = self.send()
-        self.assertEqual((code, len(self.posts()), self.naps), (0, 2, []), text)
-        self.assertEqual([line['state'] for line in self.ledger('outcome')], ['accepted', 'accepted'])
+        self.assertEqual((code, len(self.posts()), self.naps), (0, 3, []), text)
+        self.assertEqual([line['state'] for line in self.ledger('outcome')], ['accepted'] * 3)
         self.assertIn('1 event(s) accepted by HEC (HTTP 200, HEC code 24 (Queue is approaching capacity))', text)
 
     def test_more_than_50_events_go_in_requests_of_at_most_50(self):
@@ -3407,6 +3670,42 @@ class SendTests(StackCase):
         code, text = self.send(bundle=path)                      # a 413 proves nothing was indexed: not held
         self.assertNotIn('HELD', text)
         self.assertEqual(len(self.posts()), 2)
+
+    def test_a_413_on_two_events_splits_them_one_and_one(self):
+        """Halving stops only at one event: a request of two that is too large
+        is split 1+1, not given up (review finding tests-02)."""
+        path, ids = self.big_bundle(3)
+        bundle = tool.load_bundle(path)
+        lines = [len(tool.event_line(event, bundle['bundle_id']).encode('utf-8'))
+                 for event in bundle['events'] if event['id'] != ids[0]]           # all but the canary
+        self.stack.hec_max_bytes = max(lines) + 1                # each event fits, the two together do not
+        code, text = self.send(bundle=path)
+        self.assertEqual(code, 0, text)
+        self.assertEqual([post['body'].count(b'"resend":"true"') for post in self.posts()], [1, 2, 1, 1])
+        self.assertEqual([line['state'] for line in self.ledger('outcome')],
+                         ['accepted', 'too large', 'accepted', 'accepted'])
+        self.assertEqual(self.copies(), dict((ident, 1) for ident in ids))
+
+    def test_a_duplicate_of_an_id_this_run_did_not_send_seen_after_sending_stops_the_run(self):
+        """The last presence poll is the only guard for an id that was on the
+        stack before: judge() checks only the ids this run sent (review finding
+        tests-01)."""
+        self.assertEqual(self.send()[0], 0)
+        polls = {'n': 0}
+
+        def doubled(row):
+            if row['rs_id'] == STAGED_IDS[0]:
+                polls['n'] += 1
+                if polls['n'] > 1:                               # R7 sees it once; the last poll twice
+                    return dict(row, copies='2')
+            return row
+        self.stack.rewrite_present = doubled
+        self.now += 5
+        code, text = self.send()
+        self.assertEqual((code, polls['n'] > 1), (1, True), text)
+        self.assertIn('STOPPED: after sending, the stack holds 1 id(s) twice or in another form: ' + STAGED_IDS[0],
+                      text)
+        self.assertNotIn('SENT:', text)
 
     def test_an_answer_is_still_read_when_writing_the_request_failed(self):
         """splunkd answers 413 from the headers and closes while the body is
@@ -3526,21 +3825,24 @@ class SendTests(StackCase):
 
     def test_two_runs_on_one_bundle_cannot_send_side_by_side(self):
         second, self.stack.index_lag = [], 15
+        copy = self.path('again.json')                           # the same bundle at another path: the same lock
+        shutil.copyfile(self.bundle, copy)
+        os.chmod(copy, 0o600)
 
         def nap(seconds):
             self.nap(seconds)
             if not second:
                 second.append(None)                              # while the first run waits for its canary:
-                second[:] = [self.send(), self.send('--dry-run')]
+                second[:] = [self.send(), self.send('--dry-run'), self.send(bundle=copy)]
         code, text = self.send(sleep=nap)
         self.assertEqual(code, 0, text)
         for other, said in second:
             self.assertEqual(other, 2)
-            self.assertIn('REFUSED: another `send` holds the ledger of this bundle: one send per bundle at a '
-                          'time', said)
-        self.assertEqual((len(self.posts()), self.copies()), (2, dict((ident, 1) for ident in STAGED_IDS)))
-        # R7, three looks for the canary, three at the end: the refused runs read nothing of the stack's holdings.
-        self.assertEqual(self.kinds_of_stack().count('present'), 1 + 3 + 3)
+            self.assertIn('REFUSED: another `send` on this machine is running (one send at a time, whatever the '
+                          'bundle', said)                                  # the journal's lock is taken first
+        self.assertEqual((len(self.posts()), self.copies()), (3, dict((ident, 1) for ident in STAGED_IDS)))
+        # R7, three looks for each canary request, three at the end: the refused runs read nothing of the stack.
+        self.assertEqual(self.kinds_of_stack().count('present'), 1 + 3 + 3 + 3)
 
     def test_a_token_hec_refuses_stops_the_run_and_is_never_printed(self):
         self.wrong_token_ok = True
@@ -3921,7 +4223,7 @@ class PreconditionTests(StackCase):
         self.assertIn('to send 5; on the stack, identical: 1 (live 0, this bundle 0, another bundle 1)', text)
         self.assertEqual(self.copies()[STAGED_IDS[3]], 2)        # the turn, and the response record with its id
         self.assertEqual(self.send()[0], 0)                      # and a second run still sees no duplicate
-        self.assertEqual(len(self.posts()), 2)
+        self.assertEqual(len(self.posts()), 3)                   # the canary, one of each other kind, the rest
 
     def test_r7_a_ledger_that_is_not_private_or_not_this_tools_stops_the_run(self):
         victim = self.path('victim.txt')
@@ -3931,6 +4233,16 @@ class PreconditionTests(StackCase):
         code, text = self.send()
         self.assertEqual((code, self.posts(), text_of(victim)), (2, [], 'keep me\n'), text)
         self.assertIn('REFUSED: the ledger beside the bundle cannot be opened (a symlink', text)
+        os.unlink(self.ledger_file)
+        # A dry run only reads the ledger, and it does not read it through a symlink either, not
+        # even to a private file (review finding tests-03).
+        private = self.path('private.jsonl')
+        os.close(os.open(private, os.O_WRONLY | os.O_CREAT, 0o600))
+        os.chmod(private, 0o600)
+        os.symlink(private, self.ledger_file)
+        code, text = self.send('--dry-run')
+        self.assertEqual((code, self.posts()), (2, []), text)
+        self.assertIn('REFUSED: the ledger beside the bundle cannot be read (a symlink?)', text)
         os.unlink(self.ledger_file)
         with os.fdopen(os.open(self.ledger_file, os.O_WRONLY | os.O_CREAT, 0o644), 'w') as handle:
             handle.write('')
@@ -4080,7 +4392,7 @@ class PreconditionTests(StackCase):
         self.stack.hec_rewrite, self.stack.fail_search = None, {}
         code, text = self.send()                                 # the canary is there: the rest goes, nothing twice
         self.assertEqual((code, self.copies()), (0, dict((ident, 1) for ident in STAGED_IDS)), text)
-        self.assertEqual([post['body'].count(b'"resend":"true"') for post in self.posts()], [1, 5])
+        self.assertEqual([post['body'].count(b'"resend":"true"') for post in self.posts()], [1, 1, 2, 2])
 
     def test_a_dry_run_after_a_send_reads_the_ledger_and_leaves_it_as_it_is(self):
         self.stack.hec_script, self.stack.index_lag = ['lost'], 900
@@ -4124,6 +4436,64 @@ class SendPartsTests(ToolCase):
             line['ids'] = list(ids)
         return json.dumps(line, sort_keys=True)
 
+    def test_unconfirmed_is_per_request_a_later_refusal_never_clears_an_earlier_unknown_one(self):
+        def pending(*lines):
+            return tool.read_ledger(''.join(line + '\n' for line in lines), STACK_GUID)[0]
+
+        first = self.line('intent', [self.A], at=1000, bytes=1, canary=True)
+        unknown = self.line('outcome', [self.A], at=1001, state='unknown', http=None, code=None)
+        released = self.line('released', [self.A], at=5000)
+        again = self.line('intent', [self.A], at=5001, bytes=1, canary=False)
+        for state in tool.PROVES_NOTHING_INDEXED:
+            with self.subTest(state=state):
+                refused = self.line('outcome', [self.A], at=5002, state=state, http=401, code=3)
+                lines = (first, unknown, released, again, refused)
+                self.assertEqual(pending(*lines), {self.A: 5001})       # the first request may still be indexed
+                text = ''.join(line + '\n' for line in lines)
+                self.assertEqual(tool.ledger_handed(text, STACK_GUID, BUNDLE_ID), [self.A])   # verify agrees
+                self.assertEqual(pending(*lines + (self.line('confirmed', [self.A], at=5100),)), {})
+                path = self.path('per-request-{}.ledger.jsonl'.format(state.replace(' ', '-')))
+                with io.open(path, 'w', encoding='utf-8') as handle:
+                    handle.write(''.join(line + '\n' for line in (first, unknown, released)))
+                os.chmod(path, 0o600)
+                ledger = tool.Ledger(path, STACK_GUID, BUNDLE_ID, lambda: 5001).open()
+                self.addCleanup(ledger.close)
+                ledger.intent([self.A], 1, False)
+                ledger.outcome([self.A], tool.Outcome(state, 401, 3, 'fixture'))
+                self.assertEqual(ledger.pending, {self.A: 5001})        # the run itself holds it as well
+                ledger.close()
+
+    def test_a_ledger_line_counts_for_the_stack_by_its_guid_or_by_its_hec_endpoint(self):
+        key = tool.ledger_key(tool.HecTarget('https', 'http-inputs-acme.splunkcloud.test', 443, 't', 'o'), 'x')
+        self.assertRegex(key, r'^[0-9]{16}$')
+        intent = self.line('intent', [self.A], stack=self.OTHER_STACK, bytes=1, canary=True, hec=key)
+        text = intent + '\n'
+        self.assertEqual(tool.read_ledger(text, STACK_GUID)[0], {})               # another GUID, no key: not ours
+        self.assertEqual(tool.read_ledger(text, STACK_GUID, key)[0], {self.A: 1794900000})   # same HEC: ours
+        self.assertEqual(tool.read_ledger(text, STACK_GUID, '1' * 16)[0], {})
+        self.refused(tool.read_ledger, self.line('intent', [self.A], hec='not-a-key', bytes=1, canary=True) + '\n',
+                     STACK_GUID)
+
+    def test_a_ledger_line_counts_for_verify_by_the_stack_address_whatever_member_answered(self):
+        class Member(object):
+            host, port = 'Acme.splunkcloud.test.', 8089
+        key = tool.stack_ledger_key(Member)
+        self.assertRegex(key, r'^[0-9]{16}$')
+        Member.host = 'acme.splunkcloud.test'
+        self.assertEqual(tool.stack_ledger_key(Member), key)                       # case and a final dot aside
+        Member.port = 8090
+        self.assertNotEqual(tool.stack_ledger_key(Member), key)
+        text = self.line('intent', [self.A], stack=self.OTHER_STACK, bytes=1, canary=True, mgmt=key) + '\n'
+        self.assertEqual(tool.read_ledger(text, STACK_GUID)[0], {})
+        self.assertEqual(tool.read_ledger(text, STACK_GUID, mgmt=key)[0], {self.A: 1794900000})
+        self.assertEqual(tool.ledger_handed(text, STACK_GUID, self.line_bundle(text)), [])
+        self.assertEqual(tool.ledger_handed(text, STACK_GUID, self.line_bundle(text), key), [self.A])
+        self.refused(tool.read_ledger, self.line('intent', [self.A], mgmt='acme', bytes=1, canary=True) + '\n',
+                     STACK_GUID)
+
+    def line_bundle(self, text):
+        return json.loads(text)['bundle']
+
     def test_an_id_is_unconfirmed_from_its_intent_until_the_stack_shows_it_or_an_answer_proves_nothing_went(self):
         def pending(*lines):
             return tool.read_ledger(''.join(line + '\n' for line in lines), STACK_GUID)[0]
@@ -4164,7 +4534,7 @@ class SendPartsTests(ToolCase):
         os.chmod(path, 0o600)
         ledger = tool.Ledger(path, STACK_GUID, BUNDLE_ID, lambda: 1794900100).open()
         self.addCleanup(ledger.close)
-        self.assertEqual((ledger.torn, ledger.pending), (True, {self.A: 1794900000}))
+        self.assertEqual((ledger.torn, ledger.pending), ({'the ledger beside the bundle': True}, {self.A: 1794900000}))
         ledger.confirmed([self.A])
         ledger.close()
         self.assertEqual(text_of(path), intent + '\n' + intent[:40] + '\n'
@@ -4238,9 +4608,16 @@ class SendPartsTests(ToolCase):
             vars(options).update(no_canary=False)
             vars(options).update(change)
             found = tool.first_of(tool.make_plan(events, decisions, {}, NOW, False, options.no_canary), options)
-            return found and found['id']
+            return found[0]['id'] if found else None
 
         self.assertEqual(first({}), CANARY)
+        self.assertEqual([event['id'] for event in tool.canaries_of(events)], [CANARY] + KIND_CANARIES)
+        self.assertEqual([event['id'] for event in tool.canaries_of(list(reversed(events)))], [CANARY] + KIND_CANARIES)
+        # Per kind: a copy of this bundle proves its own kind only.
+        decisions = dict((event['id'], tool.Decision(tool.THIS_BUNDLE if event['id'] == CANARY else tool.SEND, ()))
+                         for event in events)
+        plan = tool.make_plan(events, decisions, {}, NOW, False)
+        self.assertEqual([event['id'] for event in tool.first_of(plan, options, events)], KIND_CANARIES)
         self.assertIsNone(first({}, no_canary=True))
         self.assertEqual(first({CANARY: tool.LIVE}), STAGED_IDS[0])             # a live copy is no proof: a new canary
         self.assertIsNone(first({CANARY: tool.THIS_BUNDLE}))                    # an earlier run's canary is
@@ -4371,6 +4748,19 @@ class VerifyCase(StackCase):
 
 
 class VerifyTests(VerifyCase):
+    def test_verify_through_another_member_of_a_search_head_cluster_reads_what_send_handed_over(self):
+        # A load-balanced :8089: every answer of server/info comes from the next member, with its own GUID.
+        members = (STACK_GUID, '5CA1AB1E-0000-4000-8000-00000000F0AA', '5CA1AB1E-0000-4000-8000-00000000F0AB')
+        self.stack.member_guids = members
+        self.sent()
+        self.assertEqual({line['stack'] for line in self.ledger()}, {STACK_GUID})
+        self.assertEqual(len({line['mgmt'] for line in self.ledger()}), 1)  # the --stack address, hashed
+        code, text = self.verify('--wait', '900')
+        self.assertEqual(code, 0, text)
+        self.assertEqual(self.stack.info_answers, 2)                          # verify was answered by F0AA
+        self.assertEqual(self.steps(text)['V2. the label'], (
+            'OK', "6 event(s) carry this bundle's label, the 6 the ledger records as handed to this stack"))
+
     def test_verify_proves_the_copies_the_label_the_counts_the_duo_half_the_chain_and_the_finding(self):
         self.sent()
         self.assertEqual(self.written()['expect']['chains'], [CHAIN])
@@ -4452,7 +4842,7 @@ class VerifyTests(VerifyCase):
         self.assertIn('--wait-finding 900: reading the stack again, as `verify --wait 900` does', text)
         self.assertEqual(self.statuses(text), ['OK'] * 6)
         self.assertLess(text.index('SENT: '), text.index('[  OK] V1. '))
-        self.assertEqual(len(self.posts()), 2)                         # the canary and the rest: nothing more
+        self.assertEqual(len(self.posts()), 3)                         # the canaries and the rest: nothing more
         self.assertEqual(self.naps, [30] * 13)
         # Without the finding the send itself is still complete, and the exit code says what is not proven.
         self.restart()
@@ -4621,7 +5011,7 @@ class VerifyTests(VerifyCase):
         self.assertEqual((code, self.statuses(text)), (0, ['OK'] * 6), text)
         self.assertIn('each of the 6 id(s) is on the stack once, identical', text)
         code, text = self.send()                                 # and a second send still sends nothing
-        self.assertEqual((code, len(self.posts())), (0, 2), text)
+        self.assertEqual((code, len(self.posts())), (0, 3), text)
         self.assertIn('nothing to send', text)
 
     def test_v1_and_v2_on_a_stack_that_got_part_of_the_set_live(self):
@@ -4643,9 +5033,10 @@ class VerifyTests(VerifyCase):
         self.assertIn("6 event(s) carry this bundle's label and the ledger records 0 handed to this stack: events "
                       'were sent that this ledger does not record', text)
         self.assertFalse(os.path.lexists(self.ledger_file), '`verify` made a ledger')
-        # What another stack was handed is not what this one was handed.
+        # What another stack was handed is not what this one was handed: another GUID and another address.
+        key = json.loads(kept.split('\n')[0])['mgmt']
         with io.open(self.ledger_file, 'w', encoding='utf-8') as handle:
-            handle.write(kept.replace(STACK_GUID, GUID[:-1] + '9'))
+            handle.write(kept.replace(STACK_GUID, GUID[:-1] + '9').replace(key, '1' * 16))
         os.chmod(self.ledger_file, 0o600)
         self.assertIn('the ledger records 0 handed to this stack', self.verify()[1])
         # A ledger others can read, a symlink to one, and a line this tool did not write: nothing is read.
@@ -4663,7 +5054,7 @@ class VerifyTests(VerifyCase):
         os.chmod(self.ledger_file, 0o600)
         code, text = self.verify()
         self.assertEqual(code, 2)
-        self.assertIn('REFUSED: the ledger beside the bundle has a line (number 8) that this tool did not write', text)
+        self.assertIn('REFUSED: the ledger beside the bundle has a line (number 11) that this tool did not write', text)
         # While a `send` holds the ledger, its requests are under way: nothing is judged.
         with io.open(self.ledger_file, 'w', encoding='utf-8') as handle:
             handle.write(kept)
@@ -5127,4 +5518,8 @@ class VerifyFakeFidelityTests(VerifyCase):
 
 
 if __name__ == '__main__':
+    if sys.argv[1:] == ['--write-runbook-html']:
+        with io.open(os.path.join(REPO, 'tools', 'staged-resend-runbook.html'), 'w', encoding='utf-8') as out:
+            out.write(render_runbook_html())
+        sys.exit(0)
     unittest.main()
