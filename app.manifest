@@ -5,7 +5,7 @@
     "id": {
       "group": null,
       "name": "TA-gen_ai_cim",
-      "version": "1.8.0"
+      "version": "1.9.0"
     },
     "author": [
       {
@@ -53,6 +53,7 @@
     "_search_head_clustering"
   ],
   "targetWorkloads": [
-    "_search_heads"
+    "_search_heads",
+    "_forwarders"
   ]
 }

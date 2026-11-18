@@ -1,0 +1,663 @@
+<dashboard version="2" theme="dark">
+    <label>Duo Identity Feed</label>
+    <description>Cisco Duo authentications, user snapshots, the ES identity merge and Duo user risk from the TA Duo input</description>
+    <definition><![CDATA[
+{
+    "title": "Duo Identity Feed",
+    "description": "Cisco Duo authentications, user snapshots, the ES identity merge and Duo user risk from the TA Duo input",
+    "dataSources": {
+        "ds_auth": {
+            "type": "ds.search",
+            "name": "Duo authentications, last 24h",
+            "options": {
+                "query": "`genai_duo_auth_events`\n| search event_type=\"authentication\"\n| eval action=coalesce(action, \"unknown\"), duo_result=lower(coalesce(result, \"unknown\")), duo_reason=lower(coalesce(reason, \"none\"))\n| bin _time span=1h\n| stats count by _time, action, duo_result, duo_reason",
+                "queryParameters": {
+                    "earliest": "-24h",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_kpi_auth": {
+            "type": "ds.chain",
+            "name": "Duo authentications",
+            "options": {
+                "extend": "ds_auth",
+                "query": "| stats count as rows, sum(count) as v\n| fillnull value=0 v\n| fields v"
+            }
+        },
+        "ds_kpi_denied": {
+            "type": "ds.chain",
+            "name": "Denied",
+            "options": {
+                "extend": "ds_auth",
+                "query": "| where duo_result==\"denied\" AND duo_reason!=\"user_marked_fraud\"\n| stats count as rows, sum(count) as v\n| fillnull value=0 v\n| fields v"
+            }
+        },
+        "ds_kpi_fraud": {
+            "type": "ds.chain",
+            "name": "Marked fraud",
+            "options": {
+                "extend": "ds_auth",
+                "query": "| where duo_result==\"fraud\" OR duo_reason==\"user_marked_fraud\"\n| stats count as rows, sum(count) as v\n| fillnull value=0 v\n| fields v"
+            }
+        },
+        "ds_auth_by_action": {
+            "type": "ds.chain",
+            "name": "Authentications by action",
+            "options": {
+                "extend": "ds_auth",
+                "query": "| timechart span=1h sum(count) by action"
+            }
+        },
+        "ds_denied_by_user": {
+            "type": "ds.search",
+            "name": "Denied and fraud by user",
+            "options": {
+                "query": "`genai_duo_auth_events`\n| search event_type=\"authentication\"\n| search result=\"denied\" OR result=\"fraud\" OR reason=\"user_marked_fraud\"\n| eval duo_result=lower(result), duo_reason=lower(coalesce(reason, \"none\")), duo_login=coalesce(user, 'user.name'), duo_user=coalesce(`genai_identity_join_key(duo_login)`, \"unknown\"), fraud=if(duo_result==\"fraud\" OR duo_reason==\"user_marked_fraud\", 1, 0)\n| stats sum(fraud) as fraud, count as attempts, values(duo_reason) as reasons, max(_time) as last_seen by duo_user\n| eval denied=attempts-fraud, reasons=mvjoin(mvfilter(reasons!=\"none\"), \", \"), last_seen=strftime(last_seen, \"%Y-%m-%d %H:%M:%S\")\n| sort 25 -fraud, -denied\n| rename duo_user as user\n| table user, fraud, denied, reasons, last_seen",
+                "queryParameters": {
+                    "earliest": "-24h",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_lag": {
+            "type": "ds.search",
+            "name": "Checkpoint lag by input",
+            "options": {
+                "query": "| tstats count as events, max(_time) as newest, max(_indextime) as indexed where `genai_duo_auth_events` by source\n| eval endpoint=\"authentication\"\n| append [ | tstats count as events, max(_time) as newest, max(_indextime) as indexed where `genai_duo_activity_events` by source | eval endpoint=\"activity\" ]\n| append [ | tstats count as events, max(_time) as newest, max(_indextime) as indexed where `genai_duo_user_events` by source | eval endpoint=\"users\" ]\n| append [ | makeresults | eval endpoint=split(\"authentication,activity,users\", \",\") | mvexpand endpoint | fields endpoint ]\n| eventstats count(source) as instances by endpoint\n| where isnotnull(source) OR instances==0\n| eval order=case(endpoint==\"authentication\", 1, endpoint==\"activity\", 2, true(), 3), input=coalesce(source, \"no events in the last 7d\"), events=coalesce(events, 0), newest_duo_event=strftime(newest, \"%Y-%m-%d %H:%M:%S\"), lag_minutes=round((now()-newest)/60, 1), last_write_minutes=round((now()-indexed)/60, 1), write_delay_seconds=round(indexed-newest, 0)\n| sort 0 order, input\n| table endpoint, input, events, newest_duo_event, lag_minutes, last_write_minutes, write_delay_seconds",
+                "queryParameters": {
+                    "earliest": "-7d",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_snapshots": {
+            "type": "ds.search",
+            "name": "Duo user snapshots",
+            "options": {
+                "query": "`genai_duo_user_events`\n| stats max(_time) as taken, count as users, max(snapshot_total) as snapshot_total by snapshot_id\n| eval complete=if(users==snapshot_total, \"complete\", \"incomplete\")\n| sort 0 -taken",
+                "queryParameters": {
+                    "earliest": "-3d",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_snapshot_table": {
+            "type": "ds.chain",
+            "name": "Recent snapshots",
+            "options": {
+                "extend": "ds_snapshots",
+                "query": "| head 5\n| eval taken=strftime(taken, \"%Y-%m-%d %H:%M:%S\")\n| table snapshot_id, taken, users, snapshot_total, complete"
+            }
+        },
+        "ds_kpi_snapshot": {
+            "type": "ds.chain",
+            "name": "Identities in the newest complete snapshot",
+            "options": {
+                "extend": "ds_snapshots",
+                "query": "| where complete==\"complete\"\n| head 1\n| stats count as rows, max(users) as v\n| fillnull value=0 v\n| fields v"
+            }
+        },
+        "ds_merged": {
+            "type": "ds.search",
+            "name": "Duo identities in identity_lookup_expanded",
+            "options": {
+                "query": "| inputlookup identity_lookup_expanded\n| where isnotnull(mvfind('_sources', \"^ta_gen_ai_cim_duo_identities$\"))\n| eval first_key=coalesce(mvindex(normalized_identity, 0), mvindex(identity, 0)), first_key=`genai_identity_join_key(first_key)`, keys=mvcount(identity), category=mvjoin(category, \", \"), other_sources=coalesce(mvjoin(mvfilter('_sources'!=\"ta_gen_ai_cim_duo_identities\"), \", \"), \"none\")\n| sort 0 first_key\n| table first_key, keys, category, watchlist, other_sources"
+            }
+        },
+        "ds_kpi_merged": {
+            "type": "ds.chain",
+            "name": "Merged Duo identities",
+            "options": {
+                "extend": "ds_merged",
+                "query": "| stats count as v"
+            }
+        },
+        "ds_risk": {
+            "type": "ds.search",
+            "name": "Users with Duo risk",
+            "options": {
+                "query": "| tstats summariesonly=false count as n, sum(All_Risk.calculated_risk_score) as risk_score, values(All_Risk.risk_score) as base_scores, max(_time) as last_risk from datamodel=Risk.All_Risk where source=\"AI Governance - Duo Authentication Fraud or Denial Burst - Rule\" All_Risk.risk_object_type=\"user\" by All_Risk.risk_object, index\n| rename All_Risk.risk_object as user, index as risk_index\n| stats sum(eval(if(risk_index==\"notable\", 0, n))) as risk_events, sum(eval(if(risk_index==\"notable\", n, 0))) as findings, sum(risk_score) as risk_score, values(base_scores) as base_scores, max(last_risk) as last_risk by user\n| eval base_scores=mvjoin(base_scores, \", \"), last_risk=strftime(last_risk, \"%Y-%m-%d %H:%M:%S\")\n| sort 0 -risk_score\n| table user, risk_events, findings, risk_score, base_scores, last_risk",
+                "queryParameters": {
+                    "earliest": "-7d",
+                    "latest": "now"
+                }
+            }
+        },
+        "ds_kpi_risk": {
+            "type": "ds.chain",
+            "name": "Users with Duo risk",
+            "options": {
+                "extend": "ds_risk",
+                "query": "| stats count as v"
+            }
+        }
+    },
+    "visualizations": {
+        "viz_header": {
+            "type": "splunk.markdown",
+            "options": {
+                "fontColor": "#FFFFFF",
+                "backgroundColor": "transparent",
+                "markdown": "## Duo Identity Feed\nCisco Duo data from the ta_gen_ai_cim_duo input, read through the genai_duo_* macros: authentications mapped to CIM Authentication, the user snapshots behind the ES identity source *Cisco Duo users*, and the user risk from *AI Governance - Duo Authentication Fraud or Denial Burst - Rule*. No input instance and no identity source ship, and the lookup-gen search and the rule ship disabled, so these panels read zero until an admin adds and enables them."
+            }
+        },
+        "viz_kpi_auth": {
+            "type": "splunk.singlevalue",
+            "dataSources": {
+                "primary": "ds_kpi_auth"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "underLabel": "Duo authentications, last 24h",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_kpi_denied": {
+            "type": "splunk.singlevalue",
+            "dataSources": {
+                "primary": "ds_kpi_denied"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "> majorValue | rangeValue(majorColorConfig)",
+                "underLabel": "denied, last 24h",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            },
+            "context": {
+                "majorColorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#FFFFFF"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#F8BE34"
+                    }
+                ]
+            }
+        },
+        "viz_kpi_fraud": {
+            "type": "splunk.singlevalue",
+            "dataSources": {
+                "primary": "ds_kpi_fraud"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "> majorValue | rangeValue(majorColorConfig)",
+                "underLabel": "marked fraud, last 24h",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            },
+            "context": {
+                "majorColorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#FFFFFF"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#DC4E41"
+                    }
+                ]
+            }
+        },
+        "viz_kpi_snapshot": {
+            "type": "splunk.singlevalue",
+            "dataSources": {
+                "primary": "ds_kpi_snapshot"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "underLabel": "users in newest complete snapshot",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_kpi_merged": {
+            "type": "splunk.singlevalue",
+            "dataSources": {
+                "primary": "ds_kpi_merged"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "#FFFFFF",
+                "underLabel": "Duo identities merged into ES",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            }
+        },
+        "viz_kpi_risk": {
+            "type": "splunk.singlevalue",
+            "dataSources": {
+                "primary": "ds_kpi_risk"
+            },
+            "options": {
+                "backgroundColor": "#31373E",
+                "majorColor": "> majorValue | rangeValue(majorColorConfig)",
+                "underLabel": "users with Duo risk, last 7d",
+                "sparklineDisplay": "off",
+                "trendDisplay": "off",
+                "numberPrecision": 0
+            },
+            "context": {
+                "majorColorConfig": [
+                    {
+                        "to": 1,
+                        "value": "#FFFFFF"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#DC4E41"
+                    }
+                ]
+            }
+        },
+        "viz_rect_auth": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_auth_by_action": {
+            "type": "splunk.column",
+            "title": "Duo authentications by action, last 24h",
+            "description": "event_type authentication (enrollments are Change events); CIM action from the TA Duo props: success, failure (denied or fraud), error",
+            "dataSources": {
+                "primary": "ds_auth_by_action"
+            },
+            "options": {
+                "backgroundColor": "transparent",
+                "stackMode": "stacked",
+                "legendDisplay": "bottom",
+                "xAxisTitleVisibility": "hide",
+                "yAxisTitleText": "authentications per hour",
+                "seriesColorsByField": {
+                    "success": "#53A051",
+                    "failure": "#DC4E41",
+                    "error": "#F8BE34",
+                    "unknown": "#8C9BA5"
+                }
+            }
+        },
+        "viz_rect_denied": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_denied_by_user": {
+            "type": "splunk.table",
+            "title": "Denied and fraud by user, last 24h",
+            "dataSources": {
+                "primary": "ds_denied_by_user"
+            },
+            "options": {
+                "count": 8,
+                "backgroundColor": "transparent",
+                "headerVisibility": "fixed",
+                "columnFormat": {
+                    "fraud": {
+                        "rowColors": "> table | seriesByName(\"fraud\") | rangeValue(fraudColors)"
+                    }
+                }
+            },
+            "description": "Duo result denied or fraud (reason user_marked_fraud counts as fraud); reasons are Duo reason codes. user is the identity join key (the lowercased local part of the Duo username), so a username that is an email address is not shown",
+            "context": {
+                "fraudColors": [
+                    {
+                        "to": 1,
+                        "value": "#FFFFFF"
+                    },
+                    {
+                        "from": 1,
+                        "value": "#DC4E41"
+                    }
+                ]
+            }
+        },
+        "viz_rect_lag": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_lag": {
+            "type": "splunk.table",
+            "title": "Checkpoint lag by input, from the indexed events, last 7d",
+            "dataSources": {
+                "primary": "ds_lag"
+            },
+            "options": {
+                "count": 5,
+                "backgroundColor": "transparent",
+                "headerVisibility": "fixed",
+                "columnFormat": {
+                    "input": {
+                        "rowColors": "> table | seriesByName(\"input\") | matchValue(noEventColors)"
+                    }
+                }
+            },
+            "description": "lag = now minus the newest Duo timestamp per input (a quiet tenant shows lag too); last write = minutes since its newest index time; write delay = newest index time minus newest Duo time. tstats on the events, not the checkpoint collection or REST; activity is opt-in.",
+            "context": {
+                "noEventColors": [
+                    {
+                        "match": "no events in the last 7d",
+                        "value": "#F8BE34"
+                    }
+                ]
+            }
+        },
+        "viz_rect_snapshots": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_snapshots": {
+            "type": "splunk.table",
+            "title": "Duo user snapshots, last 3d",
+            "dataSources": {
+                "primary": "ds_snapshot_table"
+            },
+            "options": {
+                "count": 5,
+                "backgroundColor": "transparent",
+                "headerVisibility": "fixed",
+                "columnFormat": {
+                    "complete": {
+                        "rowColors": "> table | seriesByName(\"complete\") | matchValue(completeColors)"
+                    }
+                }
+            },
+            "description": "complete = users indexed equal snapshot_total. The lookup-gen search writes only the newest complete one in this same window.",
+            "context": {
+                "completeColors": [
+                    {
+                        "match": "complete",
+                        "value": "#53A051"
+                    },
+                    {
+                        "match": "incomplete",
+                        "value": "#F8BE34"
+                    }
+                ]
+            }
+        },
+        "viz_rect_merged": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_merged": {
+            "type": "splunk.table",
+            "title": "Duo identities merged into identity_lookup_expanded (source: Cisco Duo users)",
+            "dataSources": {
+                "primary": "ds_merged"
+            },
+            "options": {
+                "count": 8,
+                "backgroundColor": "transparent",
+                "headerVisibility": "fixed"
+            },
+            "description": "Rows whose _sources include ta_gen_ai_cim_duo_identities, the identity source an admin adds under that name once the lookup has rows (the TA ships no stanza for it). first_key is the identity's first key (normalized_identity's first value: the Duo username, since ES keeps the source's key order, and the name UEBA gives the user), reduced to the identity join key so that a username that is an email address shows its local part only; keys counts the identity's keys. Fewer rows than snapshot users when genai_duo_identity_scope drops lab accounts or keys merge with another source. Needs Enterprise Security."
+        },
+        "viz_rect_risk": {
+            "type": "splunk.rectangle",
+            "options": {
+                "fillColor": "#31373E",
+                "fillOpacity": 1,
+                "rx": 8,
+                "strokeColor": "#31373E",
+                "strokeWidth": 1
+            }
+        },
+        "viz_risk": {
+            "type": "splunk.table",
+            "title": "Users with Duo risk, last 7d (Risk.All_Risk)",
+            "dataSources": {
+                "primary": "ds_risk"
+            },
+            "options": {
+                "count": 8,
+                "backgroundColor": "transparent",
+                "headerVisibility": "fixed"
+            },
+            "description": "Risk written by AI Governance - Duo Authentication Fraud or Denial Burst - Rule (80 marked fraud, 40 denial burst). risk_events are its rows in the risk index, findings its rows in the notable index, and risk_score the total of both, as in ES entity risk: a firing that also raises a finding counts its score twice. user is the identity join key the rule writes. Needs Enterprise Security."
+        }
+    },
+    "inputs": {},
+    "layout": {
+        "type": "absolute",
+        "options": {
+            "width": 1440,
+            "height": 1270,
+            "showTitleAndDescription": true,
+            "backgroundColor": "#171D21"
+        },
+        "structure": [
+            {
+                "item": "viz_header",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 0,
+                    "w": 1440,
+                    "h": 110
+                }
+            },
+            {
+                "item": "viz_kpi_auth",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 120,
+                    "w": 232,
+                    "h": 110
+                }
+            },
+            {
+                "item": "viz_kpi_denied",
+                "type": "block",
+                "position": {
+                    "x": 240,
+                    "y": 120,
+                    "w": 232,
+                    "h": 110
+                }
+            },
+            {
+                "item": "viz_kpi_fraud",
+                "type": "block",
+                "position": {
+                    "x": 480,
+                    "y": 120,
+                    "w": 232,
+                    "h": 110
+                }
+            },
+            {
+                "item": "viz_kpi_snapshot",
+                "type": "block",
+                "position": {
+                    "x": 720,
+                    "y": 120,
+                    "w": 232,
+                    "h": 110
+                }
+            },
+            {
+                "item": "viz_kpi_merged",
+                "type": "block",
+                "position": {
+                    "x": 960,
+                    "y": 120,
+                    "w": 232,
+                    "h": 110
+                }
+            },
+            {
+                "item": "viz_kpi_risk",
+                "type": "block",
+                "position": {
+                    "x": 1200,
+                    "y": 120,
+                    "w": 232,
+                    "h": 110
+                }
+            },
+            {
+                "item": "viz_rect_auth",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 246,
+                    "w": 712,
+                    "h": 340
+                }
+            },
+            {
+                "item": "viz_auth_by_action",
+                "type": "block",
+                "position": {
+                    "x": 8,
+                    "y": 254,
+                    "w": 696,
+                    "h": 324
+                }
+            },
+            {
+                "item": "viz_rect_denied",
+                "type": "block",
+                "position": {
+                    "x": 728,
+                    "y": 246,
+                    "w": 712,
+                    "h": 340
+                }
+            },
+            {
+                "item": "viz_denied_by_user",
+                "type": "block",
+                "position": {
+                    "x": 736,
+                    "y": 254,
+                    "w": 696,
+                    "h": 324
+                }
+            },
+            {
+                "item": "viz_rect_lag",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 602,
+                    "w": 712,
+                    "h": 290
+                }
+            },
+            {
+                "item": "viz_lag",
+                "type": "block",
+                "position": {
+                    "x": 8,
+                    "y": 610,
+                    "w": 696,
+                    "h": 274
+                }
+            },
+            {
+                "item": "viz_rect_snapshots",
+                "type": "block",
+                "position": {
+                    "x": 728,
+                    "y": 602,
+                    "w": 712,
+                    "h": 290
+                }
+            },
+            {
+                "item": "viz_snapshots",
+                "type": "block",
+                "position": {
+                    "x": 736,
+                    "y": 610,
+                    "w": 696,
+                    "h": 274
+                }
+            },
+            {
+                "item": "viz_rect_merged",
+                "type": "block",
+                "position": {
+                    "x": 0,
+                    "y": 908,
+                    "w": 712,
+                    "h": 340
+                }
+            },
+            {
+                "item": "viz_merged",
+                "type": "block",
+                "position": {
+                    "x": 8,
+                    "y": 916,
+                    "w": 696,
+                    "h": 324
+                }
+            },
+            {
+                "item": "viz_rect_risk",
+                "type": "block",
+                "position": {
+                    "x": 728,
+                    "y": 908,
+                    "w": 712,
+                    "h": 340
+                }
+            },
+            {
+                "item": "viz_risk",
+                "type": "block",
+                "position": {
+                    "x": 736,
+                    "y": 916,
+                    "w": 696,
+                    "h": 324
+                }
+            }
+        ]
+    }
+}
+]]></definition>
+</dashboard>

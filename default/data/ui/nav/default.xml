@@ -15,6 +15,8 @@
     -->
     <view name="prompt_injection_detection" label="Prompt Injection Detection" />
     <view name="compromised_identity" label="Compromised Identity" />
+    <view name="ta_gen_ai_cim_duo_identity" label="Duo Identity Feed" />
+    <view name="ta_gen_ai_cim_identity_activity" label="Identity Activity" />
   </collection>
   <!-- Inactivated: Governance Review
   <collection label="Governance Review">

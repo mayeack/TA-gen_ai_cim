@@ -4,7 +4,7 @@
 
 **Splunk Technology Add-on for Generative AI Common Information Model**
 
-Version: 1.8.0  
+Version: 1.9.0  
 Author: Splunk AI Governance Team  
 License: Apache 2.0
 
@@ -166,6 +166,7 @@ The following Splunk AI Toolkit algorithms are used for ML-based detection featu
 |---------|---------|---------------|
 | **ServiceNow** | AI Case Management integration | Configure via Apps > AI Governance > Configuration |
 | **LLM Provider** | AI-powered case summaries | Configure via Splunk AI Toolkit Connection Management |
+| **Cisco Duo** (Admin API, read-only) | Duo authentication / activity logs and a users snapshot for CIM Authentication, ES identities and user risk (v1.9.0, off by default) | *Cisco Duo (Admin API)* tab of the Configuration page (`/app/TA-gen_ai_cim/configuration`, not in the menu), then an input instance in `local/` - see [Cisco Duo identity feed](#cisco-duo-identity-feed-v190) |
 
 ### Verify Dependencies
 
@@ -228,7 +229,7 @@ $SPLUNK_HOME/bin/splunk display app TA-gen_ai_cim
 Expected output:
 ```
 TA-gen_ai_cim
-  Version: 1.7.0
+  Version: 1.9.0
   Status: enabled
 ```
 
@@ -237,7 +238,9 @@ TA-gen_ai_cim
 This TA is **search-time only** and targets search heads. It deliberately ships
 no index-time parsing (`LINE_BREAKER`, `TIME_PREFIX`, `TIME_FORMAT`,
 `TRUNCATE`) — on Splunk Cloud that parsing happens on the indexer tier, which
-the TA does not reach.
+the TA does not reach. Its one data input, the optional Cisco Duo modular input
+(v1.9.0, no instance ships), sets each event's time itself and may also run on
+a heavy forwarder; see [Cisco Duo identity feed](#cisco-duo-identity-feed-v190).
 
 Send events to the **`/services/collector/event`** endpoint with an explicit
 `time` and the event object under `event`:
@@ -614,8 +617,8 @@ Enable only what your environment needs — never by editing `default/`:
 Before enabling, review each search's cadence and actions: the ML scoring
 searches run every minute, the ServiceNow sync searches make outbound API
 calls hourly, most alerts send email (configure `action.email.to` first),
-and the three `AI Governance - * - Rule` correlation searches require
-Splunk Enterprise Security for their notable/risk actions (see
+and the `AI Governance - * - Rule` correlation searches (five since v1.9.0)
+require Splunk Enterprise Security for their notable/risk actions (see
 [Enterprise Security integration](#enterprise-security-integration)).
 
 **Customize alerts:** override thresholds and actions in
@@ -635,6 +638,8 @@ Pre-built dashboards are **automatically installed** with the TA, providing comp
 | **PII Detection** | ML-powered PII detection and monitoring. Hidden since v1.8.0 (`/app/TA-gen_ai_cim/pii_detection`) | [Details](README/DASHBOARDS/PII_DETECTION.md) |
 | **Prompt Injection Detection** | Adversarial attack detection and analysis | [Details](README/DASHBOARDS/PROMPT_INJECTION_DETECTION.md) |
 | **Compromised Identity** | AI Trust Lab 5: CII failed checks joined with AI Defense blocks (v1.8.0) | [Lab 5 section](#ai-trust-lab-5-compromised-identity-v180) |
+| **Duo Identity Feed** | Cisco Duo authentications by action and denied/fraud by user (24 h), checkpoint lag per input from the indexed events, user snapshots, Duo identities merged into ES and users with Duo risk; reads zero until the Duo input and the identity source are added and the lookup gen and the rule enabled (v1.9.0) | [Cisco Duo section](#cisco-duo-identity-feed-v190) |
+| **Identity Activity** | Per identity, what Cisco Duo knows next to what the AI application saw: Duo status and sign-ins by outcome, application sign-ins, verified AI turns (one per chat request) and blocks, turns that only claimed the identity's name counted apart as claimed, not verified (never a sign-in), Identity Risk Gate verdicts, ES risk events, findings and risk score by detection, ES identity category, a Duo sign-in to AI activity chain (an application sign-in matched on Duo's transaction id, a verified turn on user and time), and the source addresses seen by Duo, by the application or by both. Time range and identity inputs; the ES tile, Identity overview, Activity timeline and Risk by detection need Enterprise Security and show an error without it (v1.9.0) | [Cisco Duo section](#cisco-duo-identity-feed-v190) |
 | **Review Queue** | Human review workflow and triage | [Details](README/DASHBOARDS/REVIEW_QUEUE.md) |
 
 **Access:** Navigate to **Apps → GenAI Governance** in Splunk Web after installation.
@@ -1075,17 +1080,23 @@ TA-gen_ai_cim/
 ├── app.manifest                   # Splunk Cloud ACS package manifest
 ├── package.sh                     # AppInspect-clean package builder (dev only)
 ├── bin/
+│   ├── README                     # What each script does and which session it runs as
 │   ├── ai_defense_response.py     # Shared logic for the AI Defense response actions
 │   ├── ai_defense_revoke_session.py    # Alert action: Revoke Session / API Key
 │   ├── ai_defense_suspend_user.py      # Alert action: Suspend User (AI Defense)
 │   ├── ai_defense_tighten_guardrail.py # Alert action: Tighten Guardrail Policy
 │   ├── aicase.py                  # ServiceNow AI Case custom command
 │   ├── create_snow_case.py        # ServiceNow case alert action
+│   ├── genai_es_seed.py           # ES / SOAR seeding logic behind | genaiseedes
 │   ├── genaiscore.py              # GenAI LLM scoring custom command
+│   ├── genaiseedes.py             # | genaiseedes custom command
 │   ├── pull_snow_inventory.py     # ServiceNow inventory pull alert action
 │   ├── snow_setup.py              # ServiceNow CLI setup utility
 │   ├── sync_snow_asset.py         # ServiceNow asset sync alert action + shared client
-│   └── ta_gen_ai_cim_account_handler.py  # REST handler for account management
+│   ├── ta_gen_ai_cim_account_handler.py  # REST handler for account management
+│   ├── ta_gen_ai_cim_duo.py       # Cisco Duo modular input entry point (v1.9.0)
+│   ├── ta_gen_ai_cim_duo_input.py # Duo input: log window, checkpoint, users snapshot
+│   └── ta_gen_ai_cim_duo_api.py   # Read-only Duo Admin API client (v5 signing)
 ├── appserver/
 │   └── static/                    # Icons, dashboard JS/CSS
 ├── lib/
@@ -1103,13 +1114,13 @@ TA-gen_ai_cim/
 │   ├── datamodels.conf            # AI_Inference / AI_Safety / AI_Evaluation
 │   ├── eventtypes.conf / tags.conf  # CIM-style eventtypes and tags
 │   ├── fields.conf                # Field definitions
-│   ├── inputs.conf                # ES Asset & Identity registrations
+│   ├── inputs.conf                # ES Asset & Identity registrations + the Duo
+│   │                              #   input's scheme defaults (no instance)
 │   ├── macros.conf                # Search macros
 │   ├── props.conf                 # Field normalization (search-time only)
 │   ├── restmap.conf               # REST endpoint mapping
 │   ├── savedsearches.conf         # Alerts/reports/rules (ship disabled;
-│   │                              #   prompt-injection correlation is the
-│   │                              #   one enabled-by-default exception)
+│   │                              #   three documented enabled exceptions)
 │   ├── server.conf                # SHC replication for custom confs
 │   ├── ta_gen_ai_cim_*.conf(.spec)  # Custom config files and specs
 │   ├── transforms.conf            # Extractions, CSV + KV store lookups
@@ -1117,16 +1128,19 @@ TA-gen_ai_cim/
 │   ├── workflow_actions.conf      # Event Context menu actions
 │   └── data/ui/
 │       ├── nav/default.xml        # Navigation menu
-│       └── views/                 # 20 dashboards (Studio + Simple XML)
+│       └── views/                 # 23 views (Studio + Simple XML)
 ├── metadata/
-│   └── default.meta               # Permissions (admin + sc_admin on config)
+│   └── default.meta               # Permissions (admin + sc_admin on config and credentials)
 ├── elements/                      # Per-dashboard design docs (dev only, not packaged)
 ├── tools/                         # Dev-only utilities (not packaged)
+│   ├── duo/                       # Fake Duo Admin API + Duo input/client tests
 │   ├── install-dev.sh             # Copy app into a dev instance
 │   ├── load_pii_model.sh          # MLTK model loader (dev only, writes to MLTK app)
 │   ├── load_prompt_injection_model.sh  # MLTK model loader (dev only)
 │   └── appinspect-cloud-*.{md,json}    # Last AppInspect results
-└── README/                        # Extended documentation (not packaged)
+└── README/                        # Extended documentation (not packaged), except:
+    ├── alert_actions.conf.spec    #   packaged: alert action parameters
+    ├── inputs.conf.spec           #   packaged: the ta_gen_ai_cim_duo input scheme
     ├── AI_CIM.md                  # AI CIM field reference
     ├── DASHBOARD_PANELS.md        # Dashboard panel definitions
     ├── DASHBOARDS/                # Per-dashboard guides
@@ -1153,9 +1167,16 @@ they are created on the search head at runtime:
 | `pii_model_metadata.csv` / `prompt_injection_model_metadata.csv` | model-promotion feedback-loop searches |
 | `tfidf_training_data_v3.csv` / `pii_training_examples.csv` | operator-curated per environment |
 | `llm_pii_mixed_responses_200k.csv` | dev-only 48 MB training dataset (never packaged) |
+| `ta_gen_ai_cim_duo_identities.csv` | "GenAI - Identity - Duo Identity Lookup Gen" (v1.9.0, ships disabled; gitignored and excluded by `package.sh`) |
 
 Do not ship placeholder CSVs for these — bundled lookup files overwrite the
-runtime-generated versions on every app upgrade.
+runtime-generated versions on every app upgrade. For the same reason
+`default/inputs.conf` registers none of them as an ES identity or asset source
+(`[identity_manager://...]`), enabled or disabled: ES checks every source's
+lookup file and logs an ERROR every 5 minutes while it is missing, so a source
+ships only together with its file (R-INP-002). The Duo identity source is
+therefore added by the owner
+([Cisco Duo identity feed](#cisco-duo-identity-feed-v190), step 6).
 
 ### Views not in the navigation menu
 
@@ -1308,7 +1329,7 @@ The TA supports compliance requirements for:
 
 ## Enterprise Security integration
 
-The three `AI Governance - * - Rule` correlation searches register themselves
+The `AI Governance - * - Rule` correlation searches register themselves
 with ES automatically — `action.correlationsearch.enabled = 1` plus
 `export = system` in `metadata/default.meta` is all ES needs to list them under
 **Configure → Content → Content Management**. No registration file is required.
@@ -1508,9 +1529,1068 @@ the stack's RBA rule and the Risk data model's lag. On the ES 8.5.1 dry run of
 
 ---
 
+## Cisco Duo identity feed (v1.9.0)
+
+The TA can read Cisco Duo's own authentication and activity logs and its user
+list through the Duo Admin API (read-only), and turn them into CIM
+Authentication / Change events, ES identities and user risk. Everything ships
+**off**: no input instance and no identity source ship (an owner adds both),
+and the lookup gen and the rule are `disabled = 1`. Nothing calls Duo until an
+owner adds an input instance in `local/`.
+
+| Piece | What it is | Ships |
+|---|---|---|
+| `ta_gen_ai_cim_duo` modular input | `bin/ta_gen_ai_cim_duo.py` (entry point) over `ta_gen_ai_cim_duo_input.py` and the client `ta_gen_ai_cim_duo_api.py`; spec `README/inputs.conf.spec`. One Duo endpoint per instance: `authentication`, `activity` (Duo public preview; opt in) or `users` | scheme defaults only, no instance |
+| Cisco Duo account | `auth_type = duo_hmac` in `ta_gen_ai_cim_account.conf`: the API hostname and the integration key; the secret key only in `storage/passwords` (`[passwords]` is admin, sc_admin) | none |
+| `ta_gen_ai_cim:duo:authentication` / `:activity` / `:user` | search-time CIM mapping: Authentication for the authentication log and admin logins, Change for enrollments and other activity; no `cisco:duo:*` props | on (inert without data) |
+| `genai_duo_*` macros | `genai_duo_index` (`index=duo`), `genai_duo_auth_events`, `genai_duo_activity_events`, `genai_duo_user_events`, `genai_duo_identity_scope` | on |
+| *GenAI - Identity - Duo Identity Lookup Gen* | daily; writes `lookups/ta_gen_ai_cim_duo_identities.csv` (never shipped) from the newest complete users snapshot | disabled |
+| `[identity_manager://ta_gen_ai_cim_duo_identities]` | the ES identity source that merges that file into ES identities, category `Cisco Duo users` | **not shipped**: `default/inputs.conf` holds only a commented example; an owner adds it in `local/` or in ES once the file has rows (step 6) |
+| *AI Governance - Duo Authentication Fraud or Denial Burst - Rule* | user risk 80 when a user reports a push as fraud, 40 for 5 or more failed Duo authentications in 10 minutes (a fraud report is never one of the 5); one finding per burst, judged once when its events are indexed, its risk event dated at the Duo event; suppressed per burst (`burst_id`) | disabled |
+| *AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule* | the takeover story as one high finding and user risk 80: the same identity had 5 or more failed Duo authentications in 10 minutes, then signed in to the AI application within 30 minutes (the sign-in matched to Duo's own record of it on the transaction id), then had a verified AI turn blocked within 60 minutes; one finding per sign-in, judged once when its events are indexed; suppressed per sign-in (`chain_id`); needs the application's identity events in the same stack | disabled |
+| *Duo Identity Feed* dashboard | authentications by action, denied/fraud by user, checkpoint lag per input (from the indexed events), user snapshots, merged identities, users with Duo risk | on (reads zero until enabled) |
+| *Identity Activity* dashboard | per identity: Duo status and sign-ins beside the AI application's sign-ins, verified turns and blocks, claimed, not verified turns counted apart, with ES risk events, findings, risk score and identity category; a time range and an identity input | on (the Duo columns read zero until the input runs; the ES tile, Identity overview, Activity timeline and Risk by detection need Enterprise Security and show an error without it) |
+| `genai_identity_activity_events`, `genai_identity_verified_turn`, `genai_identity_claimed_events`, `genai_identity_claimed_turn`, `genai_identity_duo_class` | the five macros behind *Identity Activity* (the first two also behind home card 06 and the joined rule, so an override of either changes that detection too): the AI application's identity events (the raw term `identity_*` narrows the scan, the field filter decides), the one chat event that stands for a verified AI turn, the chat events of turns with no verified identity and the one of them that stands for a claimed, not verified AI turn (it names a user, and is never a sign-in), and the outcome of a Duo authentication (success, denied, fraud, other) | on |
+
+### Turning it on
+
+Run the input on **one** standalone search head or heavy forwarder. Its
+checkpoint is a KV store collection, so a heavy forwarder needs the KV store
+enabled.
+
+1. In Duo, create an Admin API application with only **Grant read log** and
+   **Grant resource - Read**.
+2. Open `/app/TA-gen_ai_cim/configuration` (not in the menu), tab
+   **Cisco Duo (Admin API)**, and add the account: a name, the API hostname
+   (`api-<id>.duosecurity.com` or `.duofederal.com`), the integration key and
+   the secret key. The tab saves through the account REST handler, which
+   `default/web.conf` exposes to Splunk Web; Splunk Web reads that at startup.
+3. Create the index (`duo` is what the macros assume; never `gen_ai_log`). If
+   ES's accelerated Authentication searches (`summariesonly=t`) find no Duo
+   events, add the index to `cim_Authentication_indexes`.
+4. Enable the rule first (step 7): it judges Duo events as they are indexed,
+   so it has to be running when the first poll brings the history in. Then add
+   one instance per endpoint in `local/inputs.conf` and restart Splunk
+   once, which registers the new scheme and starts the instances:
+
+   ```ini
+   [ta_gen_ai_cim_duo://duo_authentication]
+   account = duo
+   endpoint = authentication
+   index = duo
+   interval = 300
+
+   [ta_gen_ai_cim_duo://duo_users]
+   account = duo
+   endpoint = users
+   index = duo
+   interval = 86400
+   ```
+
+   On Splunk Cloud, where `local/` cannot be edited, add each instance in
+   Splunk Web instead: **Settings > Data inputs > Cisco Duo (AI Governance) >
+   New**. The form asks for a name, Account, Endpoint, Lag and Initial
+   lookback; tick **More settings** for the interval and the index. Steps 5
+   and 7 are likewise done under **Settings > Searches, reports, and alerts**.
+
+5. Enable *GenAI - Identity - Duo Identity Lookup Gen* in `local/`, but do
+   **not yet add the identity source**. Wait until the users input has written
+   a complete snapshot (the *Duo Identity Feed* snapshot panel shows it), run
+   the lookup gen once by hand, and confirm that
+   `| inputlookup ta_gen_ai_cim_duo_identities | stats count` returns more
+   than 0.
+6. Only then add the identity source. The TA does not ship its stanza: ES's
+   identity manager checks the lookup file of every identity source every 5
+   minutes, a disabled source's included, and logs
+   `ERROR PersistentScript ... Lookup table was not found` to `splunkd.log`
+   each time while the file is missing, which would be forever on an install
+   that never turns Duo on. The order matters for a second reason: ES merges
+   every enabled identity source in one search with no check that a source's
+   file exists, so a missing CSV makes that search fail for every source, Duo
+   or not, and ES retries it on every pass until the file appears. Add the
+   source in one of two ways:
+
+   - In `local/inputs.conf`, then restart Splunk or reload the inputs:
+
+     ```ini
+     [identity_manager://ta_gen_ai_cim_duo_identities]
+     target = identity
+     url = lookup://ta_gen_ai_cim_duo_identities
+     category = Cisco Duo users
+     description = Cisco Duo users from the Duo Admin API users snapshot (ta_gen_ai_cim:duo:user)
+     disabled = false
+     ```
+
+   - In Enterprise Security (8.5): **Configure > All configurations**, in the
+     **Data** section **Assets and identities**, the **Identity lookups** tab,
+     then **New > New configuration**. In the *New identity manager* dialog
+     choose the lookup definition `ta_gen_ai_cim_duo_identities` as the
+     **Source**, give it the same **Name** (the *Duo Identity Feed* dashboard
+     finds the merged rows by that source name), the **Category**
+     `Cisco Duo users` and a **Description**, and save.
+
+   Do not add it on a stack where `genai_duo_identity_scope` leaves no rows,
+   for example a room stack that polls only the lab tenant.
+7. Enable the rule. Do it before step 4 where you can: it judges what is
+   indexed from 12 minutes before its first run, and nothing older. If the
+   authentication input has already run, see *Judging history that is already
+   indexed* below. Where this stack also receives the AI application's
+   identity events, enable *AI Governance - Duo Denial Burst to Blocked AI Turn
+   Correlation - Rule* at the same time (*The joined rule* below).
+
+**Scripted, on a Splunk Cloud stack.** `tools/show_postdeploy.py --duo` does
+steps 2, 3, 4 and 7 from a workstation, in the order a backfill needs: the
+index through ACS (waited for), the account through the account handler,
+search access to the index for the attendee role, both rules enabled, and only
+then the authentication input, whose first poll reads the last 30 days.
+`--duo-with-users` adds the users input and `--duo-with-lookup-gen` the search
+of step 5; both are off unless asked for, because on a stack that polls only a
+lab tenant they put the tenant owner's own record where the room can read it.
+`--duo-teardown` undoes all of it, for the roles it is given: pass it the same
+`--duo-attendee-role` as the setup (it reports any other role that still lists
+the index, and removes no grant it was not asked to). It is dev-only tooling,
+not in the package.
+The Duo secret key is read from a named environment variable or a hidden
+prompt, never from the command line, and the stack's certificate is verified
+before anything is sent (`--duo-ca-file PATH` adds the CA of a stack whose
+certificate no public root signed; the `SSL_CERT_FILE` variable is not read).
+Every guard in it refuses on an answer it cannot read: nothing is created or
+deleted because a check came back with an error. It never adds the identity
+source (step 6). How often
+the stack polls has no default: `--duo-auth-interval`, or `--duo-poll-slot K/N`
+when N stacks poll one tenant. Its last step compares the bursts and chains the
+rules should have raised from what is indexed with their risk events, so
+history that was indexed while a rule was off is reported, not assumed. See
+`tools/lab5-identity-runbook.md`, "`--duo` (per stack that polls Duo)".
+
+### How the rule judges Duo events
+
+- **Once, by index time.** Every 10 minutes the rule judges the Duo events
+  that were indexed in one 10-minute slot (from 12 to 2 minutes before the
+  run). Its time range is that slot of index time, not a window of event
+  time, the slots follow each other with no gap and no overlap, and
+  continuous scheduling (`realtime_schedule = 0`) runs every one, also after
+  downtime (24 hours back by default). So it does not matter how late Duo
+  delivers an event: `lag_seconds`, a slow poll or a 30-day first backfill.
+  `dispatch.earliest_time` of this rule is therefore an edge of that slot,
+  never how far back it reads events; it reads events up to 181 days back
+  (Duo keeps 180).
+- **Counted by event time.** Around the slot's events the rule reads the
+  failures by when they happened, whenever they were indexed. A burst is a
+  user's run of failures and fraud reports with no gap over 10 minutes. It
+  raises *Duo authentication denial burst* in the one run that takes it to 5
+  failures within 10 minutes, and *Duo user marked fraud* in the run that
+  indexes its first fraud report. A fraud report counts as a fraud report
+  only, never as one of the 5 failures: five fraud reports raise one finding
+  (80), and a burst of other failures that also holds a fraud report raises
+  both (40 and 80). More failures of a burst that was already judged raise
+  nothing.
+- **The risk event is dated at the Duo event, the finding when it is
+  raised.** The result's time is the 5th failure, or the first fraud report,
+  so a backfill gives each result the time a live run would have. The risk
+  event keeps that time (ES's default; **Intermediate finding time source**
+  changes it). ES stamps the finding itself with the time it was created and
+  keeps the event time in `orig_time`, and the finding's own row in
+  `Risk.All_Risk` (index `notable`, same score) carries the creation time
+  too. So a backfilled burst adds its score to "last 24 hours" risk at the
+  moment of the backfill, and can trip ES's 24-hour risk threshold rule then,
+  even when the burst is days old. The description names the event time
+  (`burst_time`), and the drill-down reads 10 minutes either side of the
+  burst, not around the finding.
+- **Suppressed per burst.** `burst_id` is `<user>:<burst|fraud>:<epoch of the
+  event>`; the rule suppresses on it for 24 hours, so only a second judgement
+  of the same burst is dropped. A new burst a minute later has a new id.
+- **A page sent twice counts once.** Events are de-duplicated on Duo's
+  `txid`, keeping the copy indexed first.
+- **A run that fails loses its slot.** The slots do not overlap, so nothing
+  judges a slot a second time: after a run that failed, or whose search was
+  cut short, that slot's events count as already judged. Such a run is not in
+  `scheduler.log` under a status of its own: a scheduled run whose search
+  fails writes no `status` row at all, and the `status=continued` rows of a
+  continuously scheduled search are deferrals of runs that then complete (on
+  the dev instance, of 13 scheduled runs that failed in 30 days, 7 had no row
+  for their slot and 6 only `continued` rows; `status!=success` found none of
+  them and listed thousands of slots that were judged normally). So look for
+  the slots that have NO successful run:
+
+  ```spl
+  index=_internal sourcetype=scheduler status=success
+      savedsearch_name="AI Governance - Duo Authentication Fraud or Denial Burst - Rule"
+  | stats count by scheduled_time
+  | sort 0 scheduled_time
+  | streamstats current=f last(scheduled_time) as previous
+  | eval missed_slots=(scheduled_time-previous)/600-1
+  | where missed_slots>=1
+  | eval after=strftime(previous, "%F %T"), before=strftime(scheduled_time, "%F %T")
+  | table after, before, missed_slots, previous, scheduled_time
+  ```
+
+  (divide by 300 for the joined rule). Each row is a gap: the runs scheduled
+  after `previous` and before `scheduled_time` did not succeed, also while
+  the rule was switched off. Why a run failed is in the audit log:
+  `index=_audit action=search savedsearch_name="<rule>" (info=failed OR
+  info=bad_request)` (a search error is logged as `bad_request` there). A run
+  that was cut short, by a subsearch that hit its time limit for one, still
+  logs `success` and is in neither: only comparing what should have been
+  raised with what was catches it, which step D8 of
+  `tools/show_postdeploy.py --duo` does by `burst_id`. Judge a lost slot again
+  as described under *Judging history that is already indexed*, over exactly
+  that slot.
+- Do not switch the detection to ES's "index time" option, give it another
+  time range, set `allow_data_time_skew`, or change its cron without the two
+  dispatch times: the slot must stay exactly one period wide and on the cron
+  tick.
+
+### Judging history that is already indexed
+
+The rule never looks back past its first slot. Where Duo history was indexed
+before the rule was enabled, or a run lost its slot, judge that index time
+once, by hand, and only that index time. A range that also covers index time
+the scheduled runs have already judged raises their findings a second time:
+one pass does not know what earlier runs raised, only the per-burst
+suppression does, and it drops a repeat for 24 hours and no longer. A finding
+raised more than 24 hours earlier comes back, under the same `burst_id`, and
+adds its 40 or 80 to the user's risk again. So the one-off range needs BOTH
+ends, as epoch times:
+
+- **History from before the rule was enabled:** from `0` up to the START of
+  the first slot a scheduled run judged, which is the rule's first
+  `scheduled_time` minus 12 minutes (minus 7 for the joined rule):
+
+  ```spl
+  index=_internal sourcetype=scheduler status=success
+      savedsearch_name="AI Governance - Duo Authentication Fraud or Denial Burst - Rule"
+  | stats min(scheduled_time) as first_run
+  | eval judge_from=0, judge_up_to=first_run-720
+  ```
+
+- **A lost slot:** exactly its two edges, the lost run's `scheduled_time`
+  minus 12 minutes and minus 2 minutes (minus 7 and minus 2 for the joined
+  rule).
+
+In Splunk Web (edit the search's time range) or in `local/`, set
+`dispatch.earliest_time` and `dispatch.latest_time` to those two values, let
+one scheduled run finish (a `status=success` row for the rule in
+`index=_internal sourcetype=scheduler`), and set them back to `-12m@m` and
+`-2m@m`. Leave the one-off range in and the same findings are raised again
+each time the suppression expires.
+
+A stack set up with `tools/show_postdeploy.py --duo` does not need this for
+its backfill: the rules are enabled before the input exists, so the first
+poll is judged by the scheduled runs. The tool's step D8 says which bursts or
+chains, if any, were never raised; treat a `never raised` there as a lost
+slot, and find the slot with the search above.
+
+### The joined rule: Duo burst, sign-in, blocked AI turn
+
+*AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule*
+(ships disabled) raises the takeover story as one finding. For one identity
+(the same join key as above), in event-time order:
+
+1. a Duo denial burst: 5 or more failed Duo authentications within 10 minutes
+   (the Duo rule's threshold; here a fraud report counts as a failure);
+2. then a sign-in to the AI application (`identity_signin_success`) less than
+   30 minutes after a moment the failures stood at 5 or more;
+3. then a blocked verified AI turn within 60 minutes of that sign-in. Any
+   guardrail's block counts and is named; a turn that only claims the
+   identity's name never does.
+
+A burst that comes after the sign-in raises nothing.
+
+- **One finding per sign-in**, high severity, user risk 80. `chain_id` is
+  `<user>:takeover:<epoch of the sign-in>`, and the rule suppresses on it for
+  24 hours. More blocked turns of a sign-in that was already judged raise
+  nothing; a second sign-in with its own blocked turn is a second finding,
+  also when the second chain follows within the hour and its burst is the
+  step that is indexed last (live, the usual order). Its blocked turn was
+  then first counted as one more turn of the first sign-in; it did not
+  complete that chain, so it still completes its own. What is never raised
+  again is a chain that holds the blocked turn that completed an earlier one.
+- **Matched to Duo on the transaction id.** The application's sign-in record
+  carries `details.duo_txid`, equal to the `txid` of the Duo authentication it
+  rode on. The rule joins the two on it, exactly, and `signin_duo` names what
+  Duo recorded for that sign-in (the factor and the Duo application). The
+  match never decides whether the rule fires: a record with no transaction
+  id, or whose Duo event is not indexed yet, still counts, and `signin_duo`
+  then reads `none indexed`. On a live stack that is the usual case, because
+  Duo's log trails the application by minutes and the rule does not wait for
+  it; a chain that arrives in one backfill has it. A successful Duo
+  authentication alone is never the sign-in step.
+- **Judged once by index time, correlated by event time**, like the Duo rule:
+  every 5 minutes it judges what was indexed in one 5-minute slot (from 7 to
+  2 minutes before the run, `realtime_schedule = 0`) and reads the three
+  steps 100 minutes either side of the slot's events, whenever they were
+  indexed. A chain is raised by the run that indexes its last missing step.
+  Live that is usually the Duo burst, 3 to 5 minutes after the blocked turn;
+  on a stack that gets its history late it is whichever feed lands last, the
+  sign-in or the blocked turn as well. The don'ts of the Duo rule apply
+  unchanged, a run that fails loses its slot in the same way, and history
+  indexed before the rule was enabled, or a lost slot, is judged with the same
+  one-off time range, both ends given (*Judging history that is already
+  indexed*; set them back to `-7m@m` and `-2m@m`).
+- **Dated like the Duo rule.** The result's time is the first blocked turn of
+  the sign-in, so a backfill dates it as a live run would have; the risk
+  event keeps that time and the finding is dated when it is raised. The
+  description names `burst_time`, `signin_time` and `blocked_time`, and the
+  drill-down reads from 10 minutes before the burst to the last blocked turn.
+- **What a finding names is what was indexed when it was raised.** The
+  finding itself (its `chain_id`, its time, its risk) is the same from a live
+  run and from a backfill. What it says about the burst is not always:
+  `burst_time` is the last moment before the sign-in at which the failures
+  stood at 5 or more among the failures indexed by then, and
+  `duo_failures_10m`, the Duo applications, the start of the drill-down and
+  `signin_duo` follow it. Live, the sign-in and the blocked turn are indexed
+  minutes before Duo's log catches up. If an EARLIER burst lies within the 30
+  minutes, the chain is complete without the nearer one, is raised, and names
+  the earlier burst; one pass over the same events names the nearer one. On
+  the dev instance, an index-time slot ending between the blocked turn and
+  the burst (21:37 on 2026-11-16) named the first staged pass's burst of
+  21:08:53, where a backfill names 21:34:09. Nothing corrects the finding
+  afterwards: the chain is raised once. Holding a sign-in back until Duo's
+  log has passed it would make the two agree, at the price of a delay on
+  every finding; that is an open decision and is not built.
+- **It needs both feeds in the stack.** The Duo input backfills its history;
+  the application's HEC feed does not. On a stack created after the activity
+  the rule raises nothing until the application's identity events are sent
+  again with their original time and event ids (a second copy of an event is
+  de-duplicated on its event id, a sign-in also on its transaction id).
+- **Limits.** The order of burst and sign-in is judged on the application's
+  time for the sign-in, so clocks that disagree by more than the seconds
+  between a burst's fifth failure and the sign-in can misorder them. The two
+  windows (30 and 60 minutes) are fixed in the search. Its alert actions and
+  its suppression have not run on a schedule yet.
+
+### Identity Activity: claimed, not verified turns
+
+*Identity Activity* counts two kinds of AI turn for an identity, side by side,
+and never adds them:
+
+- **Verified** (`ai_turns`, `ai_blocked`; *AI turn allowed* and *AI turn
+  blocked* on the timeline): the one chat event of a turn made under a
+  verified identity session (`genai_identity_verified_turn`).
+- **Claimed, not verified** (`claimed_not_verified`, `claimed_blocked`; *AI
+  turn claimed, not verified* on the timeline): the one chat event of a turn
+  that names the user with no verified session behind it
+  (`genai_identity_claimed_turn`, read through
+  `genai_identity_claimed_events`). A prompt-injection spray that names a
+  persona writes these, and so does every anonymous turn. The name is only
+  what the request carried: such a turn is never a sign-in, is never matched
+  to a Duo sign-in, and never counts for the joined rule above.
+
+A claimed name only adds to an identity that is already in the view. A name
+with no Duo sign-in and no application identity event in the time range gets
+no row, no dropdown entry and no bar, so text sent in a request cannot put
+itself on the page. The price: a persona that was idle in the chosen range
+does not show a spray that named it (widen the range).
+
+**What a staged lab needs.** The claimed count is read from the AI
+application's own events, like `ai_turns` and `app_signins`. For a review to
+show it above 0 for the persona, on the stack the attendee looks at:
+
+1. The staged scenario includes a prompt-injection spray that names the
+   persona. Sign-ins and signed-in turns alone leave `claimed_not_verified`
+   at 0: the two staged passes of 2026-11-16 on the dev instance held no
+   spray and read 0.
+2. The application's events for the staging are in that stack. The Duo input
+   backfills its history into a new stack; the application's HEC feed does
+   not. On a stack created after the staging, `claimed_not_verified`,
+   `ai_turns` and `app_signins` all read 0 for the staged days unless those
+   events are sent to that stack as well (nothing in the TA does that). Send
+   each event once, with its original time: unlike the joined rule, the view
+   counts events and does not drop a second copy.
+3. The spray, and a Duo sign-in or an application identity event of the
+   persona, fall inside the time range of the view (default: the last 14
+   days).
+
+A read-only check, over the time range the review will use. 0 means the stack
+holds no such turn in that range: no spray named the persona, the
+application's events never reached this stack, or the spray is outside the
+range.
+
+```spl
+`genai_identity_claimed_events`
+| where `genai_identity_claimed_turn`
+| eval identity_key=`genai_identity_join_key(user)`
+| search identity_key="<persona>"
+| stats count as claimed_not_verified, count(eval('gen_ai.policy.blocked'=="true")) as claimed_blocked,
+    min(_time) as first, max(_time) as last
+| eval first=strftime(first, "%F %T"), last=strftime(last, "%F %T")
+```
+
+### How the input reads Duo
+
+- Every log request sends `sort=ts:asc`; each run makes one Duo log call (up
+  to 1000 records), which is what Duo asks for ("no more than once per
+  minute"). At `interval = 300` that caps one log input at about 288,000
+  records a day: a tenant that writes more falls behind, and records that
+  reach Duo's 180-day retention before they are read are lost. The interval
+  floor is 120 s: the input rejects less, and a run that starts under 115 s
+  after the last checkpoint write is skipped, so an interval set lower
+  directly in `local/` cannot poll faster.
+- The checkpoint (KV `ta_gen_ai_cim_duo_checkpoint`, one row per instance:
+  `mintime_ms`, `maxtime_ms`, `next_offset`, `backoff_until`, `updated`) is
+  saved after each page. Duo returns a `next_offset` on the last page that has
+  records too, and only the call after it comes back without one, so a saved
+  `next_offset` is a cursor, not a sign of more records: the next run resumes
+  after it with `mintime` = the cursor's timestamp and `maxtime` = now minus
+  `lag_seconds` (default 180, at least 120: Duo delays its logs about two
+  minutes), as Duo's own duo_log_sync resumes. A page with no records, or with
+  no `next_offset`, completes the window, and the next window starts at that
+  call's `maxtime` + 1 ms; a `next_offset` equal to the one sent completes it
+  too (WARN). A run whose window would be empty is skipped.
+- A window is never abandoned while Duo still holds records it has not read.
+  When Duo's retention floor (180 days less an hour) passes the cursor, the
+  window resumes at the floor (WARN), so only records Duo no longer has are
+  missed; `initial_lookback_hours = 4320` backfills everything Duo still holds,
+  1000 records a run.
+- **Two known windows.** A run killed after writing a page but before saving
+  its checkpoint sends that page again, so deduplicate on `txid`. Events still
+  in splunkd's pipeline when splunkd crashes are not read again (at most once).
+- HTTP 429 / Duo code 42901 backs off for 120 s, doubling per consecutive 429
+  up to an hour.
+- A users snapshot reads every page in one run and writes an allowlist of
+  fields (no phones, tokens, WebAuthn or desktop-authenticator records, no
+  notes) plus `snapshot_id`, `snapshot_total` and `snapshot_seq`. A page that
+  answers 429 or fails transiently (Duo unreachable, HTTP 5xx) is retried in
+  the same run up to 6 times, waiting 1 s doubling to 32 s plus jitter and at
+  least `Retry-After`, with at most 120 s of waiting per snapshot, as
+  duo_client_python retries. Only a page still failing after that, or the page
+  cap, leaves the run without a snapshot, and then it writes nothing.
+- On a search head cluster only the captain polls. This guard is best effort
+  and has not been tested on a real cluster.
+
+### Identities and risk
+
+- identity is the user's lowercased, de-duplicated username|email|aliases,
+  username first, and ES keeps that order: SA-IdentityManagement rejoins
+  identity into one pipe-delimited value (`mvdedup`, then `mvjoin`) before the
+  merge's `mvsort`, which therefore sorts a single value, and the merge splits
+  it again in order. So the canonical key (the first `normalized_identity`
+  value, which UEBA reads) is the Duo username, whatever sorts first. The
+  lookup gen's fixture "the newest COMPLETE snapshot wins over a newer
+  incomplete one" (`tools/tests/fixtures/duo_spl.json`, run live by
+  `test_duo_spl.py`) pins that order; Splunk documents `mvdedup` only as
+  removing duplicates.
+- The rule's risk object is `genai_identity_join_key(user)`, the lowercased
+  local part of the Duo username, the same key the Lab 5 rule uses. Where a
+  tenant's Duo usernames are emails, that local part is not one of the
+  identity's keys, so ES matches the risk to the identity only when the Duo
+  identity source sets `dynamic_identity_spec = {"email_short": true}` (on the
+  `[identity_manager://ta_gen_ai_cim_duo_identities]` stanza you add in
+  `local/inputs.conf`, or the **Email Short** convention in the ES dialog;
+  ES then adds each email's local part as a key). That is a per-source
+  setting, not a global Assets & Identities one. Two users who share a local
+  part in different domains share one risk object.
+- `genai_duo_identity_scope` keeps Lab 5 participant accounts (`l5-*`) out,
+  and every Lab 5 persona (`pseudoco_identity_personas`): a user whose keys
+  include a persona email, or a persona's short name with no Duo email (a
+  persona whose Duo email is empty). A customer user who only shares a
+  persona's short name, with an email of their own, stays in.
+- On ES Essentials the risk feeds Entity Risk Scoring; the UEBA screens need
+  ES Premier.
+
+### Scope and coexistence
+
+- The rule reads the Duo authentication events themselves, scoped by
+  `genai_duo_auth_events` (index and sourcetype), and uses the CIM fields the
+  props set (`user`, `action`, `signature_id`, `src`, `app`). It does not read
+  the CIM Authentication data model: an accelerated data model keeps no index
+  time, so `tstats` on it cannot say which events are new. It does not filter on
+  `authentication_service=duo`, because PseudoCo Assistant's own Duo sign-in
+  records carry that value too and would be counted twice (the Duo sourcetypes
+  still set `vendor_product = "Cisco Duo"` for raw searches). Keep
+  `genai_duo_auth_events` to index, sourcetype, source or host terms with no
+  pipe: the rule puts more search terms and subsearches after it.
+- The TA ships no props, eventtypes or tags for Cisco Security Cloud's
+  `cisco:duo:*` sourcetypes. Do not run both inputs against one tenant, or
+  every Duo event is indexed twice. The macros can point at Security Cloud
+  data, but the TA's CIM mapping and the lookup gen's snapshot fields do not
+  come with it, and the rule counts that data only if its own mapping sets the
+  same `action` and `signature_id` values.
+- No `user_agent` is synthesized: Duo sends a browser and a version, not a
+  user agent string.
+
+---
+
 ## Version History
 
-### v1.8.0 (unreleased - tag after real PseudoCo Assistant 4.23.0 events fill the identity fields)
+### v1.9.0 (2026-11-17)
+
+**Cisco Duo identity feed for ES and UEBA** (everything new ships off; see
+[Cisco Duo identity feed](#cisco-duo-identity-feed-v190))
+
+- ADDED: Cisco Duo modular input `ta_gen_ai_cim_duo` (entry point
+  `bin/ta_gen_ai_cim_duo.py` over `bin/ta_gen_ai_cim_duo_input.py`, spec
+  `README/inputs.conf.spec`), off by default with no instance shipped. One
+  endpoint per instance: `authentication`, `activity` (Duo public preview, opt
+  in) or `users`. Every log request sends `sort=ts:asc`; `mintime`, `maxtime`
+  and `next_offset` are checkpointed together after each page in the KV
+  collection `ta_gen_ai_cim_duo_checkpoint`. A saved `next_offset` is a cursor
+  the next run resumes after, with `maxtime` = now minus the lag (Duo returns a
+  `next_offset` on its last page with records too); a page with no records or
+  no `next_offset`, or a `next_offset` echoing the one sent, completes the
+  window, and the next one starts at `maxtime` + 1 ms; empty windows are
+  skipped; a window is never abandoned while Duo still holds unread records,
+  and resumes at the retention floor once the floor passes its cursor. One Duo
+  log call per run, up to 1000 records. HTTP 429 / code 42901 backs off
+  exponentially (120 s doubling to 1 h); the 120 s interval floor is validated
+  and also held at runtime. The users snapshot writes an allowlist of fields
+  with `snapshot_id` / `snapshot_total` / `snapshot_seq`, and retries a page
+  that answers 429 or a transient error up to 6 times in the run (1-32 s with
+  jitter, at least `Retry-After`, at most 120 s in all). Best-effort search
+  head cluster guard: only the captain polls (untested on a real cluster).
+  Known windows: one page may repeat after a run is killed (deduplicate on
+  `txid`), and events still in splunkd's pipeline when splunkd crashes are not
+  read again (at most once). As first built (review, 2026-11-16) the window
+  kept `maxtime` fixed until Duo returned no `next_offset`, which cost an empty
+  extra run per window against a real Duo, stalled for good on a Duo that
+  echoes the `next_offset` it was sent, and abandoned an unfinished window
+  once the retention floor passed its start (with `initial_lookback_hours =
+  4320`, all but the first 1000 records of the backfill); a 429 on any users
+  page discarded the snapshot.
+- ADDED: `bin/ta_gen_ai_cim_duo_api.py`, the canonical read-only Duo Admin API
+  client (v5 HMAC-SHA512, verified TLS, 20 s timeout, `next_offset` / offset
+  paging; HTTP 5xx and an unreachable Duo raise `DuoUnavailable`). Its v5
+  signer is proven identical to the Lab 5 SOAR connector's
+  (`tools/duo/tests/test_duo_api.py`); it never imports `soar_apps/`. A
+  rejected account `url` is never echoed in an error: the input logs that
+  error at ERROR, and a `url` written by hand skips the handler's validation,
+  so it may hold a pasted secret.
+- ADDED: Cisco Duo (Admin API) accounts: `auth_type = duo_hmac` in the account
+  REST handler, plus a *Cisco Duo (Admin API)* tab on the Configuration page
+  that saves only through the handler. The API hostname is validated and
+  normalized to `https://api-<id>.duosecurity.com` or `.duofederal.com`. The
+  integration key goes in the conf; the secret key goes only to
+  `storage/passwords` (realm `ta_gen_ai_cim_account__<name>`, `client_secret`)
+  and is never returned, logged or echoed.
+- ADDED: sourcetypes `ta_gen_ai_cim:duo:authentication`, `:activity` and
+  `:user` (search-time CIM Authentication and Change mapping), eventtypes
+  `ta_gen_ai_cim_duo_authentication`, `_enrollment`, `_admin_login` and
+  `_activity` with their tags, macros `genai_duo_index`,
+  `genai_duo_auth_events`, `genai_duo_activity_events`,
+  `genai_duo_user_events` and `genai_duo_identity_scope`, and the lookup
+  definition `ta_gen_ai_cim_duo_identities`. No props for any `cisco:duo:*`
+  sourcetype, so nothing clashes with Cisco Security Cloud.
+- ADDED: *GenAI - Identity - Duo Identity Lookup Gen* (ships **disabled**,
+  owner = admin): the newest complete users snapshot into
+  `lookups/ta_gen_ai_cim_duo_identities.csv` (gitignored, never packaged), the
+  file behind the ES identity source
+  `[identity_manager://ta_gen_ai_cim_duo_identities]` (category
+  `Cisco Duo users`). That source does **not** ship as a stanza:
+  `default/inputs.conf` holds it only as a commented example, and an owner
+  adds it in `local/inputs.conf` or in ES (the FIXED entry below says why).
+  identity is the lowercased username|email|aliases, username first (ES keeps
+  the order, so the Duo username is the canonical key); Lab 5 participants and
+  personas stay out by key. A persona's bare short name drops a user only when
+  that user has no Duo email, so a customer user who shares one (`grace.lin`
+  with an email of their own) is kept. Add the identity source only once the
+  lookup has rows: ES's merge search fails for every identity source while an
+  enabled source's file is missing.
+- FIXED (found live on ES 8.5.1, 2026-11-16): the Duo identity source first
+  shipped as a `default/inputs.conf` stanza with `disabled = true`. Its CSV is
+  generated at runtime and never ships, and ES's identity manager
+  (SA-IdentityManagement, every 300 s) checks the lookup file of **every**
+  `identity_manager` source, a disabled one included. `splunkd.log` therefore
+  got `ERROR PersistentScript ... Lookup table was not found: [HTTP 404]
+  .../data/lookup-table-files/ta_gen_ai_cim_duo_identities.csv` every 5
+  minutes for as long as the file did not exist, which is forever on an
+  install that never turns Duo on (the identity merge itself still ran). The
+  stanza no longer ships. A header-only CSV was not an option: a bundled
+  lookup file overwrites the generated one on every upgrade.
+- ADDED: *AI Governance - Duo Authentication Fraud or Denial Burst - Rule*
+  (ships **disabled**): user risk 80 for a push the user marked as fraud, 40
+  for 5 or more failed Duo authentications in 10 minutes, on the identity join
+  key, with `_entities` and no `risk_object` (R-CONF-006) and no raw content
+  (R-SEC-001). It is scoped by the sourcetype through `genai_duo_auth_events`,
+  not by `Authentication.vendor_product` as designed: CIM 8.5.0's
+  Authentication data model has no `vendor_product` field, so that filter
+  would match nothing. The scope also keeps PseudoCo Assistant's own Duo
+  sign-in records (`authentication_service=duo`) from being counted twice.
+- CHANGED before release (review decision LR-07, 2026-11-17): the rule judges
+  each Duo event once, by index time, and counts by event time. As first
+  built it ran every 10 minutes over the last 30 minutes of EVENT time,
+  throttled per user and signature for 30 minutes, which had two flaws, both
+  seen on the dev instance: Duo events indexed more than 30 minutes late
+  never raised risk (the first poll's 30-day backfill was indexed at 15:02
+  and the 15:10 run returned nothing), and because the throttle equalled the
+  window a second burst soon after a finding could be missed (a burst 25
+  minutes after a finding was suppressed at the next run and raised only one
+  second after the throttle expired). Now the time range is a 10-minute slot
+  of index time, bursts are counted by event time around the slot's events,
+  each result is dated at its Duo event (the risk event keeps that time; ES
+  dates the finding when it is raised), suppression is per burst (`burst_id`,
+  24 hours), events are de-duplicated on `txid`, and the drill-down reads the
+  burst's own time range. A fraud report is judged as a fraud report only and
+  no longer also counts as one of the 5 failures of a burst, so the two
+  signatures are judged on disjoint events and a backfill raises exactly what
+  live runs would have. The rule no longer reads the Authentication data
+  model: accelerated summaries keep no index time (`tstats` on the data model
+  with `_index_earliest` returned no row and `_indextime` no value on ES
+  8.5.1). See *How the rule judges Duo events*.
+- ADDED (review decision LR-06, 2026-11-17): *AI Governance - Duo Denial Burst
+  to Blocked AI Turn Correlation - Rule* (ships **disabled**), the first
+  search of the TA that reads both feeds. For one identity it joins a Duo
+  denial burst (5 or more failed Duo authentications within 10 minutes), then
+  an application sign-in less than 30 minutes later, then a blocked verified
+  AI turn within 60 minutes of that sign-in, into one high finding and user
+  risk 80, with `_entities` and no `risk_object` (R-CONF-006) and no raw
+  content or transaction id outbound (R-SEC-001). The sign-in is matched to
+  Duo's own record of it on the transaction id (`details.duo_txid`) when that
+  record is indexed (`signin_duo`); the match never gates the rule. It judges
+  by index time and correlates by event time like the Duo rule (a 5-minute
+  slot, 100 minutes of context either side), raises a chain once, in the run
+  that indexes its last missing step, dates the result at the first blocked
+  turn and suppresses per sign-in (`chain_id`, 24 hours). It needs the
+  application's identity events in the same stack: the Duo input backfills,
+  the application's HEC feed does not. See *The joined rule*.
+- ADDED: *Duo Identity Feed* dashboard (`ta_gen_ai_cim_duo_identity`,
+  Dashboard Studio, absolute layout, dark): Duo authentications by action and
+  denied/fraud by user (last 24 h; the user is the identity join key, never
+  the raw Duo username, which is an email address on some tenants);
+  checkpoint lag per input instance from the
+  indexed events (`tstats` on the `genai_duo_*` macros, never REST or the
+  checkpoint collection); Duo user snapshots judged like the lookup gen
+  (complete = event count equals `snapshot_total`, same -3d window); Duo
+  identities merged into `identity_lookup_expanded` (first key as the
+  identity join key, no email column); users with Duo risk from
+  `Risk.All_Risk`, risk events and findings counted apart (see the *Risk*
+  note under *Identity Activity* below). Home card 05 (KPI *Duo
+  authentications, last 24h*) and a Dashboards menu entry; the scoreboard
+  moves down one card, unchanged.
+- ADDED: *Identity Activity* dashboard (`ta_gen_ai_cim_identity_activity`,
+  Dashboard Studio, absolute layout, dark): per identity, what Cisco Duo knows
+  next to what the AI application saw. The identity is the lowercased local
+  part of the login (`genai_identity_join_key`), so a Duo username and the
+  user of a verified AI turn line up. A time range input (default last 14
+  days) and an identity dropdown fed by the identities of either feed apply to
+  every panel. Six KPI tiles (identities with Duo sign-ins, Duo sign-ins
+  succeeded, denied or marked fraud, identities with verified AI turns,
+  verified AI turns blocked, identities with ES user risk); an *Identity
+  overview* table (Duo status and enrolment from the newest complete users
+  snapshot in the range, Duo success / denied / fraud / other, last Duo
+  sign-in and factor, application sign-ins, verified AI turns and blocks,
+  Identity Risk Gate verdicts, ES risk events, findings and score, ES identity
+  category); an *Activity timeline*; *Duo sign-in to AI activity*; *Source
+  addresses by identity* (Duo only, application only, both); *Risk by
+  detection*. Events are read only through `genai_duo_auth_events`,
+  `genai_duo_user_events` and the new `genai_identity_activity_events` (over
+  `genai_identity_ai_events`; its raw term `identity_*` only narrows the scan,
+  the field filter decides). Four things the first build got wrong, found in
+  review on live data (2026-11-16) and corrected before release:
+  - *Sign-in chain.* The application's `identity_signin_success` record
+    carries Duo's transaction id (`details.duo_txid`, equal to the `txid` of
+    the Duo authentication), so an application sign-in is matched on that id,
+    whatever the two clocks say. Only a verified turn carries no such id: the
+    first verified turn after each application sign-in, and a sign-in whose id
+    is not in the range, are matched on user and time, not on a session key
+    (the nearest earlier *successful* Duo authentication of the identity
+    within 10 minutes, to any Duo-protected application). `matched_on` says
+    which, and `duo_denied_10m` counts the identity's denied or fraud Duo
+    authentications in the 10 minutes before. The first build stated that the
+    application does not log Duo's transaction id, matched everything on
+    time, and so could pair a sign-in with a denial from another address a
+    second earlier. A row under 15 minutes old with no match reads *Duo log
+    may not be in yet* (Duo's log lags by the input's lag plus its poll
+    interval) and the panel re-runs every 5 minutes.
+  - *A verified AI turn* is the turn's one chat event
+    (`genai_identity_verified_turn`: provider set, operation `chat`).
+    PseudoCo Assistant stamps `identity_verified` on every event of a
+    signed-in turn (tool calls, decisions and, on a single-sourcetype HEC
+    destination, the escalation record), so "verified and not an audit
+    record" counted a turn with a record lookup two or three times and a
+    blocked tool call as a blocked turn.
+  - *Duo outcomes* come from one macro (`genai_identity_duo_class`): success,
+    denied (Duo result denied or failure), fraud, and other (error or anything
+    else). The tiles, the overview and the timeline add up to the same total;
+    before, a result of failure or error counted in no tile and as a failure
+    in the timeline.
+  - *Risk.* ES 8's Risk data model reads the notable index as well as the
+    risk index, so one firing of a rule that writes a risk event and raises a
+    finding is two rows. The overview shows `risk_events` and `findings` apart
+    and the timeline draws them as two series; `risk_score` and *Risk by
+    detection* stay the total of both, which is ES's own entity risk. The risk
+    subsearches filter on the chosen identity and return the newest (or the
+    riskiest) rows first, because `append` keeps only 50,000; the timeline
+    reads risk in 5-minute buckets up to a 2-day range and hourly beyond.
+
+  The ES tile, *Identity overview*, *Activity timeline* and *Risk by
+  detection* read `Risk.All_Risk` (user risk) and `identity_lookup_expanded`
+  and need Enterprise Security: without it they show an error, the overview
+  and the timeline included, although their Duo and application content needs
+  none (a `tstats` on a missing data model is fatal even inside `append`). The
+  five Duo and application tiles, the sign-in chain and the address table do
+  not depend on it. No prompt or response text, email address or phone number
+  is shown. Home card 06 (KPI *identities active, last 24h*: distinct
+  identities with a Duo sign-in or a verified AI turn) and a Dashboards menu
+  entry after *Duo Identity Feed*; the scoreboard moves down one more card,
+  unchanged.
+- ADDED (*Identity Activity*, lab-readiness review 2026-11-17): claimed, not
+  verified AI turns (review decision LR-08). The view counted only
+  Duo-verified turns, so a prompt-injection spray that merely names a
+  persona, with no identity session, read as 0 AI turns for that persona
+  while Enterprise Security showed the spray's risk on the same name.
+  *Identity overview* now has `claimed_not_verified` and `claimed_blocked`
+  after `gate_verdicts`, and the *Activity timeline* one more series, *AI
+  turn claimed, not verified*, drawn pale so it is told apart from the two
+  sign-in series by lightness as well as by name. A claimed turn is the one
+  chat event of a turn that names a user with no verified identity
+  (`genai_identity_claimed_turn`, read through
+  `genai_identity_claimed_events`). The name is only what the request
+  carried, so a claimed turn is never a sign-in, never part of `ai_turns` and
+  never matched to a Duo sign-in, and the two counts are never added. A name
+  that is only claimed, with no Duo sign-in and no application identity event
+  in the time range, gets no row, no dropdown entry and no bar: text sent in
+  a request cannot put itself on the page, and a persona that was idle in the
+  chosen range does not show a spray that named it (widen the range). The six
+  tiles, the dropdown, the sign-in chain, the address table and *Risk by
+  detection* do not read claimed turns, and every number the view showed
+  before is unchanged. The claimed count needs the application's own events
+  in the index, and a spray that names the persona among them: the Duo input
+  backfills 30 days on a new stack, the application's HEC feed does not. See
+  *Identity Activity: claimed, not verified turns*.
+- ADDED (dev tooling, review decision LR-09, 2026-11-17):
+  `tools/show_postdeploy.py --duo` / `--duo-teardown` (`tools/duo_steps.py`),
+  one run per stack that polls Duo. Setup, each step reading the stack first
+  and writing only a difference: index `duo` through ACS (waited for), the Duo
+  account through the account handler, the attendee role's search access, the
+  Duo rule and the joined rule enabled, then the authentication input; a
+  teardown removes all of it, the secret key included, and deletes the index
+  and the input checkpoints together or not at all. The secret key comes only
+  from a named environment variable or a hidden prompt (never argv, never a
+  file), no part of it is printed, and a Duo run verifies the stack's
+  certificate unless `--duo-no-tls-verify` is passed, which the run then
+  states. The polling interval is a required parameter (`--duo-auth-interval`,
+  or `--duo-poll-slot K/N` for N stacks on one tenant, written as a list of
+  minutes). What a stack holds is explicit: every run prints it, and the users
+  snapshot (`--duo-with-users`) and the identity lookup search
+  (`--duo-with-lookup-gen`) are off unless asked for. The rules are enabled
+  before the input exists and are checked as they ship: each must judge by
+  index time on a slot exactly one cron period wide (its
+  `dispatch.earliest_time` is never read as an event-time reach), and the input
+  is created only when the index exists, keeps the backfill and agrees with
+  the input's checkpoint, so a stack created after the sign-ins were staged
+  indexes them once, with the rules already on. A last, read-only step
+  dispatches each rule's own search in one pass over what is indexed and
+  compares its `burst_id`s and `chain_id`s with the rule's risk events (`N of N
+  raised`, or which were never raised). Tested against a loopback stand-in for
+  the splunkd and ACS endpoints (`tools/tests/fake_splunk_rest.py`; its account
+  endpoint is the shipped handler and its saved searches are the shipped
+  stanzas); **not yet run against a Splunk Cloud stack**.
+- FIXED before release (review of LR-06, 2026-11-17): the joined rule judged
+  nothing by index time. It read its slot's start with `addinfo` in the main
+  pipeline, where `addinfo` returns the event-time range the rule's own finder
+  subsearch writes into the base search, not the job's slot. Every row counted
+  as new, the "before the slot" half of the search never ran, and a chain was
+  raised again by every later run that indexed any step within 100 minutes of
+  it; only the 24-hour suppression on `chain_id` stood between that and a
+  second finding, and it could not drop a repeat under another `chain_id` or
+  after 24 hours. On the dev data the 5-minute slot after the one that raised
+  the staged chain returned it a second time. The slot's start is now read in
+  an append subsearch, as the Duo rule reads it. The 25 fixtures had passed
+  throughout: their rows are makeresults rows, which carry no inline time
+  range, so `addinfo` gives the job's window anywhere.
+- FIXED before release (review of LR-06, 2026-11-17): the joined rule dropped a
+  second chain that followed the first within the hour when its Duo burst was
+  the step indexed last, which is the usual live order. Any blocked turn that
+  had been counted with an earlier, judged sign-in marked the new chain as
+  already raised, so a live run raised one finding where a backfill raises
+  two. "Already raised" is now decided per chain, by the blocked turn that
+  completed it: a chain is not raised again when it holds the first blocked
+  turn of a chain that was complete before the slot, and is raised when its
+  turns were only later turns of another sign-in's chain.
+- CHANGED before release (review of LR-06, 2026-11-17): the joined rule's
+  description, comment and docs now say that what a finding NAMES (the burst,
+  its count, the Duo applications, the start of the drill-down and Duo's
+  record of the sign-in) is what was indexed when it was raised. A chain
+  raised while the burst nearest to the sign-in is still in Duo's lag names an
+  earlier burst within the 30 minutes; `chain_id`, the finding's time and the
+  risk are the same as from a backfill. Holding a sign-in back until Duo's log
+  has passed it would remove the difference at the price of a delay; that is
+  left as an open decision and is not built.
+- FIXED before release (review of LR-07, 2026-11-17, documentation only; the
+  Duo rule's search is unchanged): the search this README gave for a run that
+  lost its slot (`status!=success` in `scheduler.log`) could not find one. A
+  scheduled run whose search fails writes no status row, and the rows that do
+  match are deferrals of runs that completed. It now looks for the slots that
+  have no successful run, names the audit log for the reason, and says that a
+  run that was cut short is found only by comparing ids. And the catch-up
+  advice widened only `dispatch.earliest_time` (for example `-31d@m`), a range
+  that also covers index time the scheduled runs have judged: every finding
+  older than the 24-hour suppression would have been raised a second time.
+  The one-off range now has both ends, up to the start of the first judged
+  slot, or exactly the lost slot.
+- FIXED before release (review of LR-09, 2026-11-17, dev tooling):
+  `tools/show_postdeploy.py --duo` / `--duo-teardown`.
+  - A stack certificate that no public root signed had one remedy short of
+    switching verification off, "point `SSL_CERT_FILE` at the CA", and it does
+    nothing under the Python the runbook's command uses on a Mac (Apple's
+    Python on LibreSSL ignores the variable; Splunk's launcher overwrites it).
+    `--duo-ca-file PATH` loads the CA into the stack's TLS context explicitly,
+    under any Python, and leaves ACS on the default roots.
+  - Guards that deleted or created on an answer they could not read now
+    refuse: the lookup file is deleted only when the identity source is
+    confirmed absent (404), an index the search sees nothing in only when ACS
+    says it holds 0 events, the checkpoints only once the index is confirmed
+    gone. "No such index" from the stack while the step's own search counts
+    events keeps everything; an ACS 404 means "the index is missing" only
+    with ACS's own code for that; a rule, a checkpoint or an event count that
+    cannot be read never lets the authentication input be created.
+  - An index delete that ACS has accepted but not yet carried out no longer
+    ends in "checkpoints cleared" and an OK. A marker stays beside the
+    checkpoints until ACS confirms the index is gone, and `--duo` creates no
+    input while it is there. The index is not deleted from under an input the
+    tool did not make.
+  - `--duo-teardown` reports, as a failure, any role it was not given that
+    still lists index `duo` (a setup run with `--duo-attendee-role X` is undone
+    only by a teardown that names X).
+  - A value typed where none belongs is no longer printed back:
+    `--duo-rotate-key=<key>` used to return "ignored explicit argument
+    '<key>'" and `--duo-p=<key>` "ambiguous option: --duo-p=<key> ...".
+    Option abbreviations are off for the whole script.
+  - D0 reads the endpoint the inputs are created through before anything is
+    written, and calls a refused read a refused read (a 403 used to read "the
+    TA is not installed" or "restart the stack").
+  - D8 no longer dispatches a rule text that holds `stash`, `summaryindex`,
+    `sumindex`, `dump` or one of this TA's own writing commands.
+- CHANGED before release (review of the tests, 2026-11-17, dev only): the
+  offline suite could not tell a working Duo rule from a dead one (a `max`
+  changed to `min`, a misspelt command and an inserted filter all passed it).
+  `tools/tests/fixtures/duo_rule_proof.json` now records, for each of the two
+  rules, the digest of the text its fixtures were last run against, and the
+  suite fails while the text differs; `test_duo_spl.py --fixtures`, `--verify`
+  and `--record-proof` run and record the fixtures through the read-only
+  Splunk MCP where no credentials are at hand, and `SPLUNK_TEST_REQUIRED=1`
+  turns every skipped live test into a failure. The chain fixtures went from
+  25 to 40 (every arrival order, the second chain, the edges of the 60-minute
+  window, what a finding names) and compare the drill-down's two ends. The
+  live tests cut index time where the scheduler does (the slot edges sit 2
+  minutes back from the cron ticks), compare each rule with a plain event-time
+  reference search instead of with itself, read the edge each rule compares
+  index time with, check that a run reads the events around its new ones (the
+  finder's look-back, which no test exercised), and cut index time at every
+  second at which an event of a burst or chain was indexed. Every `$token$` of
+  the two rules' findings must
+  name a field of the search's result. The stack tool's tests run `main()`
+  itself and one failing read per guard.
+- CHANGED: `metadata/default.meta` `[passwords]` limits every credential the
+  TA stores (ServiceNow, soar, Cisco Duo) to `admin, sc_admin`, `export = none`.
+  They used to inherit `[]` (read `*`, export system), so any role holding
+  `list_storage_passwords` could read them from any app. Every reader runs in
+  this app's context as a role that passes: the five ServiceNow sync and
+  inventory searches are now `owner = admin` (R-CONF-005), `| genaiseedes`
+  already was, `| aicase` runs as the invoking user (`power` may run it but
+  holds no `list_storage_passwords`, so it never could read them), and the Duo
+  input runs as splunk-system-user. The Duo checkpoint collection is
+  admin-only as well.
+- FIXED: the ACLs for `ta_gen_ai_cim_account.conf`, `ta_gen_ai_cim_es.conf`
+  and `ta_gen_ai_cim_genai_scoring.conf` were written under `[conf/<name>]`
+  and `[configs/conf-<name>]`, names Splunk never applies (a conf's metadata
+  object is `[<name>]`, the way splunkd writes
+  `[ta_gen_ai_cim_genai_scoring/pipeline_1]` into `local.meta`). All three
+  confs therefore inherited `[]`: any user could read every account's url,
+  username and client id, from 1.9.0 every Duo integration key and API
+  hostname too. They are now `[ta_gen_ai_cim_account]`, `[ta_gen_ai_cim_es]`
+  and `[ta_gen_ai_cim_genai_scoring]`, `admin, sc_admin`, `export = none`;
+  every reader already runs in this app's context as a role that passes (see
+  the `[passwords]` entry above).
+- FIXED: the account handler declared `redirect_url`, `access_token` and
+  `refresh_token` but never stored them, so a posted OAuth token was dropped
+  and then echoed unmasked in the reply splunkd receives
+  (`MConfigHandler.toXml` serializes every caller arg). They are no longer
+  declared, so splunkd rejects them, and the reply masks them anyway.
+- CHANGED (packaging, R-PKG-003 amendment): `README/*.conf.spec` now ship:
+  `README/inputs.conf.spec`, without which an installed package has no Duo
+  scheme, and `README/alert_actions.conf.spec`, which the old `README/` exclude
+  had been dropping from every package. Every other `README/` member is still
+  excluded, now by exact path. `bin/README` also ships: the old bare `README/`
+  pattern matched it too.
+- CHANGED: `app.manifest` `targetWorkloads` adds `_forwarders`, since the Duo
+  input may run on a heavy forwarder.
+- FIXED: `default/web.conf` exposed `TA-gen_ai_cim/*`, which matched no
+  endpoint the app serves, so Splunk Web's proxy refused the account handler.
+  It now exposes `ta_gen_ai_cim_account/ta_gen_ai_cim_account` and `/*`, which
+  the Cisco Duo tab saves through; Splunk Web picks this up at startup.
+- FIXED: `bin/snow_setup.py` called
+  `/servicesNS/nobody/TA-gen_ai_cim/ta_gen_ai_cim_account` without the
+  handler's `members` segment, so its lookups 404'd and its creates missed the
+  handler.
+- FIXED: `get_snow_config` and the Configuration page used the first account
+  stanza, so a `duo` or `soar` account (both sort ahead of most ServiceNow
+  names) would divert the ServiceNow syncs. Both now pick ServiceNow accounts
+  only, a `*.service-now.com` / `*.servicenow.com` host first
+  (`sync_snow_asset.select_snow_account`).
+- FIXED: the account handler's create silently updated an existing stanza
+  (`splunk.entity` `setEntity`'s update path); it now refuses an existing name.
+  The ServiceNow form no longer turns a 409 into an update of another account.
+  The handler also dropped the soar account's token on create
+  (`auth_type = token`).
+- CHANGED: the account handler persists through `configs/conf` +
+  `storage/passwords`, updates a secret in place (never delete-then-create),
+  rolls back a create whose secret write fails, refuses unknown auth types and
+  switches between `duo_hmac` and another type, and masks secrets in the reply
+  it sends back to splunkd.
+- FIXED (found live, 2026-11-16): the Configuration page read the first
+  `splunkweb_csrf_token_*` cookie it found. A browser that has used two Splunk
+  instances on one host (cookies are scoped by host, not port) then sent the
+  wrong token, the write failed CSRF validation with a 401, and Splunk Web
+  silently reloaded the page without saving. `getCSRFToken` now takes this
+  Splunk Web's own cookie (`splunkweb_csrf_token_<port>`, the port from
+  `$C.MRSPARKLE_PORT_NUMBER` or the page URL) through the pure function
+  `pickCsrfToken`, pinned by a node test in `tools/tests/test_duo_account.py`.
+- FIXED (found live, 2026-11-16): home card 02 (Tokenomics) showed `###`
+  instead of 0 whenever the last 24 hours held no inference event, because a
+  bare `stats sum()` returns no row on an empty window. Its search now carries a
+  count beside the sum and fills the null. The same fix went into the Duo
+  Identity Feed tiles before release, and `tools/tests/test_lab5_conf.py` now
+  requires every home tile's search to return a row on an empty window.
+- ADDED (VALIDATION_RULES.md): R-INP-001 (modular inputs ship off, with their
+  spec and `bin/<scheme>.py`; 120 s floor; secrets only in `storage/passwords`;
+  never `gen_ai_log`) and a dated R-PKG-003 amendment for `README/*.conf.spec`.
+  `check_package.sh` enforces both, plus the dev-only trees R-PKG-003 already
+  named (`tools/`, `elements/`, `planning/`, `package.sh`). Also R-INP-002,
+  from the Duo identity source fix above: an ES identity or asset source
+  (`[identity_manager://...]`) ships in `default/inputs.conf` only together
+  with its lookup file, enabled or not. `check_package.sh` checks it on the
+  built package and `tools/tests/test_duo_conf.py` on the tree.
+- Validation: AppInspect 4.2.0 `--included-tags cloud`: 0 errors, 0 failures,
+  0 future-failures, 9 warnings (the 8 accepted ones plus
+  `check_for_modular_inputs`, "App contains modular inputs in inputs.conf.spec.
+  No action required."). On 2026-11-16 the branch was loaded on a live Splunk
+  10.4.3 with Enterprise Security 8.5.1, and these were verified there against
+  a real Duo tenant:
+  - the modular input registered and pulled the tenant's authentication log
+    (57 events at the first check; it has kept polling since) and a complete
+    8-user snapshot;
+  - resuming from a saved `next_offset` with a later `maxtime` works;
+  - the identity lookup gen wrote 8 identities, and the ES identity manager
+    merged them (7 into existing identities, 1 new);
+  - the Authentication data model returns the Duo events;
+  - the risk rule as first built (an event-time window, before LR-07),
+    enabled in that instance's `local/`, ran on its 10-minute schedule: one
+    run over a 14-day window returned 4 users and wrote their user risk and
+    findings, and a later run over the default 30-minute window raised user
+    risk and a finding for a fresh denial burst, with the next run throttled;
+  - the Cisco Duo tab created, listed and deleted a test account;
+  - ES Entity Risk Scoring scored that risk on its next 20-minute run, on one
+    user together with the Prompt Injection rule's;
+  - end to end with the application: a Duo sign-in to PseudoCo Assistant
+    matched the application's own sign-in record on the transaction id, 3
+    seconds apart; verified AI turns followed, one blocked by Cisco AI Defense;
+    and a failed sign-in burst sent before that sign-in showed on *Identity
+    Activity* as 6 denials in the 10 minutes before it;
+  - the index-time rule (LR-07), read-only on that data on 2026-11-17, as
+    ad hoc searches of its final text (no scheduled run): over the index-time
+    slot that holds the first poll's 30-day backfill it returned the four
+    findings that backfill held, each dated at its Duo event (three denial
+    bursts, and one fraud finding for the user with five fraud reports and
+    one other failure); over the slots of the three bursts sent on 2026-11-16
+    one finding each (the third 25 minutes after the second), and none over
+    the slot that indexed a burst's late sixth failure or over an idle slot;
+    and one pass over all time, with no end, returned the same seven findings
+    with the same `burst_id`s. Each of the 28 rule fixtures in
+    `tools/tests/fixtures/duo_spl.json` returned its expected rows over its
+    own slot. Its alert actions, suppression and continuous schedule have
+    not run yet;
+  - the joined rule (LR-06) as first built, read-only on that data on
+    2026-11-17, as ad hoc searches (the rule is disabled; no scheduled run).
+    These runs did not show that the rule raised the same chain again in the
+    next slot; the review bullet below is the search as it ships: over
+    all time, with no end, it returned one finding, for the persona whose
+    second staged pass ran in the rule's order (six failed Duo
+    authentications within the 10 minutes to 21:34:09, the application
+    sign-in at 21:35:49 matched to Duo's own record of it on the transaction
+    id, one turn blocked by Cisco AI Defense at 21:36:44), and none for the
+    first pass, where the burst came three minutes after the sign-in and its
+    turns; over the 5-minute index-time slot that indexed that burst it
+    returned the same finding, with `signin_duo` reading `none indexed`
+    because Duo's record of the sign-in was indexed two minutes later; and
+    over that next slot, over the index time of the first pass and over the
+    scheduler's current slot it returned nothing. The drill-down, with the
+    finding's bounds inline, returned the chain's 11 events from a job whose
+    own time range held none. Each of the 25 `chain:` fixtures in
+    `tools/tests/fixtures/duo_spl.json` returned its expected rows over its
+    own slot. Its alert actions and suppression have not run yet;
+  - every search of *Identity Activity*, and home card 06, ran on that data
+    over an empty window and over its default one; the three *Duo Identity
+    Feed* searches changed in review (denied and fraud by user, merged
+    identities, users with Duo risk) ran over their own windows; and the
+    Identity Activity logic (one event per turn, Duo outcomes, the sign-in
+    chain, risk events against findings) also ran on synthetic rows through
+    the view's own text (`SIMULATIONS` in
+    `tools/tests/test_identity_activity.py`);
+  - claimed, not verified turns on *Identity Activity* (LR-08), read-only on
+    that data on 2026-11-17, as ad hoc searches of the view's final text
+    with the two new macros by name: over a fixed 14-day window the overview
+    returned the same eight identities as before, the 17 columns it already
+    had equal row for row (one digest over them, before and after), and the
+    timeline's eight earlier series were equal in all 15 daily rows. The new
+    columns read 7 claimed turns (5 blocked) for a persona a spray had named
+    on 2026-11-06, 4 (2 blocked) for a second persona named on 2026-11-12,
+    whose AI turns had read 0, and 0 for the two staged passes of 2026-11-16,
+    which held no spray. The ES tile, which counts the overview's rows, read
+    5; over a two-hour window in which the second persona had no Duo or
+    application event, the spray that named that persona was not drawn; an
+    empty window returned 0 and no error. Of the 743 governance events in
+    the window 343 were claimed turns under 53 names, none of them also a
+    verified turn, and only the two personas' showed. Each of the two
+    searches scanned 485 events instead of 115 and ran in under 2 seconds.
+    The two simulations added to `SIMULATIONS` returned their expected
+    answers. The edited view has not been opened in a browser.
+  - the stack tool's own searches (LR-09), read-only on that data on
+    2026-11-17, as ad hoc searches (the tool itself was not run against this
+    or any Splunk): the count by sourcetype it starts from returned the
+    authentication and the user events and no other sourcetype; step D8's one
+    pass of the Duo rule's own search over all index time up to 20 minutes
+    before now returned the seven `burst_id`s, and of the joined rule's (up
+    to 15 minutes) its one `chain_id`; the risk-index search D8 compares them
+    with returned the Duo rule's seven risk events with no id, because the
+    first build of the rule raised them and they carry none, which D8 reports
+    as not comparable instead of advising a catch-up, and no risk event for
+    the joined rule, which has never run there, so D8 would name its one
+    chain as never raised; and the five T-1 searches
+    of `tools/lab5-identity-runbook.md` returned, for the staged persona,
+    eight ten-minute buckets of Duo sign-ins (the three staged bursts with six
+    denials each), four findings of the Duo rule, no joined finding (that
+    rule has not run on a schedule) and the application's two sign-ins, four
+    allowed and three blocked verified turns.
+  - the joined rule as fixed in review, read-only on that data on 2026-11-17,
+    as ad hoc searches of its final text (4,684 characters; no scheduled
+    run). Over two adjacent 5-minute index-time slots that part the staged
+    chain's steps (the sign-in and the blocked turn in the first, the burst
+    nearest to the sign-in in the second), the first returned the chain and
+    the second returned nothing, where the first build returned the chain in
+    both. That first slot named the earlier burst of 21:08:53 (the nearer one
+    was not indexed yet), as documented under *The joined rule*. Over the
+    scheduler's own slot of 21:33 to 21:38 it returned the chain naming the
+    burst of 21:34:09, with `signin_duo` reading `none indexed`; over the next
+    slot nothing; over all time one chain, the one the plain event-time
+    reference search of `tools/tests/test_duo_spl.py` finds. The edge each of
+    the two rules compares index time with read as the job's own earliest
+    (the joined rule's had read 99 minutes earlier, the start of the
+    event-time range its finder writes). What a run reads was compared with a
+    plain search over the same event-time window: the Duo rule's run over the
+    slot that indexed a burst's late sixth failure read 6 events (1 without
+    the look-back), the joined rule's run over the 21:33 slot 19 (9 without).
+    All 40 `chain:` fixtures returned
+    their expected rows, each run verbatim over its own slot, and the result
+    is recorded in `tools/tests/fixtures/duo_rule_proof.json`. The Duo rule's
+    search is unchanged; its reference search returned the same seven
+    `burst_id`s as the rule's one pass, and on the scheduler's grid (edges at
+    minutes ending in 8) its events fall into five slots, one of which parts a
+    burst's sixth failure from the other five. The live Python tests
+    (`SPLUNK_TEST_*`) were not run: no credentials were at hand.
+  - the stack tool as fixed in review: nothing was run against a Splunk. Its
+    tests (127, against the loopback stand-in) include a real TLS handshake
+    with a certificate no default root knows, refused without `--duo-ca-file`
+    and verified with it, under Apple's Python 3.9 on LibreSSL and under
+    Splunk's Python 3.13; `main()` with valid command lines; and one failing
+    read per guard. In a scratch copy, each of 37 mutations of the guards, the
+    routing and the TLS handling failed at least one test.
+
+  Not exercised: the UEBA pages (the instance runs ES Essentials), a search
+  head cluster, and `tools/show_postdeploy.py --duo` against any real stack.
+
+### v1.8.0 (2026-11-07; never tagged, first released in v1.9.0)
 
 **AI Trust Lab 5: "Verify: Cisco Identity Intelligence"**
 

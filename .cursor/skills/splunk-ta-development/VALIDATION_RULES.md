@@ -59,8 +59,14 @@ Run in order. Any failure stops the publish.
 # 3. Build
 bash package.sh
 
-# 4. Package hygiene (R-PKG-*, R-CONF-002, R-SEC-002)
+# 4. Package hygiene (R-PKG-*, R-INP-001, R-INP-002, R-CONF-002, R-SEC-002)
 bash .claude/skills/splunk-ta-development/check_package.sh <APP_NAME>-<VERSION>.tgz
+
+# 4b. Modular inputs: floor, secrets, scheme and entry point (R-INP-001)
+python3 -m unittest discover -s tools/duo/tests
+
+# 4c. ES identity/asset sources ship their lookup file (R-INP-002)
+python3 -m unittest discover -s tools/tests -p 'test_duo_conf.py'
 
 # 5. Data minimization (R-SEC-001)
 python3 .claude/skills/splunk-ta-development/check_notable_content.py default/savedsearches.conf
@@ -148,6 +154,31 @@ tar -tzf <pkg>.tgz | grep -cE '(^|/)(local/|metadata/local\.meta|\.git|\.claude|
 
 **Note.** Whenever a new assistant/dev file or directory is added to the repo,
 add it to the `package.sh` exclude list in the *same* change.
+
+**Amendment (2026-11-16, v1.9.0).** `README/` is no longer wholly dev-only.
+Splunk reads a modular input's scheme from `README/inputs.conf.spec` and
+nowhere else, so a package without it installs an input that never runs, with
+no error at install time (R-INP-001). The same directory holds
+`README/alert_actions.conf.spec`, which the blanket exclude had been dropping
+from every package. The package may therefore contain `README/` holding **only
+top-level `*.conf.spec` files**; every other `README/` member (the internal
+docs, `DASHBOARDS/`, `INTEGRATIONS/`, `ML Models/`) stays out. `package.sh`
+excludes those by exact path, anchored to the app's own `README/`, because tar
+has no include-after-exclude (the old bare `README/` pattern also dropped
+`bin/README`, which now ships). The other dev-only trees named above were never
+checked mechanically; `check_package.sh` now fails on them too.
+
+**Check.** Must print `0`:
+
+```bash
+tar -tzf <pkg>.tgz | grep -E '^[^/]+/((tools|elements|planning)(/|$)|package\.sh$|README/)' \
+  | grep -cvE '^[^/]+/README/([^/]+\.conf\.spec)?$'
+```
+
+*Provenance: Duo identity-feed design critique, must_fix 1 (2026-11-16), not an
+MR finding: shipping `README/inputs.conf.spec` contradicted this rule, and
+`check_package.sh` never inspected `README/`, so the gate could catch neither a
+dropped spec nor a leaked doc.*
 
 ### R-PKG-004 · AppInspect baseline is exact
 
@@ -551,6 +582,132 @@ and verified on a real instance. Numbers, not adjectives.
 
 ---
 
+## R-INP — Inputs
+
+### R-INP-001 · A modular input ships off, with its spec and its entry point
+
+**Rule.** A modular input the TA defines ships **off**, and complete:
+
+- `default/inputs.conf` holds only the scheme's default stanza `[<scheme>]`:
+  no `[<scheme>://<name>]` instance, enabled or disabled. Owners add instances
+  in `local/`.
+- `README/inputs.conf.spec` (declaring `[<scheme>://<name>]`) and
+  `bin/<scheme>.py` ship in the package. Splunk reads a scheme only from
+  `README/inputs.conf.spec` and runs it from `bin/<scheme>.py`; a thin
+  entry-point shim may import the module that holds the logic.
+- `validate_input` rejects an `interval` under 120 s, and the script also
+  holds that floor at runtime from its checkpoint, because an interval written
+  directly in `local/` never goes through validation.
+- Secrets are read only from `storage/passwords`, with the input's own session
+  key, never from a conf, an argument or the environment. Keys, signatures and
+  `Authorization` headers are never logged, at any level.
+- The input never writes to `gen_ai_log` (R-CONF-004): `validate_input`
+  rejects that index.
+
+**Why.** Each clause is a way the first modular input (Cisco Duo, v1.9.0) could
+have shipped broken or unsafe with every other gate green. Without the spec or
+without `bin/<scheme>.py` an installed input has no scheme and never runs, and
+nothing reports it at install time. An instance in `default/` starts polling on
+install, before anyone has configured an account. A floor enforced only in
+validation is bypassed by `local/`. A key in a log line leaves the box with
+every diag.
+
+**Check.** Both must pass:
+
+```bash
+bash .claude/skills/splunk-ta-development/check_package.sh <pkg>.tgz   # the R-INP-001 lines
+python3 -m unittest discover -s tools/duo/tests                       # also under splunk cmd python3.9 / python3.13
+```
+
+`check_package.sh` fails when the repo has `README/inputs.conf.spec` and the
+package does not; when a scheme (declared in the packaged spec, or a
+`[<scheme>]` default stanza with a `bin/<scheme>` script) has no
+`[<scheme>://...]` in the packaged spec or no `bin/<scheme>.py`; and on any
+`[<scheme>://` instance in the packaged `default/inputs.conf`. The tests cover
+the floor, `validate_input`, the secret handling and log capture, and run the
+entry point with `--scheme`.
+
+*Provenance: deliberate design decision for the v1.9.0 Duo input (2026-11-16),
+not an MR finding. The entry-point clause came from integration: the scheme
+`ta_gen_ai_cim_duo` had only `bin/ta_gen_ai_cim_duo_input.py`, so an installed
+package would have registered a scheme with no script.*
+
+**Amendment (2026-11-16, v1.9.0, live verification).** This rule covers the
+schemes the TA *defines*. The TA also ships instances of a scheme it does not
+define: Enterprise Security's `identity_manager`
+(`[identity_manager://<name>]`, the Assets & Identities sources). "Ships off"
+was not enough for one of those. The first 1.9.0 build shipped the Duo
+identity source as `[identity_manager://ta_gen_ai_cim_duo_identities]` with
+`disabled = true`, and ES logged an ERROR for it every 5 minutes, because the
+CSV it points at is generated at runtime and never ships. That stanza no longer
+ships. The Duo content's ship-off list is now: no input instance, **no identity
+source stanza**, the lookup gen and the rule `disabled = 1`. R-INP-002 is the
+general rule.
+
+### R-INP-002 · An ES identity or asset source ships only together with its lookup file
+
+**Rule.** Every `[identity_manager://<name>]` stanza in `default/inputs.conf`,
+**enabled or disabled**, must point (`url = lookup://<definition>`) at a lookup
+definition in `default/transforms.conf` whose `filename` is a file under
+`lookups/` that ships: present in the repo, not in `.gitignore`, not excluded
+by `package.sh`, and so in the package.
+
+A source whose file is generated at runtime does not ship as a stanza at all:
+
+- not disabled, because ES checks a disabled source's file too;
+- not with a placeholder or header-only CSV, because a bundled lookup file
+  overwrites the site's generated one on every upgrade (README,
+  "Runtime-generated lookups");
+- instead `default/inputs.conf` carries the stanza as a **commented example**,
+  and the docs give the order: generate the file, confirm it has rows, then add
+  the source in `local/inputs.conf` or in ES. The example and the stanza the
+  README prints stay identical.
+
+A KV-store-backed source has no file and is not covered here: amend this rule
+before shipping one.
+
+**Why.** ES's identity manager (`SA-IdentityManagement/bin/identity_manager.py`,
+a modular input on a 300 s interval) begins every pass with
+`POST identity_correlation/identity_manager/_reload`. That handler's
+`enforce_distsearch` step lists **every** `identity_manager` source whose
+`denylist` setting is on (the default), with no filter on `disabled`, and
+resolves each one's lookup file so it can keep the source files out of
+knowledge-bundle replication. A missing file makes
+`SA-Utils/lib/SolnCommon/lookups.py` write `Lookup table was not found: [HTTP
+404] .../data/lookup-table-files/<file>` to stderr, which splunkd logs as
+`ERROR PersistentScript`. So a disabled source whose file does not exist puts
+an ERROR in `splunkd.log` every 5 minutes, forever on an install that never
+generates the file, while `btool check`, AppInspect and every offline test stay
+green: only a running ES shows it. (An *enabled* source with a missing file is
+worse: ES's merge search then fails for every source.)
+
+**Check.** Both must pass:
+
+```bash
+bash .claude/skills/splunk-ta-development/check_package.sh <pkg>.tgz   # the R-INP-002 lines
+python3 -m unittest discover -s tools/tests -p 'test_duo_conf.py'     # ShippedIdentitySourceTests, DuoDocsTests
+```
+
+`check_package.sh` reads the packaged confs. It fails when an
+`[identity_manager://<name>]` stanza has no `url = lookup://<definition>`, when
+the packaged `default/transforms.conf` has no `[<definition>]` with a
+`filename`, and when `lookups/<filename>` is not a member of the package. The
+tests check the same on the tree (the file exists, is not gitignored and is not
+excluded by `package.sh`), that a stanza for the Duo source would fail, and
+that the commented example in `default/inputs.conf` equals the stanza in the
+README.
+
+*Provenance: live verification of the v1.9.0 branch on ES 8.5.1 (2026-11-16),
+not an MR finding. `splunkd.log` showed `ERROR PersistentScript ... Lookup
+table was not found` for `ta_gen_ai_cim_duo_identities.csv` on the identity
+manager's passes at 14:46, 14:51, 14:56 and 15:01 local, while the source was
+still disabled (`identity_manager.log` reports each of those passes as
+"nothing to update"). The 15:06 pass, the first after the lookup gen had
+written the file, logged none. `check_package.sh` reproduces the finding on the
+package built before the fix.*
+
+---
+
 ## Finding ledger
 
 | MR | Finding ID | Pri | Conf | Category | Finding | Rule |
@@ -566,3 +723,7 @@ and verified on a real instance. Numbers, not adjectives.
 | — (workshop dry run 2026-10-07, not a reviewer) | `dryrun-1007-seedes` | — | — | bug | `genaiseedes` assigned the read-only `self.logger` and called a `_service()` shadowed by splunklib's `self._service = None`; the enabled seeding search wrote nothing on any stack from v1.7.0 | R-PY-001 |
 | — (deliberate design decision, not a finding) | `R-SEC-002/amend-3` | — | — | security | Seeding narrowed: no `mc_incident_types` write and no `investigation_type` on the rules, because Mission Control cannot delete a seeded investigation type | R-SEC-002 (amended) |
 | — (deliberate design decision, not a finding) | `R-SEC-002/amend-4` | — | — | security | Seeding widened for AI Trust Lab 5: a second TA-owned plan and a second bound app (PseudoCo Identity), both behind `seed_identity_response_plan = false`; the seeder never creates that app's asset (real Duo credentials); live task actions always preserved; triage allowlist merged | R-SEC-002 (amended) |
+| — (Duo design critique 2026-11-16, not a reviewer) | `duo-critique-mf1` | — | — | packaging | Shipping `README/inputs.conf.spec` contradicted R-PKG-003, and `check_package.sh` never inspected `README/`, so neither a dropped spec nor a leaked doc could fail the gate | R-PKG-003 (amended) |
+| — (deliberate design decision, not a finding) | `R-INP-001/new` | — | — | config | First modular input (Cisco Duo, v1.9.0): ships off with no instance in `default/`, spec and `bin/<scheme>.py` in the package, 120 s floor held at runtime, secrets only from `storage/passwords`, never `gen_ai_log` | R-INP-001 |
+| — (integration 2026-11-16, not a reviewer) | `duo-integ-entrypoint` | — | — | bug | Scheme `ta_gen_ai_cim_duo` had no `bin/ta_gen_ai_cim_duo.py`; an installed package would have registered the scheme with no script to run | R-INP-001 |
+| — (live verification 2026-11-16, not a reviewer) | `duo-live-identity-source` | — | — | bug | `[identity_manager://ta_gen_ai_cim_duo_identities]` shipped `disabled = true` while its CSV is generated at runtime and never ships; ES's identity manager checks every source's file, disabled ones included, and logged `Lookup table was not found` as an ERROR every 5 minutes | R-INP-002, R-INP-001 (amended) |

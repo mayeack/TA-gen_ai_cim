@@ -1,0 +1,16 @@
+{
+ "AI Governance - Duo Authentication Fraud or Denial Burst - Rule": {
+  "characters": 3288,
+  "fixtures": 28,
+  "how": "First record. The 28 rule fixtures were each run over their window through the read-only Splunk MCP by the LR-07 build on 2026-11-17 (README, v1.9.0 validation); the search and its macros are unchanged since, and were not run again when this record was written.",
+  "proven": "2026-11-17",
+  "sha256": "27783fdc5a75ef36eda8616660a15c8bf3329950cc937e77bb325b976c9db776"
+ },
+ "AI Governance - Duo Denial Burst to Blocked AI Turn Correlation - Rule": {
+  "characters": 4684,
+  "fixtures": 40,
+  "how": "All 40 chain fixtures, each run verbatim over its window (1769817300 to 1769817600) through the read-only Splunk MCP on Splunk 10.4.3, their rows compared with --verify; the full text also over the dev instance's index-time slots (README, v1.9.0 validation).",
+  "proven": "2026-11-17",
+  "sha256": "336c792c8a7f86890885fd62b5eb3040f49f5079c3c6c123695cf41326ab6bc0"
+ }
+}

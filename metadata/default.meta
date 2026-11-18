@@ -40,6 +40,14 @@ export = system
 access = read : [ * ], write : [ admin, sc_admin ]
 export = system
 
+# Cisco Duo modular input checkpoint (v1.9.0): window positions only, no secret
+# and no event content. Only the input reads and writes it, with its own session
+# (splunk-system-user); the Duo Identity Feed derives lag from the indexed events
+# and no lookup definition points at it. So: admin-only, and only in this app.
+[collections/ta_gen_ai_cim_duo_checkpoint]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
+export = none
+
 ###############################################################################
 # SERVICENOW AI CASE MANAGEMENT INTEGRATION PERMISSIONS
 ###############################################################################
@@ -75,12 +83,14 @@ export = system
 access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = system
 
-# ES integration settings (conf file) - read by genaiseedes
-[conf/ta_gen_ai_cim_es]
-access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
-export = none
-
-[configs/conf-ta_gen_ai_cim_es]
+# ES integration settings (ta_gen_ai_cim_es.conf) - read only by | genaiseedes,
+# whose command is admin-only and whose search is owner = admin (below).
+# A conf's metadata object is named after the conf itself, the way splunkd
+# writes [ta_gen_ai_cim_genai_scoring/pipeline_1] into local.meta. Up to
+# v1.8.0 these ACLs sat under [conf/...] and [configs/conf-...], names Splunk
+# never applies, so every one of the TA's confs inherited [] (read : [ * ],
+# export = system); fixed in v1.9.0.
+[ta_gen_ai_cim_es]
 access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = none
 
@@ -99,12 +109,17 @@ export = system
 access = read : [ * ], write : [ admin, sc_admin ]
 export = system
 
-# ServiceNow account configuration (conf file)
-[conf/ta_gen_ai_cim_account]
-access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
-export = none
-
-[configs/conf-ta_gen_ai_cim_account]
+# Account configuration (ta_gen_ai_cim_account.conf): the ServiceNow, soar and
+# (v1.9.0) Cisco Duo accounts - urls, usernames, OAuth client ids and Duo
+# integration keys and API hostnames; secrets live only in [passwords] below.
+# Every reader connects in this app's context as a role that passes: the
+# ServiceNow sync and inventory alert actions (owner = admin searches, below),
+# | genaiseedes (owner = admin), the Duo input (splunk-system-user), the
+# Configuration page and the account REST handler (the caller's session;
+# admins only), and | aicase / create_snow_aicase (the invoking user, who also
+# needs [passwords] and list_storage_passwords, which power lacks by default).
+# See [ta_gen_ai_cim_es] above for why the stanza is named after the conf.
+[ta_gen_ai_cim_account]
 access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = none
 
@@ -114,6 +129,25 @@ access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = none
 
 [admin_external:ta_gen_ai_cim_account]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
+export = none
+
+# Credentials (storage/passwords) for every account in ta_gen_ai_cim_account.conf,
+# realm ta_gen_ai_cim_account__<account>: ServiceNow passwords and OAuth client
+# secrets, the soar token and (v1.9.0) the Cisco Duo secret key. Without this
+# stanza they inherit [] (read : [ * ], export = system), so any role holding
+# list_storage_passwords could read them from any app. Every reader connects in
+# this app's context (owner nobody, app TA-gen_ai_cim) as a role that passes:
+#   - sync_snow_asset / pull_snow_inventory alert actions: the alert's session,
+#     and the shipped searches that run them are owner = admin (below);
+#   - | aicase and an ad hoc create_snow_aicase: the invoking user (power holds
+#     no list_storage_passwords, so it could never read them);
+#   - | genaiseedes (the soar token): its search is owner = admin (below);
+#   - the ta_gen_ai_cim_duo modular input: its own session, splunk-system-user,
+#     whose splunk-system-role imports admin.
+# Writers: the ta_gen_ai_cim_account REST handler and the Configuration page,
+# both with an admin's session.
+[passwords]
 access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = none
 
@@ -170,12 +204,10 @@ export = system
 # GENAI SCORING PIPELINE PERMISSIONS
 ###############################################################################
 
-# GenAI scoring configuration (conf file)
-[conf/ta_gen_ai_cim_genai_scoring]
-access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
-export = none
-
-[configs/conf-ta_gen_ai_cim_genai_scoring]
+# GenAI scoring configuration (ta_gen_ai_cim_genai_scoring.conf) - read by the
+# admin-only | genaiscore (admin-owned pipelines, below) and the admin-only
+# genai_scoring_config view. Named after the conf: see [ta_gen_ai_cim_es].
+[ta_gen_ai_cim_genai_scoring]
 access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 export = none
 
@@ -236,6 +268,34 @@ owner = admin
 # session for any of that, so the whole ES seeding step would silently no-op on
 # a fresh install - exactly the install this search exists to serve.
 [savedsearches/GenAI%20-%20ES%20-%20Seed%20Response%20Plan%20and%20SOAR%20Binding]
+owner = admin
+
+# The ServiceNow sync and inventory searches run the sync_snow_asset and
+# pull_snow_inventory alert actions, which read the account conf and the
+# account's credentials with the search's session; both are admin-only since
+# v1.9.0 ([ta_gen_ai_cim_account] and [passwords] above). A nobody-owned search
+# has no role that passes, so they are owned by admin like the scoring
+# pipelines (R-CONF-005). All five ship disabled = 1.
+[savedsearches/GenAI%20-%20ServiceNow%20Asset%20Sync]
+owner = admin
+
+[savedsearches/GenAI%20-%20ServiceNow%20Asset%20Re-Verify]
+owner = admin
+
+[savedsearches/GenAI%20-%20ServiceNow%20Model%20Sync]
+owner = admin
+
+[savedsearches/GenAI%20-%20ServiceNow%20Model%20Re-Verify]
+owner = admin
+
+[savedsearches/GenAI%20-%20ServiceNow%20Full%20Inventory%20Pull]
+owner = admin
+
+# GenAI - Identity - Duo Identity Lookup Gen (v1.9.0, ships disabled = 1)
+# writes lookups/ta_gen_ai_cim_duo_identities.csv with outputlookup, and
+# [lookups] write is admin, sc_admin, so it runs as admin (R-CONF-005), the way
+# ES's own lookup-gen searches do.
+[savedsearches/GenAI%20-%20Identity%20-%20Duo%20Identity%20Lookup%20Gen]
 owner = admin
 
 ###############################################################################

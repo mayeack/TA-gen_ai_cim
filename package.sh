@@ -14,8 +14,14 @@
 #   - Large training assets (the 200k-row PII CSV, lookups/__mlspl_*.mlmodel).
 #     Small sample CSVs (medadvice_*, prompt_injection_training_examples)
 #     DO ship: transforms.conf and inputs.conf reference them.
+#   - Site-generated lookups that a bundled copy would overwrite on upgrade
+#     (lookups/ta_gen_ai_cim_duo_identities.csv, v1.9.0)
 #   - Internal docs, planning, Dashboard Studio JSON sources (*.json.template),
 #     and Cursor/Claude assistant files (.cursor, .claude, CLAUDE.md)
+#   - Every README/ member except the top-level *.conf.spec files, which
+#     Splunk reads from README/ and which therefore ship (v1.9.0):
+#     inputs.conf.spec (the ta_gen_ai_cim_duo modular input scheme) and
+#     alert_actions.conf.spec (alert action parameters)
 #   - The INSTALL helper (developer-only)
 #
 # Validate after build:
@@ -99,7 +105,26 @@ if tar --no-xattrs --version >/dev/null 2>&1; then
     TAR_XATTR_FLAG=(--no-xattrs)
 fi
 
-COPYFILE_DISABLE=1 tar "${TAR_XATTR_FLAG[@]}" -czvf "${OUTPUT}" \
+# README/ holds internal docs, plus the top-level *.conf.spec files Splunk itself
+# reads from README/: inputs.conf.spec declares the ta_gen_ai_cim_duo modular
+# input scheme (without it an installed package has no scheme and the input
+# never runs) and alert_actions.conf.spec the alert action parameters. tar has
+# no include-after-exclude, so every OTHER top-level README/ member is excluded
+# by its exact path, anchored to this app's README/ (the old bare 'README/'
+# pattern also dropped bin/README). Glob metacharacters are escaped so a name
+# only matches itself. check_package.sh fails the build on any README/ member
+# that is not a top-level *.conf.spec (R-PKG-003 amendment of 2026-11-16).
+README_EXCLUDES=()
+if [[ -d "${APP_NAME}/README" ]]; then
+    while IFS= read -r -d '' member; do
+        member="$(printf '%s' "${member}" | sed 's/[][*?\\]/\\&/g')"
+        README_EXCLUDES+=(--exclude="${member}")
+    done < <(find "${APP_NAME}/README" -mindepth 1 -maxdepth 1 \
+                ! \( -type f -name '*.conf.spec' \) -print0)
+fi
+
+# ${array[@]+"${array[@]}"} keeps an empty array legal under set -u on bash 3.2.
+COPYFILE_DISABLE=1 tar ${TAR_XATTR_FLAG[@]+"${TAR_XATTR_FLAG[@]}"} -czvf "${OUTPUT}" \
     --exclude='.git' \
     --exclude='.gitignore' \
     --exclude='.gitattributes' \
@@ -122,6 +147,7 @@ COPYFILE_DISABLE=1 tar "${TAR_XATTR_FLAG[@]}" -czvf "${OUTPUT}" \
     --exclude='genaiscore_debug.log' \
     --exclude='lookups/llm_pii_mixed_responses_200k.csv' \
     --exclude='lookups/__mlspl_*.mlmodel' \
+    --exclude='lookups/ta_gen_ai_cim_duo_identities.csv' \
     --exclude='*.json.template' \
     --exclude='soar_apps/*.tgz' \
     --exclude='soar_apps/pseudoco_identity' \
@@ -129,7 +155,7 @@ COPYFILE_DISABLE=1 tar "${TAR_XATTR_FLAG[@]}" -czvf "${OUTPUT}" \
     --exclude='package.sh' \
     --exclude='tools' \
     --exclude='tools/*' \
-    --exclude='README/' \
+    ${README_EXCLUDES[@]+"${README_EXCLUDES[@]}"} \
     --exclude='elements/' \
     --exclude='planning/' \
     --exclude='.env' \
