@@ -4,7 +4,7 @@
 
 **Splunk Technology Add-on for Generative AI Common Information Model**
 
-Version: 1.9.0  
+Version: 1.9.1  
 Author: Splunk AI Governance Team  
 License: Apache 2.0
 
@@ -2015,7 +2015,28 @@ range.
 
 ## Version History
 
-### Unreleased (repo tooling after v1.9.0; the packaged add-on is unchanged)
+### v1.9.1 (2026-11-20)
+
+**Seeded response plans that render, and the Compromised Identity dashboard
+on stacks without a CII webhook**
+
+- FIXED: the seeded response plans (*AI Incident Response Plan* and, with
+  `seed_identity_response_plan`, *Compromised Identity Response Plan*) showed
+  no phases or tasks once added to an investigation ("0% completed"), on ES
+  8.5.1 and ES 8.8.0. `| genaiseedes` now gives every phase, task, tag and
+  suggestion item a stable id (uuid5 of the plan key and names), create and
+  update times and a task's working fields, as the ES UI writes them, and
+  writes plain text from Mission Control 6.8 (ES 8.8) and URL-encoded text
+  before it. The hourly seeding search rewrites both plans on its first run
+  after the upgrade. An investigation that took a plan before the upgrade
+  keeps the copy it took: add the plan to a new investigation to see its
+  phases (PR #41).
+- FIXED: the *Compromised Identity* dashboard and home card 04 read CII
+  evidence from PseudoCo Assistant's gate lookup as well as the CII webhook,
+  as the rule does (PR #39; details under v1.8.0 below).
+- The dev tooling below came into the repo after v1.9.0 and is released with
+  1.9.1 (`tools/` is not in the package).
+
 
 - ADDED (dev tooling): `tools/staged_resend.py` (`export`, `review`, `send`,
   `verify`) copies staged PseudoCo Assistant events into a stack that was
