@@ -7,7 +7,9 @@ Fake splunkd and SOAR transports stand in for the network, so the tests cover
 the logic that matters: soar_binding resolution into Mission Control Action
 records, stripping of the soar_binding key, merge-preserve of live actions
 without double-encoding, that no investigation type is ever written, the
-simulator install/asset sequence, and the in-memory SOAR app package.
+simulator install/asset sequence, the in-memory SOAR app package, and the
+Mission Control shape of a seeded plan: phase/task ids and working fields on
+every version, plain text from Mission Control 6.8 (ES 8.8), URL-encoded before.
 
     /opt/splunk104/bin/splunk cmd python3.13 -m unittest discover -s tools/soar/tests -v
 """
@@ -21,6 +23,7 @@ import sys
 import tarfile
 import unittest
 import urllib.parse
+import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
@@ -253,6 +256,114 @@ PI_ASSET = {'id': 77, 'name': seed.IDENTITY_SOAR_ASSET_NAME, 'app': 205}
 def plan_writes(splunkd):
     return dict((w[2]['_key'], w[2]) for w in splunkd.writes
                 if 'mc_response_templates' in w[0] and isinstance(w[2], dict))
+
+
+class Es88Splunkd(FakeSplunkd):
+    """FakeSplunkd on a stack whose Mission Control app is 6.8.0 (ES 8.8)."""
+
+    def get_json(self, path, timeout=60):
+        if path == '/services/apps/local/missioncontrol':
+            return 200, {'entry': [{'content': {'version': '6.8.0'}}]}
+        return FakeSplunkd.get_json(self, path, timeout)
+
+
+def plan_ids(plan):
+    return ([ph['id'] for ph in plan['phases']] + [t['id'] for _, t in seed.iter_tasks(plan)]
+            + [t['tag'] for _, t in seed.iter_tasks(plan)])
+
+
+class McShapeTests(unittest.TestCase):
+    """Up to 1.9.0 the seeded plans had no phase or task ids: ES attached the plan to an
+    investigation but its Response tab showed "0% completed" and no phases."""
+
+    TASK_FIELDS = ('id', 'tag', 'create_time', 'update_time', 'status', 'is_note_required', 'files',
+                   'notes', 'start_time', 'end_time', 'total_time_taken', 'ai_executed', 'ai_summary',
+                   'owner')
+
+    def shaped(self, path=seed.RESPONSE_PLAN_PATH):
+        return seed.mc_shape(seed.load_plan(path), 1700000000)
+
+    def test_every_phase_and_task_gets_the_fields_the_es_ui_writes(self):
+        for path in (seed.RESPONSE_PLAN_PATH, seed.IDENTITY_PLAN_PATH):
+            plan = self.shaped(path)
+            self.assertTrue(plan['phases'], path)
+            for phase in plan['phases']:
+                for key in ('id', 'create_time', 'update_time', 'name', 'order'):
+                    self.assertIn(key, phase, (path, phase.get('name'), key))
+                self.assertTrue(phase['tasks'], (path, phase['name']))
+                for task in phase['tasks']:
+                    for key in self.TASK_FIELDS:
+                        self.assertIn(key, task, (path, phase['name'], task['name'], key))
+                    self.assertEqual(task['status'], 'Pending')
+
+    def test_ids_are_stable_unique_uuid5(self):
+        first, second = self.shaped(), self.shaped()
+        self.assertEqual(plan_ids(first), plan_ids(second))
+        self.assertEqual(len(set(plan_ids(first))), len(plan_ids(first)))
+        for value in plan_ids(first):
+            self.assertEqual(uuid.UUID(value).version, 5)
+
+    def test_the_two_plans_never_share_an_id(self):
+        ai = self.shaped(seed.RESPONSE_PLAN_PATH)
+        ci = self.shaped(seed.IDENTITY_PLAN_PATH)
+        self.assertFalse(set(plan_ids(ai)) & set(plan_ids(ci)))
+
+    def test_values_already_present_are_kept(self):
+        plan = seed.load_plan(seed.RESPONSE_PLAN_PATH)
+        task = plan['phases'][0]['tasks'][0]
+        task['id'] = 'kept-id'
+        task['is_note_required'] = True
+        seed.mc_shape(plan, 1)
+        self.assertEqual(task['id'], 'kept-id')
+        self.assertTrue(task['is_note_required'])
+
+
+class PlanFormatTests(unittest.TestCase):
+
+    def test_plain_from_mission_control_6_8_encoded_before_or_when_unknown(self):
+        self.assertEqual(seed.plan_format((6, 8, 0)), seed.PLAN_ES88)
+        self.assertEqual(seed.plan_format((7, 0, 1)), seed.PLAN_ES88)
+        self.assertEqual(seed.plan_format((6, 5, 1)), seed.PLAN_LEGACY)
+        self.assertEqual(seed.plan_format(None), seed.PLAN_LEGACY)
+
+    def test_version_comes_from_the_missioncontrol_app(self):
+        self.assertEqual(seed.mc_version(Es88Splunkd()), (6, 8, 0))
+        self.assertIsNone(seed.mc_version(FakeSplunkd()))
+
+    def test_es88_record_is_plain_text_with_ids(self):
+        splunkd = Es88Splunkd()
+        rep = seed.Reporter()
+        seed.step_response_plan(splunkd, rep, None)
+        body = plan_writes(splunkd)['ai_incident_response_plan']
+        self.assertEqual(body['name'], 'AI Incident Response Plan')
+        self.assertEqual(body['phases'][0]['name'], 'Identification (Detection and Analysis)')
+        self.assertNotIn('%20', json.dumps(body))
+        self.assertTrue(all(ph.get('id') for ph in body['phases']))
+        self.assertNotIn('_comment', body)
+        self.assertNotIn('soar_binding', json.dumps(body))
+
+    def test_legacy_record_stays_encoded_and_gets_ids_too(self):
+        splunkd = FakeSplunkd()
+        seed.step_response_plan(splunkd, seed.Reporter(), None)
+        body = plan_writes(splunkd)['ai_incident_response_plan']
+        self.assertEqual(body['phases'][0]['name'], 'Identification%20(Detection%20and%20Analysis)')
+        for phase in body['phases']:
+            uuid.UUID(phase['id'])          # a uuid survives encode_plan() unchanged
+            for task in phase['tasks']:
+                uuid.UUID(task['id'])
+
+    def test_es88_rerun_over_a_1_9_0_record_keeps_ids_and_writes_plain_text(self):
+        old = seed.encode_plan(seed.load_plan(seed.IDENTITY_PLAN_PATH))   # 1.9.0: encoded, no ids
+        old['_key'] = 'compromised_identity_response_plan'
+        splunkd = Es88Splunkd(live={old['_key']: old})
+        seed.step_response_plan(splunkd, seed.Reporter(), None, seed.IDENTITY_PLAN_PATH)
+        first = plan_writes(splunkd)[old['_key']]
+        splunkd.writes = []
+        seed.step_response_plan(splunkd, seed.Reporter(), None, seed.IDENTITY_PLAN_PATH)
+        second = plan_writes(splunkd)[old['_key']]
+        self.assertEqual(plan_ids(first), plan_ids(second))
+        self.assertEqual(second['name'], 'Compromised Identity Response Plan')
+        self.assertNotIn('%20', json.dumps(second))
 
 
 def task_actions(record, phase, task):
