@@ -80,7 +80,7 @@
         "ds_kpi_cii": {
             "type": "ds.search",
             "options": {
-                "query": "`genai_cii_failed_checks` | search identity_user=\"$user_filter$\" | stats count"
+                "query": "| multisearch [ search `genai_cii_failed_checks` ] [ search `genai_identity_ai_events` gen_ai.identity.verified=\"true\" host=\"$instance_filter$\" | `genai_cii_gate_failed_check_rows` ] | search identity_user=\"$user_filter$\" | eval cii_pair=identity_user.\":\".cii_check_id | stats dc(cii_pair) as count"
             }
         },
         "ds_kpi_aid": {
@@ -92,7 +92,7 @@
         "ds_join": {
             "type": "ds.search",
             "options": {
-                "query": "| multisearch [ search `genai_identity_ai_events` gen_ai.policy.blocked=\"true\" gen_ai.guardrail.ids=\"cisco_ai_defense\" | eval signal=\"ai_defense_block\", identity_user=`genai_identity_join_key(user)`, ai_category='gen_ai.safety.categories', ai_session='gen_ai.session.id', ai_src='client.address', ai_app='gen_ai.app.name' ] [ search `genai_identity_ai_events` (gen_ai.guardrail.ids=\"cisco_identity_intelligence\" OR gen_ai.identity.override=\"true\") | eval signal=\"identity_gate\", identity_user=`genai_identity_join_key(user)`, gate_blocked=if(isnotnull(mvfind('gen_ai.guardrail.ids', \"^cisco_identity_intelligence\\b\")) AND 'gen_ai.policy.blocked'==\"true\", 1, 0), gate_override=if('gen_ai.identity.override'==\"true\", 1, 0) ] [ search `genai_cii_failed_checks` | eval signal=\"cii_failed_check\" ] | `genai_identity_ai_attack_join` | search identity_user=\"$user_filter$\" | eval last_ai_defense_block=strftime(lastAiBlockTime, \"%Y-%m-%d %H:%M:%S\"), last_cii_check=strftime(lastCiiTime, \"%Y-%m-%d %H:%M:%S\") | table identity_user, cii_checks, cii_trust_levels, cii_provenance, cii_failed_checks, ai_defense_blocks, identity_gate_blocks, identity_overrides, distinct_sessions, src, last_ai_defense_block, last_cii_check | rename identity_user as user"
+                "query": "| multisearch [ search `genai_identity_ai_events` gen_ai.policy.blocked=\"true\" gen_ai.guardrail.ids=\"cisco_ai_defense\" | eval signal=\"ai_defense_block\", identity_user=`genai_identity_join_key(user)`, ai_category='gen_ai.safety.categories', ai_session='gen_ai.session.id', ai_src='client.address', ai_app='gen_ai.app.name' ] [ search `genai_identity_ai_events` (gen_ai.guardrail.ids=\"cisco_identity_intelligence\" OR gen_ai.identity.override=\"true\") | eval signal=\"identity_gate\", identity_user=`genai_identity_join_key(user)`, gate_blocked=if(isnotnull(mvfind('gen_ai.guardrail.ids', \"^cisco_identity_intelligence$\")) AND 'gen_ai.policy.blocked'==\"true\", 1, 0), gate_override=if('gen_ai.identity.override'==\"true\", 1, 0) ] [ search `genai_cii_failed_checks` | eval signal=\"cii_failed_check\" ] [ search `genai_identity_ai_events` gen_ai.identity.verified=\"true\" | `genai_cii_gate_failed_check_rows` | eval signal=\"cii_failed_check\" ] | `genai_identity_ai_attack_join` | search identity_user=\"$user_filter$\" | eval last_ai_defense_block=strftime(lastAiBlockTime, \"%Y-%m-%d %H:%M:%S\"), last_cii_check=strftime(lastCiiTime, \"%Y-%m-%d %H:%M:%S\") | table identity_user, cii_checks, cii_trust_levels, cii_provenance, cii_failed_checks, ai_defense_blocks, identity_gate_blocks, identity_overrides, distinct_sessions, src, last_ai_defense_block, last_cii_check | rename identity_user as user"
             }
         },
         "ds_kpi_joined": {
@@ -117,7 +117,7 @@
         "ds_cii": {
             "type": "ds.search",
             "options": {
-                "query": "`genai_cii_failed_checks` | search identity_user=\"$user_filter$\" | table _time, identity_user, cii_check, cii_check_id, cii_severity, cii_trust_level, cii_provenance | rename identity_user as user | sort - _time"
+                "query": "| multisearch [ search `genai_cii_failed_checks` ] [ search `genai_identity_ai_events` gen_ai.identity.verified=\"true\" host=\"$instance_filter$\" | `genai_cii_gate_failed_check_rows` ] | search identity_user=\"$user_filter$\" | stats min(_time) as first_seen, max(_time) as last_seen, count as observations, values(cii_check) as cii_check, values(cii_severity) as cii_severity, values(cii_trust_level) as cii_trust_level by identity_user, cii_check_id, cii_provenance | sort - last_seen | eval first_seen=strftime(first_seen, \"%Y-%m-%d %H:%M:%S\"), last_seen=strftime(last_seen, \"%Y-%m-%d %H:%M:%S\") | table identity_user, cii_check, cii_check_id, cii_severity, cii_trust_level, cii_provenance, observations, first_seen, last_seen | rename identity_user as user"
             }
         },
         "ds_aid": {
@@ -138,7 +138,7 @@
             "type": "splunk.markdown",
             "options": {
                 "fontColor": "#ffffff",
-                "markdown": "## Compromised Identity (AI Trust Lab 5)\nCisco Identity Intelligence failed checks joined with Cisco AI Defense blocks for the same identity, plus the PseudoCo Assistant side: Duo sign-ins, the Identity Risk Gate and session revocations. The join is the detection *AI Governance - Compromised Identity AI Attack Correlation - Rule* without its 5-minute freshness limit. Lab 5 participant accounts (l5-*) are left out of the join."
+                "markdown": "## Compromised Identity (AI Trust Lab 5)\nCisco Identity Intelligence failed checks joined with Cisco AI Defense blocks for the same identity, plus the PseudoCo Assistant side: Duo sign-ins, the Identity Risk Gate and session revocations. CII evidence comes from the Identity Risk Gate's lookup, which PseudoCo Assistant records on every signed-in turn, or from a CII webhook if one is set up. The join is the detection *AI Governance - Compromised Identity AI Attack Correlation - Rule* without its 5-minute freshness limit. Lab 5 participant accounts (l5-*) are left out of the join."
             }
         },
         "viz_kpi_signins_ok": {
@@ -228,7 +228,7 @@
             "options": {
                 "count": 10
             },
-            "description": "cii_provenance: CII webhook, backfill (lab5-setup) or synthetic test event"
+            "description": "cii_provenance: PseudoCo Assistant gate lookup, CII webhook, backfill (lab5-setup) or synthetic test event"
         },
         "viz_signins": {
             "type": "splunk.line",
@@ -271,7 +271,7 @@
         "viz_cii": {
             "type": "splunk.table",
             "title": "Cisco Identity Intelligence failed checks",
-            "description": "CII webhook evidence, takeover checks only (genai_cii_takeover_checks): MFA Flood, Impossible Travel",
+            "description": "Takeover checks only (genai_cii_takeover_check_ids): MFA Flood, Impossible Travel, plus an UNTRUSTED trust level from the gate lookup. One row per user, check and source (PseudoCo Assistant gate lookup on signed-in turns, or the CII webhook)",
             "dataSources": {
                 "primary": "ds_cii"
             },

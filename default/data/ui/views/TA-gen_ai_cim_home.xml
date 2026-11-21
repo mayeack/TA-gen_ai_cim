@@ -43,7 +43,7 @@
             "type": "ds.search",
             "name": "Compromised Identity",
             "options": {
-                "query": "`genai_cii_failed_checks` | stats count as v",
+                "query": "| multisearch [ search `genai_cii_failed_checks` ] [ search `genai_identity_ai_events` gen_ai.identity.verified=\"true\" | `genai_cii_gate_failed_check_rows` ] | eval cii_pair=identity_user.\":\".cii_check_id | stats dc(cii_pair) as v",
                 "queryParameters": {
                     "earliest": "-7d",
                     "latest": "now"

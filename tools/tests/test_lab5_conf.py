@@ -325,6 +325,7 @@ class MacroTests(unittest.TestCase):
         self.assertIn('`genai_identity_participant_filter`',
                       self.macros['genai_identity_ai_attack_join']['definition'])
 
+
     def test_webhook_test_events_are_dropped_and_backfill_is_accepted(self):
         rows = self.macros['genai_cii_failed_check_rows']['definition']
         self.assertIn('cii_event_type=="FAILED_CHECK"', rows)
@@ -332,6 +333,64 @@ class MacroTests(unittest.TestCase):
         for needle in ('detail.login', 'detail.checkId', 'detail.userTrustLevel', '"backfill (lab5-setup)"',
                        'cii_body_source=="lab5-setup"', '"synthetic test event"', '"CII webhook"'):
             self.assertIn(needle, extract)
+
+
+def view_data_sources(name):
+    """{data source id: query} of a Dashboard Studio view in default/data/ui/views."""
+    with io.open(os.path.join(REPO, 'default', 'data', 'ui', 'views', name + '.xml'), encoding='utf-8') as handle:
+        text = handle.read()
+    definition = json.loads(re.search(r'<definition><!\[CDATA\[(.*?)\]\]></definition>', text, re.S).group(1))
+    return {key: ds.get('options', {}).get('query', '') for key, ds in definition['dataSources'].items()}
+
+
+class CompromisedIdentityDashboardTests(unittest.TestCase):
+    """The dashboard counts CII evidence the way the Lab 5 rule does: the CII
+    webhook OR PseudoCo Assistant's gate lookup on signed-in turns (backlog
+    row 3). Before 2026-11-17 it read the webhook only, so with no CII
+    notification target its CII tile, CII table and join stayed at 0 while the
+    rule fired from the gate lookup."""
+
+    WEBHOOK = '[ search `genai_cii_failed_checks` ]'
+    GATE = ('[ search `genai_identity_ai_events` gen_ai.identity.verified="true" host="$instance_filter$" '
+            '| `genai_cii_gate_failed_check_rows` ]')
+
+    def setUp(self):
+        self.ds = view_data_sources('compromised_identity')
+
+    @staticmethod
+    def branches(search):
+        """The multisearch branches in front of the join, with the rule's own
+        earliest= windows removed and whitespace collapsed."""
+        body = search.split('| multisearch', 1)[1].split('| `genai_identity_ai_attack_join`', 1)[0]
+        return re.sub(r'\s+', ' ', re.sub(r'earliest=-\S+\s+', '', body)).strip()
+
+    def test_join_is_the_rule_without_its_windows(self):
+        """The join is the detection minus its time windows and freshness limit:
+        the same four branches, the gate-lookup branch included."""
+        rule = read_conf('savedsearches.conf')[LAB5_RULE]['search']
+        self.assertEqual(self.branches(self.ds['ds_join']), self.branches(rule))
+        self.assertIn('`genai_cii_gate_failed_check_rows` | eval signal="cii_failed_check" ]', self.ds['ds_join'])
+
+    def test_cii_tile_and_table_read_the_webhook_and_the_gate_lookup(self):
+        for key in ('ds_kpi_cii', 'ds_cii'):
+            query = self.ds[key]
+            self.assertTrue(query.startswith('| multisearch ' + self.WEBHOOK + ' ' + self.GATE), key)
+            self.assertIn('| search identity_user="$user_filter$"', query, key)
+
+    def test_one_flagged_user_counts_once_however_many_turns(self):
+        """Every event of every signed-in turn repeats the user's failing checks,
+        so the tile counts distinct user/check pairs and the table gives one row
+        per user, check and source with the number of observations."""
+        self.assertIn('| eval cii_pair=identity_user.":".cii_check_id | stats dc(cii_pair) as count',
+                      self.ds['ds_kpi_cii'])
+        self.assertIn('count as observations', self.ds['ds_cii'])
+        self.assertIn('by identity_user, cii_check_id, cii_provenance', self.ds['ds_cii'])
+
+    def test_home_card_counts_the_same_evidence(self):
+        query = view_data_sources('TA-gen_ai_cim_home')['ds_card_04']
+        self.assertTrue(query.startswith('| multisearch ' + self.WEBHOOK + ' [ search `genai_identity_ai_events` '
+                                         'gen_ai.identity.verified="true" | `genai_cii_gate_failed_check_rows` ]'))
+        self.assertTrue(query.endswith('| eval cii_pair=identity_user.":".cii_check_id | stats dc(cii_pair) as v'))
 
 
 class Lab4ExclusionTests(unittest.TestCase):
