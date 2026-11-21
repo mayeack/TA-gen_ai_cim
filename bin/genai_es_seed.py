@@ -50,12 +50,14 @@ import base64
 import io
 import json
 import os
+import re
 import ssl
 import tarfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 APP_NAME = 'TA-gen_ai_cim'
 QUEUE_TITLE = 'AI Findings'
@@ -500,6 +502,75 @@ def decode_plan(obj):
     return obj
 
 
+def strip_comments(obj):
+    """encode_plan() without the encoding: drop _comment* keys, keep the text as is."""
+    if isinstance(obj, dict):
+        return dict((k, strip_comments(v)) for k, v in obj.items() if not k.startswith('_comment'))
+    if isinstance(obj, list):
+        return [strip_comments(v) for v in obj]
+    return obj
+
+
+# Mission Control 6.8 (ES 8.8) stores plan text as written; older Mission Control (ES 8.5,
+# 6.5.1) stores every string URL-encoded, as the ES UI wrote it there. Same split as
+# TA-patchbot's tools/postdeploy_steps.py.
+MC_PLAIN_FROM = (6, 8)
+PLAN_ES88, PLAN_LEGACY = 'es88', 'legacy'
+
+
+def mc_version(splunkd):
+    """Mission Control's version as a tuple, (6, 8, 0) on ES 8.8; None if it cannot be read."""
+    code, data = splunkd.get_json('/services/apps/local/missioncontrol')
+    try:
+        raw = data['entry'][0]['content']['version']
+    except (TypeError, KeyError, IndexError):
+        return None
+    numbers = re.findall(r'\d+', str(raw))
+    return tuple(int(n) for n in numbers[:3]) if numbers else None
+
+
+def plan_format(version):
+    """PLAN_ES88 (plain text) from Mission Control 6.8; PLAN_LEGACY (URL-encoded) before it
+    and when the version cannot be read, which is what this TA wrote up to 1.9.0."""
+    return PLAN_ES88 if version and tuple(version[:2]) >= MC_PLAIN_FROM else PLAN_LEGACY
+
+
+def mc_shape(plan, now):
+    """Give phases, tasks and suggestion items the fields the ES UI writes and Mission
+    Control reads: stable ids (uuid5 of the plan key and names, so a re-run keeps them),
+    create and update times, and a task's working fields. Up to 1.9.0 the seeded plans had
+    none of them: an investigation took the plan ("1 response plan has been applied") but
+    its Response tab showed "0% completed" and no phases (ES 8.5 and 8.8), and on ES 8.8 a
+    plan without phase ids can fail Start investigation outright ("Failure when ingesting
+    finding": KeyError 'id', as TA-patchbot found). Values already present are kept."""
+    def stable_id(*parts):
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, '/'.join([plan['_key']] + [str(p) for p in parts])))
+
+    for phase in plan.get('phases') or []:
+        phase.setdefault('id', stable_id('phase', phase.get('name')))
+        phase.setdefault('create_time', now)
+        phase.setdefault('update_time', now)
+        for task in phase.get('tasks') or []:
+            where = ('task', phase.get('name'), task.get('name'))
+            task.setdefault('id', stable_id(*where))
+            task.setdefault('tag', stable_id(*(where + ('tag',))))
+            for key, value in (('create_time', now), ('update_time', now), ('status', 'Pending'),
+                               ('is_note_required', False), ('files', []), ('notes', []),
+                               ('start_time', 0), ('end_time', 0), ('total_time_taken', 0),
+                               ('ai_executed', False), ('ai_summary', ''), ('owner', '')):
+                task.setdefault(key, value)
+            suggestions = task.setdefault('suggestions', {})
+            if not isinstance(suggestions, dict):
+                continue
+            for kind in ('actions', 'searches', 'playbooks'):
+                for i, item in enumerate(suggestions.setdefault(kind, []) or []):
+                    if isinstance(item, dict):
+                        item.setdefault('id', stable_id(*(where + (kind, i, item.get('name')))))
+                        item.setdefault('create_time', now)
+                        item.setdefault('update_time', now)
+    return plan
+
+
 def kv_path(collection, key=None):
     base = '{}/storage/collections/data/{}'.format(MC_NS, collection)
     return '{}/{}'.format(base, urllib.parse.quote(key, safe='')) if key else base
@@ -653,11 +724,18 @@ def step_response_plan(splunkd, rep, soar=None, plan_path=RESPONSE_PLAN_PATH,
         plan['create_time'] = live['create_time']
     plan.setdefault('create_time', now)
     plan['update_time'] = now
+    mc_shape(plan, now)
 
-    encoded = encode_plan(plan)
-    encoded['_key'] = plan['_key']          # the record address is never encoded
-    ok = kv_upsert(splunkd, rep, 'mc_response_templates', plan['_key'], encoded,
+    version = mc_version(splunkd)
+    fmt = plan_format(version)
+    record = encode_plan(plan) if fmt == PLAN_LEGACY else strip_comments(plan)
+    record['_key'] = plan['_key']           # the record address is never encoded
+    ok = kv_upsert(splunkd, rep, 'mc_response_templates', plan['_key'], record,
                    '{} "{}"'.format(label, plan.get('name')))
+    if ok:
+        rep.ok('{} format'.format(label), 'Mission Control {}: {} text, phase and task ids set'.format(
+            '.'.join(str(n) for n in version) if version else 'version unknown',
+            'plain' if fmt == PLAN_ES88 else 'URL-encoded'))
     if ok:
         if bound:
             rep.ok('{} SOAR actions'.format(label), 'bound {} action(s) from soar_binding; {} other '
